@@ -314,16 +314,30 @@ class VideoCompositor:
         target_duration: float,
         image_paths: list,
     ) -> CompositeVideoClip:
-        """Create video with image overlays (experimental style)."""
+        """
+        Create video with blurred background + AI image overlays (experimental style).
+
+        Same as blurred mode but adds AI images as top layer overlays every 5 seconds.
+        """
+        blurred = self._create_blurred_background_from_clip(video)
+
         content_h = int(VIDEO_HEIGHT * 0.45)
         fg = video.resized((VIDEO_WIDTH, content_h)).with_position(("center", "center"))
 
+        base_composite = CompositeVideoClip(
+            [blurred, fg], size=(VIDEO_WIDTH, VIDEO_HEIGHT)
+        )
+
         final_video = (
-            CompositeVideoClip([fg], size=(VIDEO_WIDTH, VIDEO_HEIGHT))
-            .with_speed_scaled(target_duration / video.duration)
+            base_composite.with_speed_scaled(target_duration / video.duration)
             .with_duration(target_duration)
             .with_audio(audio)
         )
+
+        if image_paths:
+            final_video = self._add_image_overlays(
+                final_video, image_paths, target_duration
+            )
 
         if vtt_path and Path(vtt_path).exists():
             subs = self.subtitle_renderer.render_subtitles(
@@ -337,6 +351,49 @@ class VideoCompositor:
 
         final_video = final_video.with_effects([FadeIn(0.1)])
         return final_video
+
+    def _add_image_overlays(
+        self,
+        base_video: CompositeVideoClip,
+        image_paths: list,
+        duration: float,
+    ) -> CompositeVideoClip:
+        """Add AI image overlays on top of video."""
+        overlay_clips = []
+        num_overlays = max(
+            1, int((duration - IMAGE_BOUNCE_INTERVAL) / IMAGE_BOUNCE_INTERVAL) + 1
+        )
+
+        for i in range(num_overlays):
+            start_time = (i + 1) * IMAGE_BOUNCE_INTERVAL
+            if start_time >= duration:
+                break
+
+            end_time = min(start_time + IMAGE_OVERLAY_DURATION, duration)
+            overlay_duration = end_time - start_time
+
+            if overlay_duration <= 0:
+                continue
+
+            img_path = image_paths[i % len(image_paths)]
+            try:
+                img_clip = ImageClip(img_path).with_duration(overlay_duration)
+                img_clip = img_clip.resized((VIDEO_WIDTH, VIDEO_HEIGHT))
+                img_clip = self._apply_bounce_effect(img_clip, overlay_duration)
+                img_clip = img_clip.with_effects(
+                    [FadeIn(IMAGE_FADE_IN_TIME), FadeOut(IMAGE_FADE_OUT_TIME)]
+                )
+                img_clip = img_clip.with_start(start_time)
+                overlay_clips.append(img_clip)
+            except Exception as e:
+                log(f"Error creating overlay: {e}", "ERROR")
+                continue
+
+        if overlay_clips:
+            return CompositeVideoClip(
+                [base_video] + overlay_clips, size=(VIDEO_WIDTH, VIDEO_HEIGHT)
+            )
+        return base_video
 
     def _create_with_blurred_mode(
         self,
