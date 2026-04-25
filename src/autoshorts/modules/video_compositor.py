@@ -1,0 +1,413 @@
+#!/usr/bin/env python3
+"""
+Video Compositor Module
+
+Provides unified video compositing with:
+- Blurred background (using FFmpeg boxblur)
+- AI image overlays with bounce effects
+- Subtitle integration
+- Standardized rendering pipeline
+
+DRY principle: reused by both yt_summarizer and experimental modes.
+"""
+
+import subprocess
+from pathlib import Path
+
+from moviepy import (
+    AudioFileClip,
+    CompositeVideoClip,
+    ImageClip,
+    VideoFileClip,
+)
+from moviepy.video.fx import FadeIn, FadeOut, MultiplyColor, Resize
+
+from .config import (
+    AUDIO_CODEC,
+    BLUR_RADIUS,
+    ENCODING_CRF,
+    ENCODING_PRESET,
+    ENCODING_THREADS,
+    IMAGE_BOUNCE_INTERVAL,
+    IMAGE_FADE_IN_TIME,
+    IMAGE_FADE_OUT_TIME,
+    IMAGE_OVERLAY_DURATION,
+    MAX_ZOOM_FACTOR,
+    VIDEO_CODEC,
+    VIDEO_FPS,
+    VIDEO_HEIGHT,
+    VIDEO_WIDTH,
+)
+from .subtitle_system import SubtitleRenderer
+from .utils import create_temp_dir, get_video_duration, log
+
+
+class VideoCompositor:
+    """
+    Unified video compositor for AutoShorts.
+
+    Provides common compositing operations:
+    - Blurred background (yt_summarizer style)
+    - Image overlays with bounce (experimental style)
+    - Combined pipeline with subtitles
+    """
+
+    def __init__(self):
+        self.temp_dir = create_temp_dir()
+        self.subtitle_renderer = SubtitleRenderer()
+
+    def _apply_fast_blur(
+        self, input_path: str, output_path: str, radius: int = BLUR_RADIUS
+    ) -> str:
+        """Apply blur using FFmpeg boxblur - much faster than PIL per-frame."""
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            input_path,
+            "-vf",
+            f"boxblur={radius}:{radius}",
+            "-c:v",
+            "libx264",
+            "-crf",
+            "23",
+            "-c:a",
+            "copy",
+            output_path,
+        ]
+        subprocess.run(cmd, capture_output=True, check=True)
+        return output_path
+
+    def _apply_bounce_effect(self, clip, duration: float):
+        """Apply bounce zoom effect to overlay clips."""
+
+        def bounce_scale(t: float) -> float:
+            if duration <= 0:
+                return 1.0
+            progress = t / duration
+            if progress < 0.3:
+                return 1.0 + (MAX_ZOOM_FACTOR - 1.0) * (progress / 0.3)
+            elif progress < 0.7:
+                return MAX_ZOOM_FACTOR
+            else:
+                return MAX_ZOOM_FACTOR - (MAX_ZOOM_FACTOR - 1.0) * (
+                    (progress - 0.7) / 0.3
+                )
+
+        return clip.with_effects([Resize(bounce_scale)])
+
+    def create_blurred_background(self, video_path: str) -> VideoFileClip:
+        """
+        Create blurred background video (yt_summarizer style).
+
+        Steps:
+        1. Resize to small (120x214)
+        2. Apply FFmpeg boxblur
+        3. Resize back to 720x1280
+        4. Reduce brightness by 50%
+        """
+        log("Creating blurred background...")
+
+        video = VideoFileClip(video_path)
+
+        temp_blur_path = str(self.temp_dir / "blurred_bg.mp4")
+
+        bg = video.resized((120, 214))
+        temp_small = str(self.temp_dir / "temp_small.mp4")
+        bg.write_videofile(
+            temp_small,
+            codec="libx264",
+            fps=10,
+            threads=2,
+            preset="ultrafast",
+            logger=None,
+        )
+        bg.close()
+
+        self._apply_fast_blur(temp_small, temp_blur_path, radius=BLUR_RADIUS)
+
+        blurred = VideoFileClip(temp_blur_path).resized((720, 1280))
+        return blurred.with_effects([MultiplyColor(0.5)])
+
+    def create_video_with_image_overlays(
+        self,
+        background_video_path: str,
+        image_paths: list,
+        audio_path: str,
+        duration: float,
+    ) -> CompositeVideoClip:
+        """
+        Create video with AI image overlays (experimental style).
+
+        Features:
+        - Background video cropped to 9:16
+        - Image overlays with bounce effect
+        - Fade in/out transitions
+        - Audio integration
+        """
+        log("Creating video with image overlays...")
+
+        background_video = VideoFileClip(background_video_path)
+        audio = AudioFileClip(audio_path)
+
+        num_overlays = max(
+            1, int((duration - IMAGE_BOUNCE_INTERVAL) / IMAGE_BOUNCE_INTERVAL) + 1
+        )
+        if duration <= IMAGE_BOUNCE_INTERVAL:
+            num_overlays = 0
+
+        log(
+            f"Creating {num_overlays} overlay events ({IMAGE_BOUNCE_INTERVAL}s interval)"
+        )
+
+        bg_w, bg_h = background_video.size
+        if bg_w / bg_h < 9 / 16:
+            new_w = int(bg_h * (16 / 9))
+            background_video = background_video.cropped(
+                x1=(bg_w - new_w) // 2, width=new_w
+            )
+        elif bg_w / bg_h > 16 / 9:
+            new_h = int(bg_w * (9 / 16))
+            background_video = background_video.cropped(
+                y1=(bg_h - new_h) // 2, height=new_h
+            )
+
+        background_video = background_video.resized((VIDEO_WIDTH, VIDEO_HEIGHT))
+
+        if background_video.duration < duration:
+            loops = int(duration / background_video.duration) + 1
+            from moviepy import concatenate_videoclips
+
+            background_video = concatenate_videoclips([background_video] * loops)
+
+        background_video = background_video.subclipped(0, duration)
+
+        overlay_clips = []
+        for i in range(num_overlays):
+            start_time = (i + 1) * IMAGE_BOUNCE_INTERVAL
+            if start_time >= duration:
+                break
+
+            end_time = min(start_time + IMAGE_OVERLAY_DURATION, duration)
+            overlay_duration = end_time - start_time
+
+            if overlay_duration <= 0 or not image_paths:
+                continue
+
+            img_path = image_paths[i % len(image_paths)]
+
+            try:
+                img_clip = ImageClip(img_path).with_duration(overlay_duration)
+                img_clip = img_clip.resized((VIDEO_WIDTH, VIDEO_HEIGHT))
+                img_clip = self._apply_bounce_effect(img_clip, overlay_duration)
+                img_clip = img_clip.with_effects(
+                    [FadeIn(IMAGE_FADE_IN_TIME), FadeOut(IMAGE_FADE_OUT_TIME)]
+                )
+                img_clip = img_clip.with_start(start_time)
+                overlay_clips.append(img_clip)
+            except Exception as e:
+                log(f"Error creating overlay: {e}", "ERROR")
+                continue
+
+        if overlay_clips:
+            final_video = CompositeVideoClip(
+                [background_video] + overlay_clips, size=(VIDEO_WIDTH, VIDEO_HEIGHT)
+            )
+        else:
+            final_video = background_video
+
+        final_video = final_video.with_audio(audio)
+
+        try:
+            background_video.close()
+        except (OSError, AttributeError):
+            pass
+
+        return final_video
+
+    def create_output_video(
+        self,
+        video_path: str,
+        audio_path: str,
+        vtt_path: str,
+        output_path: str,
+        target_duration: float,
+        use_blurred_bg: bool = True,
+        image_paths: list = None,
+    ) -> bool:
+        """
+        Create final output video with optional subtitle integration.
+
+        Args:
+            video_path: Source video path
+            audio_path: TTS audio path
+            vtt_path: Subtitle VTT path
+            output_path: Final output path
+            target_duration: Audio duration
+            use_blurred_bg: Use blurred background (yt_summarizer style)
+            image_paths: Image overlays (experimental style, overrides blurred_bg)
+
+        Returns:
+            bool: Success status
+        """
+        log("Compiling final video...")
+
+        video = VideoFileClip(video_path)
+        audio = AudioFileClip(audio_path)
+
+        if video.duration <= 0:
+            log("Video has zero duration", "ERROR")
+            return False
+
+        source_duration = self._get_video_duration(video_path)
+        speed_factor = source_duration / target_duration
+
+        w, h = video.size
+        if w / h < 9 / 16:
+            new_w = int(h * (16 / 9))
+            video = video.cropped(x1=(w - new_w) // 2, width=new_w)
+        elif w / h > 16 / 9:
+            new_h = int(w * (9 / 16))
+            video = video.cropped(y1=(h - new_h) // 2, height=new_h)
+
+        video = video.resized((VIDEO_WIDTH, VIDEO_HEIGHT))
+
+        if image_paths and len(image_paths) >= 3:
+            final_video = self._create_with_overlay_mode(
+                video, audio, vtt_path, target_duration, image_paths
+            )
+        elif use_blurred_bg:
+            final_video = self._create_with_blurred_mode(
+                video, audio, vtt_path, target_duration, speed_factor
+            )
+        else:
+            final_video = self._create_simple_mode(
+                video, audio, vtt_path, target_duration, speed_factor
+            )
+
+        final_video.write_videofile(
+            output_path,
+            codec=VIDEO_CODEC,
+            audio_codec=AUDIO_CODEC,
+            fps=VIDEO_FPS,
+            threads=ENCODING_THREADS,
+            preset=ENCODING_PRESET,
+            ffmpeg_params=["-crf", str(ENCODING_CRF)],
+            logger="bar",
+        )
+
+        try:
+            final_video.close()
+            video.close()
+        except (OSError, AttributeError):
+            pass
+
+        total_time = self._get_video_duration(output_path)
+        log(f"Video compilation: {total_time:.2f}s", "SUCCESS")
+        return True
+
+    def _create_with_overlay_mode(
+        self,
+        video: VideoFileClip,
+        audio: AudioFileClip,
+        vtt_path: str,
+        target_duration: float,
+        image_paths: list,
+    ) -> CompositeVideoClip:
+        """Create video with image overlays (experimental style)."""
+        content_h = int(VIDEO_HEIGHT * 0.45)
+        fg = video.resized((VIDEO_WIDTH, content_h)).with_position(("center", "center"))
+
+        final_video = (
+            CompositeVideoClip([fg], size=(VIDEO_WIDTH, VIDEO_HEIGHT))
+            .with_speed_scaled(target_duration / video.duration)
+            .with_duration(target_duration)
+            .with_audio(audio)
+        )
+
+        if vtt_path and Path(vtt_path).exists():
+            subs = self.subtitle_renderer.render_subtitles(
+                vtt_path, (VIDEO_WIDTH, VIDEO_HEIGHT)
+            )
+            if subs:
+                subtitle_composite = CompositeVideoClip(
+                    subs, size=(VIDEO_WIDTH, VIDEO_HEIGHT)
+                ).with_effects([FadeIn(0.1)])
+                final_video = CompositeVideoClip([final_video, subtitle_composite])
+
+        final_video = final_video.with_effects([FadeIn(0.1)])
+        return final_video
+
+    def _create_with_blurred_mode(
+        self,
+        video: VideoFileClip,
+        audio: AudioFileClip,
+        vtt_path: str,
+        target_duration: float,
+        speed_factor: float,
+    ) -> CompositeVideoClip:
+        """Create video with blurred background (yt_summarizer style)."""
+        blurred = self._create_blurred_background_from_clip(video)
+
+        content_h = int(VIDEO_HEIGHT * 0.45)
+        fg = video.resized((VIDEO_WIDTH, content_h)).with_position(("center", "center"))
+
+        base_composite = CompositeVideoClip(
+            [blurred, fg], size=(VIDEO_WIDTH, VIDEO_HEIGHT)
+        )
+
+        final_video = (
+            base_composite.with_speed_scaled(speed_factor)
+            .with_duration(target_duration)
+            .with_audio(audio)
+        )
+
+        if vtt_path and Path(vtt_path).exists():
+            subs = self.subtitle_renderer.render_subtitles(
+                vtt_path, (VIDEO_WIDTH, VIDEO_HEIGHT)
+            )
+            if subs:
+                subtitle_composite = CompositeVideoClip(
+                    subs, size=(VIDEO_WIDTH, VIDEO_HEIGHT)
+                ).with_effects([FadeIn(0.1)])
+                final_video = CompositeVideoClip([final_video, subtitle_composite])
+
+        final_video = final_video.with_effects([FadeIn(0.1)])
+        return final_video
+
+    def _create_simple_mode(
+        self,
+        video: VideoFileClip,
+        audio: AudioFileClip,
+        vtt_path: str,
+        target_duration: float,
+        speed_factor: float,
+    ) -> CompositeVideoClip:
+        """Simple video without blur."""
+        final_video = (
+            video.with_speed_scaled(speed_factor)
+            .with_duration(target_duration)
+            .with_audio(audio)
+        )
+
+        if vtt_path and Path(vtt_path).exists():
+            subs = self.subtitle_renderer.render_subtitles(
+                vtt_path, (VIDEO_WIDTH, VIDEO_HEIGHT)
+            )
+            if subs:
+                subtitle_composite = CompositeVideoClip(
+                    subs, size=(VIDEO_WIDTH, VIDEO_HEIGHT)
+                ).with_effects([FadeIn(0.1)])
+                final_video = CompositeVideoClip([final_video, subtitle_composite])
+
+        final_video = final_video.with_effects([FadeIn(0.1)])
+        return final_video
+
+    def _create_blurred_background_from_clip(
+        self, video: VideoFileClip
+    ) -> VideoFileClip:
+        """Create blurred background from loaded video clip."""
+        return self.create_blurred_background(str(video.filename))
+
+    def _get_video_duration(self, video_path: str) -> float:
+        return get_video_duration(video_path)

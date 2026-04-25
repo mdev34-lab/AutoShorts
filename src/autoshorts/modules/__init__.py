@@ -20,6 +20,7 @@ from .utils import (
     setup_directories,
 )
 from .video_background import VideoBackgroundManager
+from .video_compositor import VideoCompositor
 
 __all__ = [
     "SubtitleSystem",
@@ -30,6 +31,7 @@ __all__ = [
     "ScriptGenerator",
     "TTSSystem",
     "VideoBackgroundManager",
+    "VideoCompositor",
     "setup_directories",
     "create_temp_dir",
     "clean_temp_files",
