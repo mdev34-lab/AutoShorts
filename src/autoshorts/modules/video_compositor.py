@@ -4,7 +4,7 @@ Video Compositor Module
 
 Provides unified video compositing with:
 - Blurred background (using FFmpeg boxblur)
-- AI image overlays with bounce effects
+- AI image overlays with smooth easing animation
 - Subtitle integration
 - Standardized rendering pipeline
 
@@ -19,8 +19,9 @@ from moviepy import (
     CompositeVideoClip,
     ImageClip,
     VideoFileClip,
+    concatenate_videoclips,
 )
-from moviepy.video.fx import FadeIn, FadeOut, MultiplyColor, Resize
+from moviepy.video.fx import FadeIn, MultiplyColor, Resize
 
 from .config import (
     AUDIO_CODEC,
@@ -29,8 +30,6 @@ from .config import (
     ENCODING_PRESET,
     ENCODING_THREADS,
     IMAGE_BOUNCE_INTERVAL,
-    IMAGE_FADE_IN_TIME,
-    IMAGE_FADE_OUT_TIME,
     IMAGE_OVERLAY_DURATION,
     MAX_ZOOM_FACTOR,
     VIDEO_CODEC,
@@ -38,7 +37,7 @@ from .config import (
     VIDEO_HEIGHT,
     VIDEO_WIDTH,
 )
-from .subtitle_system import SubtitleRenderer
+from .subtitle_system import SubtitleSystem
 from .utils import create_temp_dir, get_video_duration, log
 
 
@@ -48,13 +47,13 @@ class VideoCompositor:
 
     Provides common compositing operations:
     - Blurred background (yt_summarizer style)
-    - Image overlays with bounce (experimental style)
+    - Image overlays with smooth animation (experimental style)
     - Combined pipeline with subtitles
     """
 
     def __init__(self):
         self.temp_dir = create_temp_dir()
-        self.subtitle_renderer = SubtitleRenderer()
+        self.subtitle_system = SubtitleSystem()
 
     def _apply_fast_blur(
         self, input_path: str, output_path: str, radius: int = BLUR_RADIUS
@@ -78,23 +77,54 @@ class VideoCompositor:
         subprocess.run(cmd, capture_output=True, check=True)
         return output_path
 
-    def _apply_bounce_effect(self, clip, duration: float):
-        """Apply bounce zoom effect to overlay clips."""
+    def _ease_in_out_cubic(self, t: float) -> float:
+        """Smooth cubic ease-in-out: slow start, fast middle, slow end."""
+        if t <= 0:
+            return 0.0
+        if t >= 1:
+            return 1.0
+        if t < 0.5:
+            return 4 * t * t * t
+        return 1 - pow(-2 * t + 2, 3) / 2
 
-        def bounce_scale(t: float) -> float:
+    def _apply_overlay_animation(self, clip, duration: float):
+        """Smooth zoom-in-then-zoom-out + opacity on overlay clips."""
+
+        def scale_anim(t: float) -> float:
             if duration <= 0:
                 return 1.0
             progress = t / duration
-            if progress < 0.3:
-                return 1.0 + (MAX_ZOOM_FACTOR - 1.0) * (progress / 0.3)
-            elif progress < 0.7:
+            fade_in_end = 0.15
+            fade_out_start = 0.85
+
+            if progress < fade_in_end:
+                return 1.0 + (MAX_ZOOM_FACTOR - 1.0) * self._ease_in_out_cubic(
+                    progress / fade_in_end
+                )
+            elif progress < fade_out_start:
                 return MAX_ZOOM_FACTOR
             else:
-                return MAX_ZOOM_FACTOR - (MAX_ZOOM_FACTOR - 1.0) * (
-                    (progress - 0.7) / 0.3
-                )
+                out_progress = (progress - fade_out_start) / (1.0 - fade_out_start)
+                return MAX_ZOOM_FACTOR - (
+                    MAX_ZOOM_FACTOR - 1.0
+                ) * self._ease_in_out_cubic(out_progress)
 
-        return clip.with_effects([Resize(bounce_scale)])
+        def opacity_anim(t: float) -> float:
+            if duration <= 0:
+                return 1.0
+            progress = t / duration
+            fade_in_end = 0.15
+            fade_out_start = 0.85
+
+            if progress < fade_in_end:
+                return self._ease_in_out_cubic(progress / fade_in_end)
+            elif progress < fade_out_start:
+                return 1.0
+            else:
+                out_progress = (progress - fade_out_start) / (1.0 - fade_out_start)
+                return max(1.0 - self._ease_in_out_cubic(out_progress), 0.0)
+
+        return clip.with_effects([Resize(scale_anim), MultiplyColor(opacity_anim)])
 
     def create_blurred_background(self, video_path: str) -> VideoFileClip:
         """
@@ -126,7 +156,7 @@ class VideoCompositor:
 
         self._apply_fast_blur(temp_small, temp_blur_path, radius=BLUR_RADIUS)
 
-        blurred = VideoFileClip(temp_blur_path).resized((720, 1280))
+        blurred = VideoFileClip(temp_blur_path).resized((VIDEO_WIDTH, VIDEO_HEIGHT))
         return blurred.with_effects([MultiplyColor(0.5)])
 
     def create_video_with_image_overlays(
@@ -141,8 +171,7 @@ class VideoCompositor:
 
         Features:
         - Background video cropped to 9:16
-        - Image overlays with bounce effect
-        - Fade in/out transitions
+        - Image overlays with smooth animation
         - Audio integration
         """
         log("Creating video with image overlays...")
@@ -155,10 +184,6 @@ class VideoCompositor:
         )
         if duration <= IMAGE_BOUNCE_INTERVAL:
             num_overlays = 0
-
-        log(
-            f"Creating {num_overlays} overlay events ({IMAGE_BOUNCE_INTERVAL}s interval)"
-        )
 
         bg_w, bg_h = background_video.size
         if bg_w / bg_h < 9 / 16:
@@ -176,8 +201,6 @@ class VideoCompositor:
 
         if background_video.duration < duration:
             loops = int(duration / background_video.duration) + 1
-            from moviepy import concatenate_videoclips
-
             background_video = concatenate_videoclips([background_video] * loops)
 
         background_video = background_video.subclipped(0, duration)
@@ -199,10 +222,7 @@ class VideoCompositor:
             try:
                 img_clip = ImageClip(img_path).with_duration(overlay_duration)
                 img_clip = img_clip.resized((VIDEO_WIDTH, VIDEO_HEIGHT))
-                img_clip = self._apply_bounce_effect(img_clip, overlay_duration)
-                img_clip = img_clip.with_effects(
-                    [FadeIn(IMAGE_FADE_IN_TIME), FadeOut(IMAGE_FADE_OUT_TIME)]
-                )
+                img_clip = self._apply_overlay_animation(img_clip, overlay_duration)
                 img_clip = img_clip.with_start(start_time)
                 overlay_clips.append(img_clip)
             except Exception as e:
@@ -259,7 +279,7 @@ class VideoCompositor:
             log("Video has zero duration", "ERROR")
             return False
 
-        source_duration = self._get_video_duration(video_path)
+        source_duration = video.duration
         speed_factor = source_duration / target_duration
 
         w, h = video.size
@@ -316,8 +336,6 @@ class VideoCompositor:
     ) -> CompositeVideoClip:
         """
         Create video with blurred background + AI image overlays (experimental style).
-
-        Same as blurred mode but adds AI images as top layer overlays every 5 seconds.
         """
         blurred = self._create_blurred_background_from_clip(video)
 
@@ -340,7 +358,7 @@ class VideoCompositor:
             )
 
         if vtt_path and Path(vtt_path).exists():
-            subs = self.subtitle_renderer.render_subtitles(
+            subs = self.subtitle_system.render_subtitles(
                 vtt_path, (VIDEO_WIDTH, VIDEO_HEIGHT)
             )
             if subs:
@@ -379,10 +397,7 @@ class VideoCompositor:
             try:
                 img_clip = ImageClip(img_path).with_duration(overlay_duration)
                 img_clip = img_clip.resized((VIDEO_WIDTH, VIDEO_HEIGHT))
-                img_clip = self._apply_bounce_effect(img_clip, overlay_duration)
-                img_clip = img_clip.with_effects(
-                    [FadeIn(IMAGE_FADE_IN_TIME), FadeOut(IMAGE_FADE_OUT_TIME)]
-                )
+                img_clip = self._apply_overlay_animation(img_clip, overlay_duration)
                 img_clip = img_clip.with_start(start_time)
                 overlay_clips.append(img_clip)
             except Exception as e:
@@ -420,7 +435,7 @@ class VideoCompositor:
         )
 
         if vtt_path and Path(vtt_path).exists():
-            subs = self.subtitle_renderer.render_subtitles(
+            subs = self.subtitle_system.render_subtitles(
                 vtt_path, (VIDEO_WIDTH, VIDEO_HEIGHT)
             )
             if subs:
@@ -448,7 +463,7 @@ class VideoCompositor:
         )
 
         if vtt_path and Path(vtt_path).exists():
-            subs = self.subtitle_renderer.render_subtitles(
+            subs = self.subtitle_system.render_subtitles(
                 vtt_path, (VIDEO_WIDTH, VIDEO_HEIGHT)
             )
             if subs:

@@ -176,4 +176,8 @@ def main():
 if __name__ == "__main__":
     import time
 
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        raise SystemExit(130) from None

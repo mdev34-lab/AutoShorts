@@ -17,38 +17,18 @@ import time
 from pathlib import Path
 
 import requests
-from moviepy import (
-    AudioFileClip,
-    CompositeVideoClip,
-    ImageClip,
-    VideoFileClip,
-    concatenate_videoclips,
-)
-from moviepy.video.fx import FadeIn, FadeOut, Resize
 
 from .modules import (
     API_KEY,
     API_TIMEOUT_IMAGE,
-    AUDIO_CODEC,
-    ENCODING_CRF,
-    ENCODING_PRESET,
-    ENCODING_THREADS,
     IMAGE_BOUNCE_INTERVAL,
     IMAGE_CACHE_DIR,
-    IMAGE_FADE_IN_TIME,
-    IMAGE_FADE_OUT_TIME,
-    IMAGE_OVERLAY_DURATION,
     IMG_URL,
-    MAX_ZOOM_FACTOR,
     MODEL_IMAGE,
-    VIDEO_CODEC,
-    VIDEO_FPS,
-    VIDEO_HEIGHT,
-    VIDEO_WIDTH,
     ScriptGenerator,
-    SubtitleSystem,
     TTSSystem,
     VideoBackgroundManager,
+    VideoCompositor,
     clean_temp_files,
     create_temp_dir,
     log,
@@ -62,8 +42,8 @@ class ExperimentalYouTubeProcessor:
     def __init__(self):
         self.script_generator = ScriptGenerator()
         self.tts_system = TTSSystem()
-        self.subtitle_system = SubtitleSystem()
         self.video_bg = VideoBackgroundManager()
+        self.video_compositor = VideoCompositor()
         self.temp_dir = create_temp_dir()
 
     def _generate_search_query(self, subject: str) -> str:
@@ -301,146 +281,6 @@ class ExperimentalYouTubeProcessor:
 
         return img_paths
 
-    def _apply_bounce_effect(self, clip, duration):
-        """Apply a simple bounce effect to overlay clips."""
-
-        def bounce_scale(t):
-            """Create a bounce in-out effect."""
-            if duration <= 0:
-                return 1.0
-
-            # Simple bounce: scale up slightly then back to normal
-            progress = t / duration
-
-            if progress < 0.3:
-                # Scale up phase
-                scale = 1.0 + (MAX_ZOOM_FACTOR - 1.0) * (progress / 0.3)
-            elif progress < 0.7:
-                # Hold at max scale
-                scale = MAX_ZOOM_FACTOR
-            else:
-                # Scale back down
-                scale = MAX_ZOOM_FACTOR - (MAX_ZOOM_FACTOR - 1.0) * (
-                    (progress - 0.7) / 0.3
-                )
-
-            return scale
-
-        return clip.with_effects([Resize(bounce_scale)])
-
-    def _create_video_with_overlays(
-        self,
-        background_video_path: str,
-        img_paths: list,
-        audio_path: str,
-        total_duration: float,
-    ) -> AudioFileClip:
-        """Create video with YouTube background and AI image overlays."""
-        log("Creating video with AI image overlays on background...")
-
-        # Load background video and audio
-        background_video = VideoFileClip(background_video_path)
-        audio = AudioFileClip(audio_path)
-
-        # Calculate overlay count - start from first interval, not 0
-        num_overlays = max(
-            1, int((total_duration - IMAGE_BOUNCE_INTERVAL) / IMAGE_BOUNCE_INTERVAL) + 1
-        )
-        if total_duration <= IMAGE_BOUNCE_INTERVAL:
-            num_overlays = 0
-
-        log(
-            f"Creating {num_overlays} overlay events ({IMAGE_BOUNCE_INTERVAL}s interval, starting at {IMAGE_BOUNCE_INTERVAL}s) for {total_duration:.1f}s video"
-        )
-
-        # Prepare background video - crop and resize to 9:16
-        bg_w, bg_h = background_video.size
-        if bg_w / bg_h < 9 / 16:  # Video is too tall/narrow
-            new_w = int(bg_h * (16 / 9))
-            background_video = background_video.cropped(
-                x1=(bg_w - new_w) // 2, width=new_w
-            )
-        elif bg_w / bg_h > 16 / 9:  # Video is too wide/short
-            new_h = int(bg_w * (9 / 16))
-            background_video = background_video.cropped(
-                y1=(bg_h - new_h) // 2, height=new_h
-            )
-
-        background_video = background_video.resized((VIDEO_WIDTH, VIDEO_HEIGHT))
-
-        # Adjust background video duration to match audio
-        if background_video.duration < total_duration:
-            # Loop the background video if needed
-            loop_count = int(total_duration / background_video.duration) + 1
-            background_video = concatenate_videoclips([background_video] * loop_count)
-
-        background_video = background_video.subclipped(0, total_duration)
-
-        # Create overlay clips
-        overlay_clips = []
-
-        for i in range(num_overlays):
-            # Calculate timing for this overlay - start from IMAGE_BOUNCE_INTERVAL, not 0
-            start_time = (i + 1) * IMAGE_BOUNCE_INTERVAL
-            if start_time >= total_duration:
-                break
-
-            end_time = min(start_time + IMAGE_OVERLAY_DURATION, total_duration)
-            overlay_duration = end_time - start_time
-
-            if overlay_duration <= 0 or not img_paths:
-                continue
-
-            # Select image for this overlay
-            img_index = i % len(img_paths)
-            img_path = img_paths[img_index]
-
-            try:
-                # Create full-screen image overlay
-                img_clip = ImageClip(img_path).with_duration(overlay_duration)
-
-                # Resize image to fill entire video (full screen)
-                img_clip = img_clip.resized((VIDEO_WIDTH, VIDEO_HEIGHT))
-
-                # Apply bounce effect
-                img_clip = self._apply_bounce_effect(img_clip, overlay_duration)
-
-                # Apply fade in/out
-                img_clip = img_clip.with_effects(
-                    [FadeIn(IMAGE_FADE_IN_TIME), FadeOut(IMAGE_FADE_OUT_TIME)]
-                )
-
-                # Set the timing for when this overlay appears
-                img_clip = img_clip.with_start(start_time)
-
-                overlay_clips.append(img_clip)
-                log(
-                    f"Added overlay {i + 1}: {img_path} at {start_time:.1f}s ({overlay_duration:.1f}s duration)"
-                )
-
-            except Exception as e:
-                log(f"Error creating overlay {img_path}: {e}", "ERROR")
-                continue
-
-        # Composite background with overlays
-        if overlay_clips:
-            final_video = CompositeVideoClip(
-                [background_video] + overlay_clips, size=(VIDEO_WIDTH, VIDEO_HEIGHT)
-            )
-        else:
-            final_video = background_video
-
-        # Add audio
-        final_video = final_video.with_audio(audio)
-
-        # Cleanup background (ignore close errors - Windows file locks)
-        try:
-            background_video.close()
-        except (OSError, AttributeError):
-            pass
-
-        return final_video
-
     async def process_experimental_video(
         self, subject: str, output_path: str, youtube_url: str = None
     ) -> bool:
@@ -497,57 +337,24 @@ class ExperimentalYouTubeProcessor:
                 )
                 return False
 
-            # Step 6: Create video with overlays
+            # Step 6: Create video with overlays via VideoCompositor
             log("Step 5: Creating video with AI image overlays...")
-            video = self._create_video_with_overlays(
-                video_path, img_paths, audio_path, duration
-            )
-
-            # Step 7: Add subtitles
-            log("Step 6: Adding subtitles...")
-            if vtt_path:
-                subs = self.subtitle_system.render_subtitles(
-                    vtt_path, (VIDEO_WIDTH, VIDEO_HEIGHT)
-                )
-                if subs:
-                    subtitle_composite = CompositeVideoClip(
-                        subs, size=(VIDEO_WIDTH, VIDEO_HEIGHT)
-                    )
-                    subtitle_composite = subtitle_composite.with_effects([FadeIn(0.1)])
-                    final_video = CompositeVideoClip([video, subtitle_composite])
-                else:
-                    final_video = video
-            else:
-                final_video = video
-
-            # Apply fade-in to final video
-            final_video = final_video.with_effects([FadeIn(0.1)])
-
-            # Step 8: Render final video
-            log("Step 7: Rendering final video...")
-            final_video.write_videofile(
+            if self.video_compositor.create_output_video(
+                video_path,
+                audio_path,
+                vtt_path,
                 output_path,
-                codec=VIDEO_CODEC,
-                audio_codec=AUDIO_CODEC,
-                fps=VIDEO_FPS,
-                threads=ENCODING_THREADS,
-                preset=ENCODING_PRESET,
-                ffmpeg_params=["-crf", str(ENCODING_CRF)],
-                logger="bar",
-            )
-
-            # Cleanup handles
-            final_video.close()
-            video.close()
-
-            # Allow file handles to release on Windows
-            time.sleep(1)
-
-            total_time = time.time() - start_time
-            log(f"Experimental video completed in {total_time:.2f}s", "SUCCESS")
-            log(f"Video saved to: {output_path}", "SUCCESS")
-
-            return True
+                duration,
+                use_blurred_bg=True,
+                image_paths=img_paths,
+            ):
+                total_time = time.time() - start_time
+                log(f"Experimental video completed in {total_time:.2f}s", "SUCCESS")
+                log(f"Video saved to: {output_path}", "SUCCESS")
+                return True
+            else:
+                log("Video processing failed", "ERROR")
+                return False
 
         except Exception as e:
             log(f"Error in experimental processing: {e}", "ERROR")
@@ -674,8 +481,16 @@ async def main():
 
 def cli_main():
     """Synchronous entry point for script execution."""
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        raise SystemExit(130) from None
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        raise SystemExit(130) from None

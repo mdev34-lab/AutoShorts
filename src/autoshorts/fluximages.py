@@ -425,4 +425,8 @@ async def main():
 
 
 if __name__ == "__main__" and not sys.gettrace():
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        raise SystemExit(130) from None

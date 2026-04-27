@@ -234,19 +234,22 @@ class SubtitleRenderer:
 
     def _create_simple_subtitles(self, vtt_path: str, video_size: tuple) -> list:
         """
-        Fast subtitle rendering - whole line at once, no word highlighting.
+        Fast subtitle rendering - whole caption at once, no word highlighting.
 
-        Optimized with:
-        - Pre-calculated line dimensions
-        - Batch position calculations
-        - Single clip per line (not per word)
+        Uses PIL for pixel-perfect text rendering on full-canvas ImageClip
+        to avoid TextClip bounding-box clipping issues with strokes.
         """
+        from io import BytesIO
+
+        from moviepy import ImageClip
+
         width, height = video_size
         clips = []
 
         base_y = int(height * SUBTITLE_START_Y_RATIO)
         font_size = FONT_SIZE
-        stroke_width = STROKE_WIDTH
+        stroke_width = max(STROKE_WIDTH, 1)
+        canvas_pad = 60
 
         try:
             vtt = webvtt.read(vtt_path)
@@ -265,50 +268,68 @@ class SubtitleRenderer:
                     text, max_chars_per_line=MAX_CHARS_PER_LINE
                 )
 
-                current_y = max(base_y, int(height * 0.3))
-
                 line_heights = []
+                line_widths = []
                 for line_words in lines:
                     line_text = " ".join(line_words)
-                    _, h = _get_line_dimensions_cached(line_text, self.font, font_size)
+                    w, h = _get_line_dimensions_cached(line_text, self.font, font_size)
                     line_heights.append(max(h, font_size))
+                    line_widths.append(w)
 
+                total_text_w = max(line_widths) if line_widths else font_size
+                total_text_h = sum(line_heights) + LINE_SPACING * max(0, len(lines) - 1)
+                canvas_w = total_text_w + canvas_pad * 2
+                canvas_h = total_text_h + canvas_pad * 2
+
+                pil_font = _load_pil_font(self.font, font_size)
+
+                img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+                draw = ImageDraw.Draw(img)
+
+                y_offset = canvas_pad
                 for line_idx, line_words in enumerate(lines):
                     line_text = " ".join(line_words)
-                    try:
-                        clip = TextClip(
-                            text=line_text,
-                            font_size=font_size,
-                            font=self.font,
-                            color=COLOR_TEXT,
-                            stroke_color=COLOR_STROKE,
+                    line_h = line_heights[line_idx]
+                    line_w = line_widths[line_idx]
+                    x_offset = (canvas_w - line_w) // 2
+
+                    if stroke_width > 0:
+                        draw.text(
+                            (x_offset, y_offset),
+                            line_text,
+                            font=pil_font,
+                            fill=tuple(
+                                int(COLOR_STROKE.lstrip("#")[i : i + 2], 16)
+                                for i in (0, 2, 4)
+                            )
+                            + (255,),
                             stroke_width=stroke_width,
-                            method="label",
-                            transparent=True,
                         )
-                        if clip.size[0] <= 0 or clip.size[1] <= 0:
-                            clip.close()
-                            continue
 
-                        current_x = (width - clip.size[0]) // 2
-                        clips.append(
-                            clip.with_position((current_x, current_y))
-                            .with_start(start_time)
-                            .with_duration(duration)
+                    draw.text(
+                        (x_offset, y_offset),
+                        line_text,
+                        font=pil_font,
+                        fill=tuple(
+                            int(COLOR_TEXT.lstrip("#")[i : i + 2], 16)
+                            for i in (0, 2, 4)
                         )
-                    except Exception as e:
-                        print(f"Error creating simple subtitle: {e}")
-                        continue
-
-                    line_h = (
-                        line_heights[line_idx]
-                        if line_idx < len(line_heights)
-                        else font_size
+                        + (255,),
                     )
-                    current_y += line_h + LINE_SPACING
+
+                    y_offset += line_h + LINE_SPACING
+
+                buf = BytesIO()
+                img.save(buf, format="PNG")
+                buf.seek(0)
+
+                clip = ImageClip(buf).with_duration(duration)
+                clip = clip.with_position(((width - canvas_w) // 2, base_y))
+
+                clips.append(clip.with_start(start_time))
 
         except Exception as e:
-            print(f"Error processing subtitles: {e}")
+            print(f"Error creating simple subtitles: {e}")
 
         return clips
 
