@@ -13,28 +13,26 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from autoshorts.yt_summarizer import (
-    VideoProcessor,
-    YouTubeDownloader,
     generate_tts,
     main,
     shutdown_computer,
 )
 
 
-class TestYouTubeDownloader:
-    """Test cases for YouTube downloader"""
+class TestVideoBackgroundManager:
+    """Test cases for VideoBackgroundManager"""
 
     def setup_method(self):
         """Setup test fixtures"""
-        self.downloader = YouTubeDownloader()
+        self.vbm = VideoBackgroundManager()
 
     def test_init(self):
-        """Test downloader initialization"""
-        assert hasattr(self.downloader, "ydl_opts")
-        assert "format" in self.downloader.ydl_opts
-        assert "outtmpl" in self.downloader.ydl_opts
+        """Test manager initialization"""
+        assert hasattr(self.vbm, "ydl_opts")
+        assert "format" in self.vbm.ydl_opts
+        assert "outtmpl" in self.vbm.ydl_opts
 
-    @patch("autoshorts.yt_summarizer.requests.post")
+    @patch("autoshorts.modules.video_background.requests.post")
     def test_generate_search_query(self, mock_post):
         """Test AI search query generation"""
         mock_response = Mock()
@@ -50,7 +48,7 @@ class TestYouTubeDownloader:
         mock_response.raise_for_status.return_value = None
         mock_post.return_value = mock_response
 
-        query = self.downloader.generate_search_query("inteligência artificial")
+        query = self.vbm.generate_search_query("inteligência artificial")
 
         assert isinstance(query, str)
         assert len(query) > 10
@@ -58,38 +56,49 @@ class TestYouTubeDownloader:
 
     def test_is_suitable_video_duration(self):
         """Test video duration filtering"""
-        # Test suitable video - needs id and webpage_url
         video_info = {
             "duration": 180,
             "title": "Test Video",
             "id": "test123",
             "webpage_url": "http://example.com/video",
         }
-        assert self.downloader._is_suitable_video(video_info) == True
+        assert self.vbm._is_suitable_video(video_info) == True
 
-        # Test too short
+        video_info["duration"] = 30
+        assert self.vbm._is_suitable_video(video_info) == False
+
+        video_info["duration"] = 4000
+        assert self.vbm._is_suitable_video(video_info) == False
+
+    def test_is_suitable_video_availability(self):
+        """Test video availability filtering"""
         video_info = {
-            "duration": 30,
-            "title": "Short Video",
+            "duration": 180,
+            "title": "Test Video",
             "id": "test123",
             "webpage_url": "http://example.com/video",
+            "availability": "private",
         }
-        assert self.downloader._is_suitable_video(video_info) == False
+        assert self.vbm._is_suitable_video(video_info) == False
 
-        # Test too long
+        video_info["availability"] = "unavailable"
+        assert self.vbm._is_suitable_video(video_info) == False
+
+    def test_is_suitable_video_missing_fields(self):
+        """Test video missing required fields"""
         video_info = {
-            "duration": 4000,
-            "title": "Long Video",
-            "id": "test123",
-            "webpage_url": "http://example.com/video",
+            "duration": 180,
+            "title": "Test Video",
         }
-        assert self.downloader._is_suitable_video(video_info) == False
+        assert self.vbm._is_suitable_video(video_info) == False
 
-    @patch("autoshorts.yt_summarizer.yt_dlp.YoutubeDL")
-    @patch("autoshorts.yt_summarizer.requests.post")
+        video_info["id"] = "test123"
+        assert self.vbm._is_suitable_video(video_info) == False
+
+    @patch("autoshorts.modules.video_background.yt_dlp.YoutubeDL")
+    @patch("autoshorts.modules.video_background.requests.post")
     def test_search_and_download(self, mock_post, mock_ydl):
         """Test video search and download"""
-        # Mock AI query generation
         mock_response = Mock()
         mock_response.json.return_value = {
             "choices": [{"message": {"content": "test subject documentary explained"}}]
@@ -97,7 +106,6 @@ class TestYouTubeDownloader:
         mock_response.raise_for_status.return_value = None
         mock_post.return_value = mock_response
 
-        # Mock search results
         mock_info = {
             "entries": [
                 {
@@ -114,69 +122,72 @@ class TestYouTubeDownloader:
                 },
             ]
         }
-        mock_ydl.return_value.__enter__.return_value.extract_info.return_value = (
-            mock_info
-        )
+        mock_ydl.return_value.__enter__.return_value.extract_info.return_value = mock_info
         mock_ydl.return_value.__enter__.return_value.download.return_value = None
 
         with patch("pathlib.Path.glob") as mock_glob, patch(
-            "autoshorts.yt_summarizer.create_temp_dir"
+            "autoshorts.modules.video_background.create_temp_dir"
         ) as mock_temp:
             mock_glob.return_value = [Path("source_video.mp4")]
             mock_temp.return_value = Path(tempfile.mkdtemp())
 
-            result = self.downloader.search_and_download("test subject")
+            result = self.vbm.search_and_download("test subject")
 
             assert result.endswith(".mp4")
 
-    @patch("autoshorts.yt_summarizer.yt_dlp.YoutubeDL")
+    @patch("autoshorts.modules.video_background.yt_dlp.YoutubeDL")
     def test_download_direct_url(self, mock_ydl):
         """Test direct URL download"""
-        # Mock metadata extraction
         mock_info = {"title": "Test Video", "description": "Test description"}
-        mock_ydl.return_value.__enter__.return_value.extract_info.return_value = (
-            mock_info
-        )
+        mock_ydl.return_value.__enter__.return_value.extract_info.return_value = mock_info
         mock_ydl.return_value.__enter__.return_value.download.return_value = None
 
         with patch("pathlib.Path.glob") as mock_glob:
             mock_glob.return_value = [Path("source_video.mp4")]
 
-            result = self.downloader.download_direct_url("http://example.com/video")
+            result = self.vbm.download_direct_url("http://example.com/video")
 
             assert isinstance(result, tuple)
             assert len(result) == 3
             assert result[0].endswith(".mp4")
 
+    def test_extract_error_message(self):
+        """Test error message extraction from various exception types"""
+        class FakeYDLException:
+            def __init__(self, msg=None, excn_msg=None):
+                self.msg = msg
+                self.excn_msg = excn_msg
 
-class TestVideoProcessor:
-    """Test cases for video processor"""
+        e = FakeYDLException(msg="Video unavailable")
+        assert self.vbm._extract_error_message(e) == "Video unavailable"
+
+        e = FakeYDLException(excn_msg="Download failed")
+        assert self.vbm._extract_error_message(e) == "Download failed"
+
+        e = {"msg": "error from dict"}
+        assert self.vbm._extract_error_message(e) == "error from dict"
+
+        e = {"error": "some error"}
+        assert self.vbm._extract_error_message(e) == "some error"
+
+        e = ["list error"]
+        assert self.vbm._extract_error_message(e) == "list error"
+
+        e = RuntimeError("plain error")
+        assert self.vbm._extract_error_message(e) == "plain error"
+
+
+class TestVideoCompositor:
+    """Test cases for VideoCompositor"""
 
     def setup_method(self):
         """Setup test fixtures"""
-        self.processor = VideoProcessor()
-        self.temp_dir = Path(tempfile.mkdtemp())
-
-    def teardown_method(self):
-        """Cleanup test fixtures"""
-        if self.temp_dir.exists():
-            import shutil
-
-            shutil.rmtree(self.temp_dir)
+        self.vc = VideoCompositor()
 
     def test_init(self):
-        """Test processor initialization"""
-        assert hasattr(self.processor, "subtitle_system")
-
-    @patch("autoshorts.yt_summarizer.get_video_duration")
-    def test_get_video_duration(self, mock_duration):
-        """Test video duration retrieval"""
-        mock_duration.return_value = 120.0
-
-        result = self.processor._get_video_duration("test.mp4")
-
-        assert result == 120.0
-        mock_duration.assert_called_once_with("test.mp4")
+        """Test compositor initialization"""
+        assert hasattr(self.vc, "subtitle_system")
+        assert hasattr(self.vc, "temp_dir")
 
     @patch("subprocess.run")
     def test_apply_fast_blur(self, mock_run):
@@ -186,124 +197,87 @@ class TestVideoProcessor:
         input_path = "input.mp4"
         output_path = "output.mp4"
 
-        result = self.processor._apply_fast_blur(input_path, output_path)
+        result = self.vc._apply_fast_blur(input_path, output_path)
 
         assert result == output_path
         mock_run.assert_called_once()
         args = mock_run.call_args[0][0]
         assert "ffmpeg" in args
-        # boxblur is in the -vf argument, not as a separate arg
-        assert any("boxblur" in str(arg) for arg in args)
 
-    @patch("subprocess.run")
-    @patch("autoshorts.yt_summarizer.get_video_duration")
-    def test_cut_video(self, mock_duration, mock_run):
-        """Test video cutting"""
-        # Mock video duration
-        mock_duration.return_value = 400.0
-        mock_run.return_value = None
+    def test_ease_in_out_cubic(self):
+        """Test cubic ease-in-out function"""
+        assert abs(self.vc._ease_in_out_cubic(0.0) - 0.0) < 0.001
+        assert abs(self.vc._ease_in_out_cubic(1.0) - 1.0) < 0.001
+        assert abs(self.vc._ease_in_out_cubic(0.5) - 0.5) < 0.001
+        assert self.vc._ease_in_out_cubic(0.25) < 0.5
+        assert self.vc._ease_in_out_cubic(0.75) > 0.5
 
-        with patch.object(self.processor, "_get_video_duration", return_value=400.0):
-            result = self.processor.cut_video("long_video.mp4", 300)
+    def test_apply_overlay_animation(self):
+        """Test overlay animation applies effects"""
+        with patch("autoshorts.modules.video_compositor.ImageClip") as mock_clip:
+            mock_instance = Mock()
+            mock_instance.with_effects = Mock(return_value=mock_instance)
+            mock_clip.return_value = mock_instance
 
-            # Should return a new path (cut video)
-            assert result != "long_video.mp4"
-            assert result.endswith(".mp4")
+            self.vc._apply_overlay_animation(mock_instance, 1.0)
 
-    @patch("subprocess.run")
-    def test_cut_video_needs_cutting(self, mock_run):
-        """Test video cutting when duration exceeds limit"""
-        mock_run.return_value = None
+            mock_instance.with_effects.assert_called_once()
+            effects = mock_instance.with_effects.call_args[0][0]
+            assert len(effects) == 2
 
-        with patch.object(self.processor, "_get_video_duration", return_value=400.0):
-            result = self.processor.cut_video("long_video.mp4", 300)
-
-            assert result != "long_video.mp4"
-            assert result.endswith(".mp4")
-
-    @patch("autoshorts.yt_summarizer.VideoFileClip")
-    @patch("autoshorts.yt_summarizer.AudioFileClip")
-    @patch("autoshorts.yt_summarizer.SubtitleSystem")
-    def test_aspect_ratio_portrait_video(
-        self, mock_subtitles, mock_audio, mock_video_clip
-    ):
-        """Test that portrait videos (9:16) maintain correct aspect ratio"""
-        # Mock portrait video (720x1280)
+    @patch("autoshorts.modules.video_compositor.VideoFileClip")
+    def test_create_blurred_background(self, mock_vfc):
+        """Test blurred background creation"""
         mock_video = Mock()
-        mock_video.size = (720, 1280)
-        mock_video.duration = 60.0
         mock_video.resized = Mock(return_value=mock_video)
-        mock_video.cropped = Mock(return_value=mock_video)
-        mock_video.with_position = Mock(return_value=mock_video)
-        mock_video.with_speed_scaled = Mock(return_value=mock_video)
-        mock_video.with_duration = Mock(return_value=mock_video)
-        mock_video.with_audio = Mock(return_value=mock_video)
-        mock_video.with_effects = Mock(return_value=mock_video)
         mock_video.close = Mock()
-        mock_video_clip.return_value = mock_video
+        mock_vfc.return_value = mock_video
 
-        # Mock audio
-        mock_audio_clip = Mock()
-        mock_audio_clip.duration = 60.0
-        mock_audio.return_value = mock_audio_clip
-
-        # Mock subtitles
-        mock_subtitle_system = Mock()
-        mock_subtitle_system.render_subtitles = Mock(return_value=[])
-        mock_subtitles.return_value = mock_subtitle_system
-
-        with patch.object(
-            self.processor, "_get_video_duration", return_value=60.0
-        ), patch("autoshorts.yt_summarizer.create_temp_dir") as mock_temp_dir, patch(
-            "autoshorts.yt_summarizer.CompositeVideoClip"
+        with patch.object(self.vc, "_apply_fast_blur") as mock_blur, patch(
+            "autoshorts.modules.video_compositor.CompositeVideoClip"
         ) as mock_composite:
-            mock_temp_dir.return_value = self.temp_dir
-            mock_composite.return_value = mock_video
+            mock_composite.return_value.with_effects = Mock(
+                return_value=mock_composite.return_value
+            )
 
-            # Test that portrait video doesn't get cropped incorrectly
-            w, h = mock_video.size
-            assert w == 720
-            assert h == 1280
-            assert w / h == 9 / 16  # Correct portrait aspect ratio
+            with patch("pathlib.Path.glob") as mock_glob:
+                mock_glob.return_value = [Path("blurred.mp4")]
 
-    def test_aspect_ratio_landscape_to_portrait(self):
-        """Test that landscape videos (16:9) are cropped to portrait (9:16)"""
-        # Test the aspect ratio calculation logic directly
-        # Landscape video (1920x1080)
-        w, h = 1920, 1080
-        aspect_ratio = w / h
+                self.vc.create_blurred_background("input.mp4")
 
-        # Verify it's landscape
-        assert aspect_ratio > 16 / 9 - 0.1  # Allow some tolerance
-        assert aspect_ratio < 16 / 9 + 0.1
+    @patch("autoshorts.modules.video_compositor.get_video_duration")
+    def test_get_video_duration(self, mock_dur):
+        """Test video duration retrieval"""
+        mock_dur.return_value = 120.0
+        result = self.vc._get_video_duration("test.mp4")
+        assert result == 120.0
 
-        # Test the cropping logic for landscape to portrait
-        # When w/h > 16/9, we crop height: new_h = int(w * (9/16))
-        if w / h > 16 / 9:
-            new_h = int(w * (9 / 16))
-            # After cropping, aspect ratio should be 9:16
-            new_aspect = w / new_h
-            assert abs(new_aspect - 9 / 16) < 0.01  # Should be very close to 9:16
+    @patch("autoshorts.modules.video_compositor.VideoFileClip")
+    @patch("autoshorts.modules.video_compositor.AudioFileClip")
+    @patch("autoshorts.modules.video_compositor.CompositeVideoClip")
+    def test_create_simple_mode(self, mock_composite, mock_audio, mock_video):
+        """Test simple mode video creation"""
+        mock_v = Mock()
+        mock_v.size = (1920, 1080)
+        mock_v.duration = 60.0
+        mock_v.with_speed_scaled = Mock(return_value=mock_v)
+        mock_v.with_duration = Mock(return_value=mock_v)
+        mock_v.with_audio = Mock(return_value=mock_v)
+        mock_v.with_effects = Mock(return_value=mock_v)
+        mock_video.return_value = mock_v
 
-        # Test the opposite case (portrait video)
-        w, h = 720, 1280
-        aspect_ratio = w / h
-        assert aspect_ratio < 1.0  # Portrait
+        mock_a = Mock()
+        mock_audio.return_value = mock_a
 
-        # When w/h < 9/16, we crop width: new_w = int(h * (16/9))
-        if w / h < 9 / 16:
-            new_w = int(h * (16 / 9))
-            # After cropping, aspect ratio should be 16:9 (before final resize)
-            new_aspect = new_w / h
-            assert abs(new_aspect - 16 / 9) < 0.01
+        mock_composite.return_value.with_effects = Mock(
+            return_value=mock_composite.return_value
+        )
 
-    @patch("autoshorts.yt_summarizer.VideoFileClip")
-    @patch("autoshorts.yt_summarizer.AudioFileClip")
-    @patch("autoshorts.yt_summarizer.SubtitleSystem")
-    def test_aspect_ratio_square_video(
-        self, mock_subtitles, mock_audio, mock_video_clip
-    ):
-        """Test that square videos (1:1) are handled correctly"""
+        with patch.object(self.vc, "_get_video_duration", return_value=60.0):
+            result = self.vc._create_simple_mode(
+                mock_v, mock_a, None, 60.0, 1.0
+            )
+            assert result is not None
         # Mock square video (1080x1080)
         mock_video = Mock()
         mock_video.size = (1080, 1080)

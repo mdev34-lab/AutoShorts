@@ -139,6 +139,19 @@ CRITICAL RULES:
             return False
         return True
 
+    def _extract_error_message(self, exc: Exception) -> str:
+        """Extract a readable message from yt-dlp exceptions."""
+        if hasattr(exc, "msg") and exc.msg:
+            return str(exc.msg)
+        if hasattr(exc, "excn_msg") and exc.excn_msg:
+            return str(exc.excn_msg)
+        if isinstance(exc, dict):
+            msg = exc.get("msg") or exc.get("error") or ""
+            return str(msg) if msg else str(exc)
+        if isinstance(exc, list) and exc:
+            return self._extract_error_message(exc[0])
+        return str(exc)
+
     def search_and_download(self, subject: str) -> str:
         """Search and download video using optimized filtering."""
         search_query = f"ytsearch20:{self.generate_search_query(subject)}"
@@ -200,14 +213,19 @@ CRITICAL RULES:
                                 return str(video_files[0])
                             return str(download_temp_dir / "source_video.mp4")
                     except Exception as e:
-                        error_msg = str(e).lower()
-                        if "not available" in error_msg or "unavailable" in error_msg:
+                        error_msg = self._extract_error_message(e)
+                        error_lower = error_msg.lower()
+                        if (
+                            "not available" in error_lower
+                            or "unavailable" in error_lower
+                            or "private" in error_lower
+                        ):
                             log(
                                 "Video unavailable, trying next candidate...", "WARNING"
                             )
                             continue
                         else:
-                            log(f"Download failed: {e}", "ERROR")
+                            log(f"Download failed: {error_msg}", "ERROR")
                             if attempt == len(suitable_videos) - 1:
                                 raise
 
