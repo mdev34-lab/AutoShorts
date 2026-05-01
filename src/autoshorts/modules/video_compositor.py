@@ -182,6 +182,8 @@ class VideoCompositor:
         # Safety: trim to target duration with small buffer
         if result.duration > target_duration:
             result = result.subclipped(0, target_duration - 0.05)
+        # Strip audio to avoid MoviePy composite bugs
+        result.audio = None
         log(f"Jumpcut time: {time.time() - jumpcut_start:.2f}s")
         return result
 
@@ -375,16 +377,43 @@ class VideoCompositor:
         if final_video.duration > safe_duration:
             final_video = final_video.subclipped(0, safe_duration)
 
+        # Write video without audio to avoid MoviePy composite bugs
+        temp_video = output_path.replace(".mp4", "_temp.mp4")
         final_video.write_videofile(
-            output_path,
+            temp_video,
             codec=VIDEO_CODEC,
-            audio_codec=AUDIO_CODEC,
+            audio=False,
             fps=VIDEO_FPS,
             threads=ENCODING_THREADS,
             preset=ENCODING_PRESET,
             ffmpeg_params=["-crf", str(ENCODING_CRF)],
             logger="bar",
         )
+
+        # Add audio back using ffmpeg (more reliable than MoviePy)
+        audio_path = audio if isinstance(audio, str) else None
+        if audio_path and Path(audio_path).exists():
+            import subprocess
+
+            cmd = [
+                "ffmpeg",
+                "-y",
+                "-i",
+                temp_video,
+                "-i",
+                audio_path,
+                "-c:v",
+                "copy",
+                "-c:a",
+                AUDIO_CODEC,
+                "-shortest",
+                output_path,
+            ]
+            subprocess.run(cmd, capture_output=True, check=True)
+            Path(temp_video).unlink(missing_ok=True)
+        else:
+            Path(temp_video).rename(output_path)
+
         log(f"Encode time: {time.time() - encode_start:.2f}s")
 
         try:
