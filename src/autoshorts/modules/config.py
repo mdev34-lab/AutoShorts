@@ -68,6 +68,9 @@ TTS_RATE = os.getenv("TTS_RATE", "+20%")
 # Background Processing Mode
 BG_MODE = os.getenv("BG_MODE", "jumpcut")  # jumpcut or speed
 JUMPCUT_SEG_DUR = _get_env_float("JUMPCUT_SEG_DUR", 4.0)
+BG_SKIP_INTRO = _get_env_float(
+    "BG_SKIP_INTRO", 25.0
+)  # Skip first N seconds (intros/logos)
 
 # Directory Configuration
 TEMP_DIR_PREFIX = os.getenv("TEMP_DIR_PREFIX", "autoshorts_")

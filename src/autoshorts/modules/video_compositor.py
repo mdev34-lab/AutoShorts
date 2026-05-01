@@ -28,6 +28,7 @@ from moviepy.video.fx import FadeIn, MultiplyColor, Resize
 from .config import (
     AUDIO_CODEC,
     BG_MODE,
+    BG_SKIP_INTRO,
     BLUR_RADIUS,
     ENCODING_CRF,
     ENCODING_PRESET,
@@ -147,22 +148,29 @@ class VideoCompositor:
         seg_dur = JUMPCUT_SEG_DUR
         source_dur = clip.duration
 
-        if source_dur <= target_duration:
-            return (
-                clip.subclipped(0, target_duration)
-                if source_dur < target_duration
-                else clip
-            )
+        # Skip intro section (default 25s) to avoid logos/intros
+        start_offset = min(BG_SKIP_INTRO, source_dur * 0.3)
+        effective_dur = source_dur - start_offset
+
+        if effective_dur <= 0:
+            start_offset = 0
+            effective_dur = source_dur
+
+        if effective_dur <= target_duration:
+            end_time = min(start_offset + target_duration, source_dur)
+            return clip.subclipped(start_offset, end_time)
 
         num_segs = max(1, int(target_duration / seg_dur))
-        max_start = source_dur - seg_dur
+        max_start = int(effective_dur - seg_dur) + int(start_offset)
 
-        if max_start <= 0:
-            return clip.subclipped(0, min(target_duration, source_dur))
+        if max_start <= int(start_offset):
+            end_time = min(start_offset + target_duration, source_dur)
+            return clip.subclipped(start_offset, end_time)
 
         starts = sorted(
             random.sample(
-                range(0, int(max_start)), min(num_segs, int(max_start // seg_dur))
+                range(int(start_offset), int(start_offset + max_start)),
+                min(num_segs, max_start // int(seg_dur)),
             )
         )
         segments = [clip.subclipped(s, min(s + seg_dur, source_dur)) for s in starts]
