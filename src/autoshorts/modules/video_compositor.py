@@ -14,6 +14,7 @@ DRY principle: reused by both yt_summarizer and experimental modes.
 import subprocess
 from pathlib import Path
 
+import numpy as np
 from moviepy import (
     AudioFileClip,
     CompositeVideoClip,
@@ -124,7 +125,14 @@ class VideoCompositor:
                 out_progress = (progress - fade_out_start) / (1.0 - fade_out_start)
                 return max(1.0 - self._ease_in_out_cubic(out_progress), 0.0)
 
-        return clip.with_effects([Resize(scale_anim), MultiplyColor(opacity_anim)])
+        # MultiplyColor doesn't accept functions in MoviePy 2.x, use transform instead
+        def apply_opacity(get_frame, t):
+            frame = get_frame(t)
+            opacity = opacity_anim(t)
+            return np.minimum(255, frame * opacity).astype("uint8")
+
+        clip = clip.with_effects([Resize(scale_anim)])
+        return clip.transform(apply_opacity)
 
     def create_blurred_background(self, video_path: str) -> VideoFileClip:
         """
@@ -346,8 +354,9 @@ class VideoCompositor:
             [blurred, fg], size=(VIDEO_WIDTH, VIDEO_HEIGHT)
         )
 
+        speed_factor = video.duration / target_duration
         final_video = (
-            base_composite.with_speed_scaled(target_duration / video.duration)
+            base_composite.with_speed_scaled(speed_factor)
             .with_duration(target_duration)
             .with_audio(audio)
         )
