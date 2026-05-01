@@ -150,29 +150,32 @@ class VideoCompositor:
 
         # Skip intro section (default 25s) to avoid logos/intros
         start_offset = min(BG_SKIP_INTRO, source_dur * 0.3)
-        effective_dur = source_dur - start_offset
+        available_dur = source_dur - start_offset
 
-        if effective_dur <= 0:
+        if available_dur <= 0:
             start_offset = 0
-            effective_dur = source_dur
+            available_dur = source_dur
 
-        if effective_dur <= target_duration:
+        if available_dur <= target_duration:
+            end_time = min(start_offset + target_duration, source_dur)
+            return clip.subclipped(start_offset, end_time)
+
+        # Calculate valid start positions (after intro, ensuring segment fits)
+        max_seg_start = source_dur - seg_dur
+        if max_seg_start <= start_offset:
             end_time = min(start_offset + target_duration, source_dur)
             return clip.subclipped(start_offset, end_time)
 
         num_segs = max(1, int(target_duration / seg_dur))
-        max_start = int(effective_dur - seg_dur) + int(start_offset)
+        available_starts = list(range(int(start_offset), int(max_seg_start)))
 
-        if max_start <= int(start_offset):
+        # Ensure we don't request more samples than available
+        num_samples = min(num_segs, len(available_starts))
+        if num_samples <= 0:
             end_time = min(start_offset + target_duration, source_dur)
             return clip.subclipped(start_offset, end_time)
 
-        starts = sorted(
-            random.sample(
-                range(int(start_offset), int(start_offset + max_start)),
-                min(num_segs, max_start // int(seg_dur)),
-            )
-        )
+        starts = sorted(random.sample(available_starts, num_samples))
         segments = [clip.subclipped(s, min(s + seg_dur, source_dur)) for s in starts]
         result = concatenate_videoclips(segments)
 
