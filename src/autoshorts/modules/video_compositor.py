@@ -12,6 +12,7 @@ DRY principle: reused by both yt_summarizer and experimental modes.
 """
 
 import subprocess
+import time
 from pathlib import Path
 
 import numpy as np
@@ -142,6 +143,7 @@ class VideoCompositor:
 
         from moviepy import concatenate_videoclips
 
+        jumpcut_start = time.time()
         seg_dur = JUMPCUT_SEG_DUR
         source_dur = clip.duration
 
@@ -168,6 +170,7 @@ class VideoCompositor:
 
         if result.duration > target_duration:
             result = result.subclipped(0, target_duration)
+        log(f"Jumpcut time: {time.time() - jumpcut_start:.2f}s")
         return result
 
     def create_blurred_background(self, video_path: str) -> VideoFileClip:
@@ -315,15 +318,20 @@ class VideoCompositor:
             bool: Success status
         """
         log("Compiling final video...")
+        total_start = time.time()
 
+        log("Loading video and audio...")
+        load_start = time.time()
         video = VideoFileClip(video_path)
         audio = AudioFileClip(audio_path)
+        log(f"Load time: {time.time() - load_start:.2f}s")
 
         if video.duration <= 0:
             log("Video has zero duration", "ERROR")
             return False
 
         w, h = video.size
+        crop_start = time.time()
         if w / h < 9 / 16:
             new_w = int(h * (16 / 9))
             video = video.cropped(x1=(w - new_w) // 2, width=new_w)
@@ -332,7 +340,9 @@ class VideoCompositor:
             video = video.cropped(y1=(h - new_h) // 2, height=new_h)
 
         video = video.resized((VIDEO_WIDTH, VIDEO_HEIGHT))
+        log(f"Crop/resize time: {time.time() - crop_start:.2f}s")
 
+        mode_start = time.time()
         if image_paths and len(image_paths) >= 3:
             final_video = self._create_with_overlay_mode(
                 video, audio, vtt_path, target_duration, image_paths
@@ -345,7 +355,9 @@ class VideoCompositor:
             final_video = self._create_simple_mode(
                 video, audio, vtt_path, target_duration
             )
+        log(f"Mode processing time: {time.time() - mode_start:.2f}s")
 
+        encode_start = time.time()
         final_video.write_videofile(
             output_path,
             codec=VIDEO_CODEC,
@@ -356,6 +368,7 @@ class VideoCompositor:
             ffmpeg_params=["-crf", str(ENCODING_CRF)],
             logger="bar",
         )
+        log(f"Encode time: {time.time() - encode_start:.2f}s")
 
         try:
             final_video.close()
@@ -363,8 +376,7 @@ class VideoCompositor:
         except (OSError, AttributeError):
             pass
 
-        total_time = self._get_video_duration(output_path)
-        log(f"Video compilation: {total_time:.2f}s", "SUCCESS")
+        log(f"Video compilation total: {time.time() - total_start:.2f}s", "SUCCESS")
         return True
 
     def _create_with_overlay_mode(
