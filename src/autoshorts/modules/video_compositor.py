@@ -179,8 +179,9 @@ class VideoCompositor:
         segments = [clip.subclipped(s, min(s + seg_dur, source_dur)) for s in starts]
         result = concatenate_videoclips(segments)
 
+        # Safety: trim to target duration with small buffer
         if result.duration > target_duration:
-            result = result.subclipped(0, target_duration)
+            result = result.subclipped(0, target_duration - 0.05)
         log(f"Jumpcut time: {time.time() - jumpcut_start:.2f}s")
         return result
 
@@ -369,6 +370,11 @@ class VideoCompositor:
         log(f"Mode processing time: {time.time() - mode_start:.2f}s")
 
         encode_start = time.time()
+        # Safety: ensure duration doesn't exceed target (prevents frame index errors)
+        safe_duration = target_duration - 0.05
+        if final_video.duration > safe_duration:
+            final_video = final_video.subclipped(0, safe_duration)
+
         final_video.write_videofile(
             output_path,
             codec=VIDEO_CODEC,
@@ -434,96 +440,17 @@ class VideoCompositor:
                 vtt_path, (VIDEO_WIDTH, VIDEO_HEIGHT)
             )
             if subs:
-                subtitle_composite = CompositeVideoClip(
-                    subs, size=(VIDEO_WIDTH, VIDEO_HEIGHT)
-                ).with_effects([FadeIn(0.1)])
-                final_video = CompositeVideoClip([final_video, subtitle_composite])
+                # Ensure subtitles don't exceed video duration
+                safe_subs = []
+                for sub in subs:
+                    if hasattr(sub, "start") and sub.start < target_duration:
+                        safe_subs.append(sub)
+                if safe_subs:
+                    subtitle_composite = CompositeVideoClip(
+                        safe_subs, size=(VIDEO_WIDTH, VIDEO_HEIGHT)
+                    )
+                    final_video = CompositeVideoClip([final_video, subtitle_composite])
 
-        final_video = final_video.with_effects([FadeIn(0.1)])
-        return final_video
-
-    def _add_image_overlays(
-        self,
-        base_video: CompositeVideoClip,
-        image_paths: list,
-        duration: float,
-    ) -> CompositeVideoClip:
-        """Add AI image overlays on top of video."""
-        overlay_clips = []
-        num_overlays = max(
-            1, int((duration - IMAGE_BOUNCE_INTERVAL) / IMAGE_BOUNCE_INTERVAL) + 1
-        )
-
-        for i in range(num_overlays):
-            start_time = (i + 1) * IMAGE_BOUNCE_INTERVAL
-            if start_time >= duration:
-                break
-
-            end_time = min(start_time + IMAGE_OVERLAY_DURATION, duration)
-            overlay_duration = end_time - start_time
-
-            if overlay_duration <= 0:
-                continue
-
-            img_path = image_paths[i % len(image_paths)]
-            try:
-                img_clip = ImageClip(img_path).with_duration(overlay_duration)
-                img_clip = img_clip.resized((VIDEO_WIDTH, VIDEO_HEIGHT))
-                img_clip = self._apply_overlay_animation(img_clip, overlay_duration)
-                img_clip = img_clip.with_start(start_time)
-                overlay_clips.append(img_clip)
-            except Exception as e:
-                log(f"Error creating overlay: {e}", "ERROR")
-                continue
-
-        if overlay_clips:
-            return CompositeVideoClip(
-                [base_video] + overlay_clips, size=(VIDEO_WIDTH, VIDEO_HEIGHT)
-            )
-        return base_video
-
-    def _create_with_blurred_mode(
-        self,
-        video: VideoFileClip,
-        audio: AudioFileClip,
-        vtt_path: str,
-        target_duration: float,
-    ) -> CompositeVideoClip:
-        """Create video with blurred background (yt_summarizer style)."""
-        blurred = self._create_blurred_background_from_clip(video)
-
-        content_h = int(VIDEO_HEIGHT * 0.45)
-        fg = video.resized((VIDEO_WIDTH, content_h)).with_position(("center", "center"))
-
-        base_composite = CompositeVideoClip(
-            [blurred, fg], size=(VIDEO_WIDTH, VIDEO_HEIGHT)
-        )
-
-        if BG_MODE == "jumpcut":
-            final_video = (
-                self._jumpcut_background(base_composite, target_duration)
-                .with_duration(target_duration)
-                .with_audio(audio)
-            )
-        else:
-            speed_factor = video.duration / target_duration
-            final_video = (
-                base_composite.with_speed_scaled(speed_factor)
-                .with_duration(target_duration)
-                .with_audio(audio)
-            )
-
-        if vtt_path and Path(vtt_path).exists():
-            subs = self.subtitle_system.render_subtitles(
-                vtt_path, (VIDEO_WIDTH, VIDEO_HEIGHT)
-            )
-            if subs:
-                subtitle_composite = CompositeVideoClip(
-                    subs, size=(VIDEO_WIDTH, VIDEO_HEIGHT)
-                ).with_effects([FadeIn(0.1)])
-                final_video = CompositeVideoClip([final_video, subtitle_composite])
-
-        final_video = final_video.with_effects([FadeIn(0.1)])
         return final_video
 
     def _create_simple_mode(
