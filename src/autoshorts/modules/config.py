@@ -66,7 +66,7 @@ VOICE = os.getenv("VOICE", "de-DE-FlorianMultilingualNeural")
 TTS_RATE = os.getenv("TTS_RATE", "+20%")
 
 # Background Processing Mode
-BG_MODE = os.getenv("BG_MODE", "speed")  # speed or jumpcut
+BG_MODE = os.getenv("BG_MODE", "jumpcut")  # jumpcut or speed
 JUMPCUT_SEG_DUR = _get_env_float("JUMPCUT_SEG_DUR", 4.0)
 
 # Directory Configuration
