@@ -65,6 +65,10 @@ MODEL_IMAGE = os.getenv("MODEL_IMAGE", "flux")
 VOICE = os.getenv("VOICE", "de-DE-FlorianMultilingualNeural")
 TTS_RATE = os.getenv("TTS_RATE", "+20%")
 
+# Background Processing Mode
+BG_MODE = os.getenv("BG_MODE", "speed")  # speed or jumpcut
+JUMPCUT_SEG_DUR = _get_env_float("JUMPCUT_SEG_DUR", 4.0)
+
 # Directory Configuration
 TEMP_DIR_PREFIX = os.getenv("TEMP_DIR_PREFIX", "autoshorts_")
 OUTPUT_DIR = _get_env_path("OUTPUT_DIR", "output")
@@ -86,8 +90,12 @@ VIDEO_CODEC = os.getenv("VIDEO_CODEC", "libx264")
 AUDIO_CODEC = os.getenv("AUDIO_CODEC", "aac")
 
 # Font Configuration
-DEFAULT_FONT = os.getenv("DEFAULT_FONT", "arialbd.ttf")
+PROJECT_FONTS_DIR = Path(__file__).parent.parent.parent / "fonts"
+DEFAULT_FONT = os.getenv(
+    "DEFAULT_FONT", str(PROJECT_FONTS_DIR / "BebasNeue-Regular.ttf")
+)
 FALLBACK_FONTS = [
+    str(PROJECT_FONTS_DIR / "BebasNeue-Regular.ttf"),
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
     "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",

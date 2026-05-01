@@ -26,12 +26,14 @@ from moviepy.video.fx import FadeIn, MultiplyColor, Resize
 
 from .config import (
     AUDIO_CODEC,
+    BG_MODE,
     BLUR_RADIUS,
     ENCODING_CRF,
     ENCODING_PRESET,
     ENCODING_THREADS,
     IMAGE_BOUNCE_INTERVAL,
     IMAGE_OVERLAY_DURATION,
+    JUMPCUT_SEG_DUR,
     MAX_ZOOM_FACTOR,
     VIDEO_CODEC,
     VIDEO_FPS,
@@ -133,6 +135,40 @@ class VideoCompositor:
 
         clip = clip.with_effects([Resize(scale_anim)])
         return clip.transform(apply_opacity)
+
+    def _jumpcut_background(self, clip, target_duration: float) -> VideoFileClip:
+        """Create background by randomly sampling segments instead of speed scaling."""
+        import random
+
+        from moviepy import concatenate_videoclips
+
+        seg_dur = JUMPCUT_SEG_DUR
+        source_dur = clip.duration
+
+        if source_dur <= target_duration:
+            return (
+                clip.subclipped(0, target_duration)
+                if source_dur < target_duration
+                else clip
+            )
+
+        num_segs = max(1, int(target_duration / seg_dur))
+        max_start = source_dur - seg_dur
+
+        if max_start <= 0:
+            return clip.subclipped(0, min(target_duration, source_dur))
+
+        starts = sorted(
+            random.sample(
+                range(0, int(max_start)), min(num_segs, int(max_start // seg_dur))
+            )
+        )
+        segments = [clip.subclipped(s, min(s + seg_dur, source_dur)) for s in starts]
+        result = concatenate_videoclips(segments)
+
+        if result.duration > target_duration:
+            result = result.subclipped(0, target_duration)
+        return result
 
     def create_blurred_background(self, video_path: str) -> VideoFileClip:
         """
@@ -287,9 +323,6 @@ class VideoCompositor:
             log("Video has zero duration", "ERROR")
             return False
 
-        source_duration = video.duration
-        speed_factor = source_duration / target_duration
-
         w, h = video.size
         if w / h < 9 / 16:
             new_w = int(h * (16 / 9))
@@ -306,11 +339,11 @@ class VideoCompositor:
             )
         elif use_blurred_bg:
             final_video = self._create_with_blurred_mode(
-                video, audio, vtt_path, target_duration, speed_factor
+                video, audio, vtt_path, target_duration
             )
         else:
             final_video = self._create_simple_mode(
-                video, audio, vtt_path, target_duration, speed_factor
+                video, audio, vtt_path, target_duration
             )
 
         final_video.write_videofile(
@@ -354,12 +387,19 @@ class VideoCompositor:
             [blurred, fg], size=(VIDEO_WIDTH, VIDEO_HEIGHT)
         )
 
-        speed_factor = video.duration / target_duration
-        final_video = (
-            base_composite.with_speed_scaled(speed_factor)
-            .with_duration(target_duration)
-            .with_audio(audio)
-        )
+        if BG_MODE == "jumpcut":
+            final_video = (
+                self._jumpcut_background(base_composite, target_duration)
+                .with_duration(target_duration)
+                .with_audio(audio)
+            )
+        else:
+            speed_factor = video.duration / target_duration
+            final_video = (
+                base_composite.with_speed_scaled(speed_factor)
+                .with_duration(target_duration)
+                .with_audio(audio)
+            )
 
         if image_paths:
             final_video = self._add_image_overlays(
@@ -425,7 +465,6 @@ class VideoCompositor:
         audio: AudioFileClip,
         vtt_path: str,
         target_duration: float,
-        speed_factor: float,
     ) -> CompositeVideoClip:
         """Create video with blurred background (yt_summarizer style)."""
         blurred = self._create_blurred_background_from_clip(video)
@@ -437,11 +476,19 @@ class VideoCompositor:
             [blurred, fg], size=(VIDEO_WIDTH, VIDEO_HEIGHT)
         )
 
-        final_video = (
-            base_composite.with_speed_scaled(speed_factor)
-            .with_duration(target_duration)
-            .with_audio(audio)
-        )
+        if BG_MODE == "jumpcut":
+            final_video = (
+                self._jumpcut_background(base_composite, target_duration)
+                .with_duration(target_duration)
+                .with_audio(audio)
+            )
+        else:
+            speed_factor = video.duration / target_duration
+            final_video = (
+                base_composite.with_speed_scaled(speed_factor)
+                .with_duration(target_duration)
+                .with_audio(audio)
+            )
 
         if vtt_path and Path(vtt_path).exists():
             subs = self.subtitle_system.render_subtitles(
@@ -462,14 +509,21 @@ class VideoCompositor:
         audio: AudioFileClip,
         vtt_path: str,
         target_duration: float,
-        speed_factor: float,
     ) -> CompositeVideoClip:
         """Simple video without blur."""
-        final_video = (
-            video.with_speed_scaled(speed_factor)
-            .with_duration(target_duration)
-            .with_audio(audio)
-        )
+        if BG_MODE == "jumpcut":
+            final_video = (
+                self._jumpcut_background(video, target_duration)
+                .with_duration(target_duration)
+                .with_audio(audio)
+            )
+        else:
+            speed_factor = video.duration / target_duration
+            final_video = (
+                video.with_speed_scaled(speed_factor)
+                .with_duration(target_duration)
+                .with_audio(audio)
+            )
 
         if vtt_path and Path(vtt_path).exists():
             subs = self.subtitle_system.render_subtitles(
