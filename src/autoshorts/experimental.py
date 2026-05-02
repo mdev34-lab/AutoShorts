@@ -14,7 +14,9 @@ import os
 import platform
 import random
 import time
+import traceback
 from pathlib import Path
+from urllib.parse import quote
 
 import requests
 
@@ -33,6 +35,7 @@ from .modules import (
     create_temp_dir,
     log,
     setup_directories,
+    shutdown_computer,
 )
 
 
@@ -258,8 +261,6 @@ class ExperimentalYouTubeProcessor:
 
             log(f"Generating experimental image {i + 1}/{num_images}...")
             try:
-                from urllib.parse import quote
-
                 safe_prompt = quote(prompt)
                 seed = random.randint(0, 999999)
                 url = f"{IMG_URL}{safe_prompt}?model={MODEL_IMAGE}&width=1080&height=1920&seed={seed}&nologo=true"
@@ -358,26 +359,8 @@ class ExperimentalYouTubeProcessor:
 
         except Exception as e:
             log(f"Error in experimental processing: {e}", "ERROR")
-            import traceback
-
             traceback.print_exc()
             return False
-
-
-def shutdown_computer():
-    """Shutdown the computer after processing is complete."""
-    try:
-        system = platform.system()
-        if system == "Windows":
-            os.system("shutdown /s /t 30")
-            log("Computer will shutdown in 30 seconds...")
-        elif system == "Linux" or system == "Darwin":
-            os.system("shutdown -h +1")
-            log("Computer will shutdown in 1 minute...")
-        else:
-            log("Unsupported OS for auto-shutdown", "WARNING")
-    except Exception as e:
-        log(f"Failed to shutdown computer: {e}", "ERROR")
 
 
 async def main():

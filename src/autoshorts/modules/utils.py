@@ -132,3 +132,22 @@ def get_file_size_mb(file_path: str) -> float:
         return size_bytes / (1024 * 1024)
     except OSError:
         return 0.0
+
+
+def shutdown_computer():
+    """Shutdown the computer after processing is complete."""
+    import os
+    import platform
+
+    try:
+        system = platform.system()
+        if system == "Windows":
+            os.system("shutdown /s /t 30")
+            log("Computer will shutdown in 30 seconds...")
+        elif system == "Linux" or system == "Darwin":
+            os.system("shutdown -h +1")
+            log("Computer will shutdown in 1 minute...")
+        else:
+            log("Unsupported OS for auto-shutdown", "WARNING")
+    except Exception as e:
+        log(f"Failed to shutdown computer: {e}", "ERROR")

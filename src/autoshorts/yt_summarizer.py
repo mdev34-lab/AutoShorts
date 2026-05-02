@@ -6,6 +6,9 @@ Uses VideoCompositor module for unified video processing.
 """
 
 import argparse
+import asyncio
+import time
+import traceback
 from pathlib import Path
 
 from .modules import (
@@ -17,28 +20,10 @@ from .modules import (
     create_temp_dir,
     log,
     setup_directories,
+    shutdown_computer,
 )
 
 TEMP_DIR = create_temp_dir()
-
-
-def shutdown_computer():
-    """Shutdown the computer after processing is complete."""
-    import os
-    import platform
-
-    try:
-        system = platform.system()
-        if system == "Windows":
-            os.system("shutdown /s /t 30")
-            log("Computer will shutdown in 30 seconds...")
-        elif system == "Linux" or system == "Darwin":
-            os.system("shutdown -h +1")
-            log("Computer will shutdown in 1 minute...")
-        else:
-            log("Unsupported OS for auto-shutdown", "WARNING")
-    except Exception as e:
-        log(f"Failed to shutdown computer: {e}", "ERROR")
 
 
 async def generate_tts(paragraphs, output_dir):
@@ -152,24 +137,23 @@ def main():
 
                 clean_temp_files(TEMP_DIR)
 
-            except Exception as e:
-                log(f"Error processing '{subject or 'URL video'}': {e}", "ERROR")
-                continue
+        except Exception as e:
+            log(f"Error processing '{subject or 'URL video'}': {e}", "ERROR")
+            traceback.print_exc()
+            continue
 
-        log(
-            f"Batch processing complete: {success_count}/{total_count} videos created successfully",
-            "SUCCESS",
-        )
+    log(
+        f"Batch processing complete: {success_count}/{total_count} videos created successfully",
+        "SUCCESS",
+    )
 
-        if args.goodnight and success_count > 0:
-            shutdown_computer()
+    if args.goodnight and success_count > 0:
+        shutdown_computer()
 
-    except Exception as e:
-        log(f"Fatal error: {e}", "ERROR")
-        import traceback
-
-        traceback.print_exc()
-    finally:
+except Exception as e:
+    log(f"Fatal error: {e}", "ERROR")
+    traceback.print_exc()
+finally:
         clean_temp_files(TEMP_DIR)
 
 

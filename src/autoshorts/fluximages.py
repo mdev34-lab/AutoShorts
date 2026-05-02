@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 import time
+import traceback
 from pathlib import Path
 from urllib.parse import quote
 
@@ -44,6 +45,7 @@ from .modules import (
     SubtitleSystem,
     TTSSystem,
     log,
+    shutdown_computer,
 )
 
 
@@ -252,8 +254,6 @@ class VideoEngine:
         video = video.with_audio(audio)
 
         # Generate VTT file first
-        import tempfile
-
         temp_vtt_dir = tempfile.mkdtemp()
         vtt_path = self.subtitle_system.generate_subtitles(
             paragraphs, video.duration, temp_vtt_dir
@@ -284,22 +284,6 @@ class VideoEngine:
         audio.close()
         for c in clips:
             c.close()
-
-
-def shutdown_computer():
-    """Shutdown the computer after processing is complete."""
-    try:
-        system = platform.system()
-        if system == "Windows":
-            os.system("shutdown /s /t 30")
-            log("Computer will shutdown in 30 seconds...")
-        elif system == "Linux" or system == "Darwin":
-            os.system("shutdown -h +1")
-            log("Computer will shutdown in 1 minute...")
-        else:
-            log("Unsupported OS for auto-shutdown", "WARNING")
-    except Exception as e:
-        log(f"Failed to shutdown computer: {e}", "ERROR")
 
 
 async def main():
@@ -414,8 +398,6 @@ async def main():
 
     except Exception as e:
         log(f"PROCESS FAILED: {e}", "ERROR")
-        import traceback
-
         traceback.print_exc()
     finally:
         log("Cleaning up...")

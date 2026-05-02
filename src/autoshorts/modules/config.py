@@ -76,7 +76,6 @@ BG_SKIP_INTRO = _get_env_float(
 TEMP_DIR_PREFIX = os.getenv("TEMP_DIR_PREFIX", "autoshorts_")
 OUTPUT_DIR = _get_env_path("OUTPUT_DIR", "output")
 IMAGE_CACHE_DIR = Path(tempfile.gettempdir()) / f"{TEMP_DIR_PREFIX}image_cache"
-TEMP_DIR_PREFIX = os.getenv("TEMP_DIR_PREFIX", "autoshorts_")
 
 # YouTube Configuration
 YOUTUBE_MAX_HEIGHT = _get_env_int("YOUTUBE_MAX_HEIGHT", 360)
