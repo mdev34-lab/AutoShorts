@@ -12,12 +12,9 @@ from .tts_system import TTSSystem
 from .utils import (
     clean_temp_files,
     create_temp_dir,
-    ensure_dir_exists,
-    get_file_size_mb,
     get_system_font,
-    get_video_duration,
-    safe_filename,
     setup_directories,
+    shutdown_computer,
 )
 from .video_background import VideoBackgroundManager
 from .video_compositor import VideoCompositor
