@@ -373,7 +373,8 @@ class VideoCompositor:
 
         encode_start = time.time()
         # Safety: ensure duration doesn't exceed target (prevents frame index errors)
-        safe_duration = target_duration - 0.05
+        # Increase safety margin to 0.5s to avoid edge cases with composite clips
+        safe_duration = target_duration - 0.5
         if final_video.duration > safe_duration:
             final_video = final_video.subclipped(0, safe_duration)
 
@@ -517,9 +518,21 @@ class VideoCompositor:
                 continue
 
         if overlay_clips:
-            return CompositeVideoClip(
-                [base_video] + overlay_clips, size=(VIDEO_WIDTH, VIDEO_HEIGHT)
-            )
+            # Ensure all overlay clips are bounded within video duration
+            # This prevents list index errors in CompositeVideoClip frame_function
+            safe_overlays = []
+            for clip in overlay_clips:
+                if hasattr(clip, 'start') and clip.start is not None:
+                    if clip.start < duration:
+                        safe_overlays.append(clip)
+                else:
+                    safe_overlays.append(clip)
+            
+            if safe_overlays:
+                return CompositeVideoClip(
+                    [base_video] + safe_overlays, size=(VIDEO_WIDTH, VIDEO_HEIGHT)
+                )
+        
         return base_video
 
     def _create_simple_mode(
