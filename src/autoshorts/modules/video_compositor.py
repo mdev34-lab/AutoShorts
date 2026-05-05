@@ -372,12 +372,6 @@ class VideoCompositor:
         log(f"Mode processing time: {time.time() - mode_start:.2f}s")
 
         encode_start = time.time()
-        # Safety: ensure duration doesn't exceed target (prevents frame index errors)
-        # Increase safety margin to 0.5s to avoid edge cases with composite clips
-        safe_duration = target_duration - 0.5
-        if final_video.duration > safe_duration:
-            final_video = final_video.subclipped(0, safe_duration)
-
         # Write video without audio to avoid MoviePy composite bugs
         temp_video = output_path.replace(".mp4", "_temp.mp4")
         final_video.write_videofile(
@@ -436,6 +430,7 @@ class VideoCompositor:
     ) -> CompositeVideoClip:
         """
         Create video with blurred background + AI image overlays (experimental style).
+        Uses flattened structure to avoid MoviePy timing bugs with nested composites.
         """
         blurred = self._create_blurred_background_from_clip(video)
 
@@ -447,30 +442,48 @@ class VideoCompositor:
         )
 
         if BG_MODE == "jumpcut":
-            final_video = (
-                self._jumpcut_background(base_composite, target_duration)
-                .with_duration(target_duration)
-                .with_audio(audio)
-            )
+            # _jumpcut_background already handles duration trimming
+            final_video = self._jumpcut_background(base_composite, target_duration)
         else:
             speed_factor = video.duration / target_duration
             final_video = (
                 base_composite.with_speed_scaled(speed_factor)
                 .with_duration(target_duration)
-                .with_audio(audio)
             )
 
+        # Add overlays and subtitles as a single composite operation
+        all_clips = [final_video]
         if image_paths:
-            final_video = self._add_image_overlays(
-                final_video, image_paths, target_duration
+            num_overlays = max(
+                1, int((target_duration - IMAGE_BOUNCE_INTERVAL) / IMAGE_BOUNCE_INTERVAL) + 1
             )
+            for i in range(num_overlays):
+                start_time = (i + 1) * IMAGE_BOUNCE_INTERVAL
+                if start_time >= target_duration:
+                    break
+
+                end_time = min(start_time + IMAGE_OVERLAY_DURATION, target_duration)
+                overlay_duration = end_time - start_time
+
+                if overlay_duration <= 0:
+                    continue
+
+                img_path = image_paths[i % len(image_paths)]
+                try:
+                    img_clip = ImageClip(img_path).with_duration(overlay_duration)
+                    img_clip = img_clip.resized((VIDEO_WIDTH, VIDEO_HEIGHT))
+                    img_clip = self._apply_overlay_animation(img_clip, overlay_duration)
+                    img_clip = img_clip.with_start(start_time)
+                    all_clips.append(img_clip)
+                except Exception as e:
+                    log(f"Error creating overlay: {e}", "ERROR")
+                    continue
 
         if vtt_path and Path(vtt_path).exists():
             subs = self.subtitle_system.render_subtitles(
                 vtt_path, (VIDEO_WIDTH, VIDEO_HEIGHT)
             )
             if subs:
-                # Ensure subtitles don't exceed video duration
                 safe_subs = []
                 for sub in subs:
                     if hasattr(sub, "start") and sub.start < target_duration:
@@ -479,9 +492,11 @@ class VideoCompositor:
                     subtitle_composite = CompositeVideoClip(
                         safe_subs, size=(VIDEO_WIDTH, VIDEO_HEIGHT)
                     )
-                    final_video = CompositeVideoClip([final_video, subtitle_composite])
+                    all_clips.append(subtitle_composite)
 
-        return final_video
+        final_result = CompositeVideoClip(all_clips, size=(VIDEO_WIDTH, VIDEO_HEIGHT))
+        final_result.audio = audio
+        return final_result
 
     def _add_image_overlays(
         self,
@@ -517,23 +532,12 @@ class VideoCompositor:
                 log(f"Error creating overlay: {e}", "ERROR")
                 continue
 
-        if overlay_clips:
-            # Ensure all overlay clips are bounded within video duration
-            # This prevents list index errors in CompositeVideoClip frame_function
-            safe_overlays = []
-            for clip in overlay_clips:
-                if hasattr(clip, 'start') and clip.start is not None:
-                    if clip.start < duration:
-                        safe_overlays.append(clip)
-                else:
-                    safe_overlays.append(clip)
-            
-            if safe_overlays:
-                return CompositeVideoClip(
-                    [base_video] + safe_overlays, size=(VIDEO_WIDTH, VIDEO_HEIGHT)
-                )
-        
-        return base_video
+        if not overlay_clips:
+            return base_video
+
+        return CompositeVideoClip(
+            [base_video] + overlay_clips, size=(VIDEO_WIDTH, VIDEO_HEIGHT)
+        )
 
     def _create_simple_mode(
         self,
@@ -544,11 +548,9 @@ class VideoCompositor:
     ) -> CompositeVideoClip:
         """Simple video without blur."""
         if BG_MODE == "jumpcut":
-            final_video = (
-                self._jumpcut_background(video, target_duration)
-                .with_duration(target_duration)
-                .with_audio(audio)
-            )
+            # _jumpcut_background already handles duration trimming
+            final_video = self._jumpcut_background(video, target_duration)
+            final_video.audio = audio
         else:
             speed_factor = video.duration / target_duration
             final_video = (
