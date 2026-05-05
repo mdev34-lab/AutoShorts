@@ -386,7 +386,6 @@ class VideoCompositor:
         )
 
         # Add audio back using ffmpeg (more reliable than MoviePy)
-        audio_path = audio if isinstance(audio, str) else None
         if audio_path and Path(audio_path).exists():
             import subprocess
 
