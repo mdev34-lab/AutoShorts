@@ -6,7 +6,7 @@ Provides unified YouTube video search and download functionality for AutoShorts.
 Handles search query generation, video filtering, and downloading.
 """
 
-import requests
+import requests  # type: ignore[import-untyped]
 import yt_dlp
 
 from .config import (

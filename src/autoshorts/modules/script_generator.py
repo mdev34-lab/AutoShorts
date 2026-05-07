@@ -6,7 +6,7 @@ Combines script generation functionality from both generators.
 
 import json
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from .config import (
     API_KEY,

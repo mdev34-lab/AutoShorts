@@ -14,8 +14,8 @@ DRY principle: reused by both yt_summarizer and experimental modes.
 import subprocess
 import time
 from pathlib import Path
+from typing import Any
 
-import numpy as np
 from moviepy import (
     AudioFileClip,
     CompositeVideoClip,
@@ -314,7 +314,7 @@ class VideoCompositor:
         output_path: str,
         target_duration: float,
         use_blurred_bg: bool = True,
-        image_paths: list = None,
+        image_paths: list[Any] | None = None,
     ) -> bool:
         """
         Create final output video with optional subtitle integration.
@@ -362,7 +362,7 @@ class VideoCompositor:
                 video, audio, vtt_path, target_duration, image_paths
             )
         elif use_blurred_bg:
-            final_video = self._create_with_blurred_mode(
+            final_video = self._create_with_overlay_mode(
                 video, audio, vtt_path, target_duration
             )
         else:
@@ -425,7 +425,7 @@ class VideoCompositor:
         audio: AudioFileClip,
         vtt_path: str,
         target_duration: float,
-        image_paths: list,
+        image_paths: list | None = None,
     ) -> CompositeVideoClip:
         """
         Create video with blurred background + AI image overlays (experimental style).

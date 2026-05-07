@@ -35,7 +35,7 @@ def create_temp_dir() -> Path:
     return Path(tempfile.mkdtemp(prefix=TEMP_DIR_PREFIX))
 
 
-def clean_temp_files(temp_dir: Path = None):
+def clean_temp_files(temp_dir: Path | None = None):
     """Clean up temporary files and directories."""
     target_dir = temp_dir or Path(tempfile.gettempdir()) / TEMP_DIR_PREFIX
 

@@ -281,7 +281,7 @@ class ExperimentalYouTubeProcessor:
         return img_paths
 
     async def process_experimental_video(
-        self, subject: str, output_path: str, youtube_url: str = None
+        self, subject: str, output_path: str, youtube_url: str | None = None
     ) -> bool:
         """Main processing function for experimental mode."""
         log("Starting experimental video processing...")

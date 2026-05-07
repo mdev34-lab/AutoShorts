@@ -14,8 +14,9 @@ Performance improvements:
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
-import webvtt
+from webvtt import webvtt
 from moviepy import TextClip
 from PIL import Image, ImageDraw, ImageFont
 
@@ -68,7 +69,7 @@ def get_system_font():
     return "arial.ttf"
 
 
-def _load_pil_font(font_path: str, size: int) -> ImageFont.FreeTypeFont:
+def _load_pil_font(font_path: str, size: int) -> ImageFont.ImageFont | ImageFont.FreeTypeFont:
     """Load PIL font with fallback to default."""
     try:
         return ImageFont.truetype(font_path, size)
@@ -83,7 +84,7 @@ def _load_pil_font(font_path: str, size: int) -> ImageFont.FreeTypeFont:
 
 
 @lru_cache(maxsize=512)
-def _get_text_size_pil(text: str, font_path: str, font_size: int) -> tuple:
+def _get_text_size_pil(text: str, font_path: str, font_size: int) -> tuple[int, int]:
     """
     Get text size using PIL - cached for performance.
 
@@ -94,8 +95,8 @@ def _get_text_size_pil(text: str, font_path: str, font_size: int) -> tuple:
         dummy_img = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
         draw = ImageDraw.Draw(dummy_img)
         bbox = draw.textbbox((0, 0), text, font=font)
-        width = bbox[2] - bbox[0]
-        height = bbox[3] - bbox[1]
+        width = int(bbox[2] - bbox[0])
+        height = int(bbox[3] - bbox[1])
         return (max(width, font_size // 2), max(height, font_size // 2))
     except Exception:
         est_width = len(text) * (font_size // 2)
@@ -104,7 +105,7 @@ def _get_text_size_pil(text: str, font_path: str, font_size: int) -> tuple:
 
 
 @lru_cache(maxsize=256)
-def _get_line_dimensions_cached(line: str, font_path: str, font_size: int) -> tuple:
+def _get_line_dimensions_cached(line: str, font_path: str, font_size: int) -> tuple[int, int]:
     """Cached line dimension calculation."""
     return _get_text_size_pil(line, font_path, font_size)
 
@@ -157,14 +158,15 @@ class SubtitleGenerator:
 class SubtitleRenderer:
     """Handles subtitle rendering and clip creation - optimized version."""
 
-    def __init__(self, font_path: str = None):
+    def __init__(self, font_path: str | None = None):
         self.font = font_path or get_system_font()
-        self._text_clip_cache = {}
+        self._text_clip_cache: dict[str, tuple[int, int]] = {}
 
-    def _wrap_text_to_lines(self, text: str, max_chars_per_line: int = 22) -> list:
+    def _wrap_text_to_lines(self, text: str, max_chars_per_line: int = 22) -> list[list[str]]:
         """Wrap text to lines with character limit."""
         words = text.split()
-        lines, current_line = [], []
+        lines: list[list[str]] = []
+        current_line: list[str] = []
         current_len = 0
         for word in words:
             if current_len + len(word) + 1 > max_chars_per_line and current_line:
@@ -348,7 +350,7 @@ class SubtitleRenderer:
         base_y = int(height * SUBTITLE_START_Y_RATIO)
         font_size = FONT_SIZE
         stroke_width = STROKE_WIDTH
-        space_width = font_size * 0.25
+        space_width = int(font_size * 0.25)
 
         try:
             vtt = webvtt.read(vtt_path)
@@ -379,8 +381,8 @@ class SubtitleRenderer:
                     line_heights.append(max(h, font_size))
 
                 for line_idx, line_words in enumerate(lines):
-                    line_clips_data = []
-                    total_line_width = 0
+                    line_clips_data: list[dict[str, Any]] = []
+                    total_line_width: int = 0
 
                     for word in line_words:
                         w, h = _get_text_size_pil(word, self.font, font_size)
@@ -423,7 +425,7 @@ class SubtitleRenderer:
                     )
 
                     for word_idx, data in enumerate(line_clips_data):
-                        word = data["word"]
+                        word_text: str = data["word"]
 
                         word_start = start_time + (word_idx * word_duration)
                         word_end = min(word_start + word_duration + 0.1, end_time)
@@ -455,7 +457,7 @@ class SubtitleRenderer:
                             print(f"Error creating word clip: {e}")
                             continue
 
-                        current_x += data["w"] + space_width
+                        current_x += int(data["w"]) + space_width
 
                     current_y += line_height + LINE_SPACING
 
@@ -469,7 +471,7 @@ class SubtitleRenderer:
 class SubtitleSystem:
     """Main interface for subtitle generation and rendering."""
 
-    def __init__(self, font_path: str = None):
+    def __init__(self, font_path: str | None = None):
         self.generator = SubtitleGenerator()
         self.renderer = SubtitleRenderer(font_path)
 
