@@ -64,6 +64,9 @@ target-version = "py38"
 select = ["E", "F", "W", "I", "N", "B", "C90"]
 ignore = ["E501", "B008", "N806", "C901"]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B017"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

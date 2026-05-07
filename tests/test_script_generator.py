@@ -2,6 +2,7 @@
 Test script generator functionality
 """
 
+import json
 from unittest.mock import Mock, patch
 
 import pytest
@@ -25,14 +26,14 @@ class TestScriptGenerator:
     def test_init_with_web_search(self):
         """Test script generator initialization with web search"""
         generator = ScriptGenerator(web_search=True)
-        assert generator.web_search == True
+        assert generator.web_search
         assert generator.model == "gemini-fast"
         assert generator.tools is not None
 
     def test_init_without_web_search(self):
         """Test script generator initialization without web search"""
         generator = ScriptGenerator(web_search=False)
-        assert generator.web_search == False
+        assert not generator.web_search
         assert generator.tools is None
 
     @patch("autoshorts.modules.script_generator.requests.post")
