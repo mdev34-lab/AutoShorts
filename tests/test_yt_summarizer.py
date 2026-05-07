@@ -12,6 +12,7 @@ import pytest
 # Add src to path for testing
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+from autoshorts.modules import VideoBackgroundManager, VideoCompositor
 from autoshorts.yt_summarizer import (
     generate_tts,
     main,

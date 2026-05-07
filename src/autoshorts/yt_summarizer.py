@@ -6,7 +6,6 @@ Uses VideoCompositor module for unified video processing.
 """
 
 import argparse
-import asyncio
 import time
 import traceback
 from pathlib import Path
@@ -135,25 +134,24 @@ def main():
                 else:
                     log("Video processing failed", "ERROR")
 
+            except Exception as e:
+                log(f"Error processing '{subject or 'URL video'}': {e}", "ERROR")
+                traceback.print_exc()
+            finally:
                 clean_temp_files(TEMP_DIR)
 
-        except Exception as e:
-            log(f"Error processing '{subject or 'URL video'}': {e}", "ERROR")
-            traceback.print_exc()
-            continue
+        log(
+            f"Batch processing complete: {success_count}/{total_count} videos created successfully",
+            "SUCCESS",
+        )
 
-    log(
-        f"Batch processing complete: {success_count}/{total_count} videos created successfully",
-        "SUCCESS",
-    )
+        if args.goodnight and success_count > 0:
+            shutdown_computer()
 
-    if args.goodnight and success_count > 0:
-        shutdown_computer()
-
-except Exception as e:
-    log(f"Fatal error: {e}", "ERROR")
-    traceback.print_exc()
-finally:
+    except Exception as e:
+        log(f"Fatal error: {e}", "ERROR")
+        traceback.print_exc()
+    finally:
         clean_temp_files(TEMP_DIR)
 
 

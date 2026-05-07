@@ -1,7 +1,5 @@
 import argparse
 import asyncio
-import os
-import platform
 import random
 import shutil
 import sys

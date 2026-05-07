@@ -10,8 +10,6 @@ that cycle in and out every 5 seconds, creating a more diverse visual experience
 import argparse
 import asyncio
 import hashlib
-import os
-import platform
 import random
 import time
 import traceback

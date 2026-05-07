@@ -3,6 +3,8 @@
 Unit tests for AutoShorts experimental mode functionality.
 """
 
+import shutil
+import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
