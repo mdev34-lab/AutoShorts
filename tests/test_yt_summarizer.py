@@ -63,13 +63,13 @@ class TestVideoBackgroundManager:
             "id": "test123",
             "webpage_url": "http://example.com/video",
         }
-        assert self.vbm._is_suitable_video(video_info) == True
+        assert self.vbm._is_suitable_video(video_info)
 
         video_info["duration"] = 30
-        assert self.vbm._is_suitable_video(video_info) == False
+        assert not self.vbm._is_suitable_video(video_info)
 
         video_info["duration"] = 4000
-        assert self.vbm._is_suitable_video(video_info) == False
+        assert not self.vbm._is_suitable_video(video_info)
 
     def test_is_suitable_video_availability(self):
         """Test video availability filtering"""
@@ -80,10 +80,10 @@ class TestVideoBackgroundManager:
             "webpage_url": "http://example.com/video",
             "availability": "private",
         }
-        assert self.vbm._is_suitable_video(video_info) == False
+        assert not self.vbm._is_suitable_video(video_info)
 
         video_info["availability"] = "unavailable"
-        assert self.vbm._is_suitable_video(video_info) == False
+        assert not self.vbm._is_suitable_video(video_info)
 
     def test_is_suitable_video_missing_fields(self):
         """Test video missing required fields"""
@@ -91,10 +91,10 @@ class TestVideoBackgroundManager:
             "duration": 180,
             "title": "Test Video",
         }
-        assert self.vbm._is_suitable_video(video_info) == False
+        assert not self.vbm._is_suitable_video(video_info)
 
         video_info["id"] = "test123"
-        assert self.vbm._is_suitable_video(video_info) == False
+        assert not self.vbm._is_suitable_video(video_info)
 
     @patch("autoshorts.modules.video_background.yt_dlp.YoutubeDL")
     @patch("autoshorts.modules.video_background.requests.post")
@@ -291,7 +291,7 @@ class TestVideoCompositor:
         mock_video.with_audio = Mock(return_value=mock_video)
         mock_video.with_effects = Mock(return_value=mock_video)
         mock_video.close = Mock()
-        mock_video_clip.return_value = mock_video
+        mock_video_clip = Mock(return_value=mock_video)
 
         # Mock audio
         mock_audio_clip = Mock()
@@ -299,6 +299,7 @@ class TestVideoCompositor:
         mock_audio.return_value = mock_audio_clip
 
         # Mock subtitles
+        mock_subtitles = Mock()
         mock_subtitle_system = Mock()
         mock_subtitle_system.render_subtitles = Mock(return_value=[])
         mock_subtitles.return_value = mock_subtitle_system

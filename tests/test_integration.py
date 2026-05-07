@@ -251,7 +251,7 @@ class TestCompleteWorkflowIntegration:
         paragraphs, prompts = script_engine.generate("test subject")
 
         # Generate assets
-        audio_task = asset_manager.generate_audio(paragraphs)
+        _audio_task = asset_manager.generate_audio(paragraphs)
         img_paths = asset_manager.generate_ai_images(prompts)
 
         # Verify results

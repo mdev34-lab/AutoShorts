@@ -45,7 +45,6 @@ class TestExperimentalYouTubeProcessor:
     def test_bounce_effect(self):
         """Test bounce effect function."""
         duration = 1.0
-        max_zoom = 1.05
 
         # Test at start (t=0)
         scale_start = self.processor._apply_bounce_effect(Mock(), duration)
@@ -344,7 +343,6 @@ class TestExperimentalModeIntegration:
 
         # Test bounce effect with real parameters
         duration = 1.0
-        max_zoom = 1.05
 
         # Test that bounce effect works
         mock_clip = Mock()

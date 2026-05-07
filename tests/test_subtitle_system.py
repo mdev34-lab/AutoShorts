@@ -124,7 +124,7 @@ class TestSubtitleGenerator:
             vtt_path = f.name
 
         try:
-            result = SubtitleGenerator.generate_vtt_from_paragraphs(
+            _result = SubtitleGenerator.generate_vtt_from_paragraphs(
                 paragraphs, duration, vtt_path
             )
 
@@ -144,7 +144,7 @@ class TestSubtitleGenerator:
             vtt_path = f.name
 
         try:
-            result = SubtitleGenerator.generate_vtt_from_paragraphs(
+            _result = SubtitleGenerator.generate_vtt_from_paragraphs(
                 paragraphs, duration, vtt_path
             )
 
