@@ -16,9 +16,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from webvtt import webvtt
 from moviepy import TextClip
 from PIL import Image, ImageDraw, ImageFont
+from webvtt import webvtt
 
 from .config import (
     COLOR_HIGHLIGHT,
@@ -425,7 +425,6 @@ class SubtitleRenderer:
                     )
 
                     for word_idx, data in enumerate(line_clips_data):
-                        word_text: str = data["word"]
 
                         word_start = start_time + (word_idx * word_duration)
                         word_end = min(word_start + word_duration + 0.1, end_time)
