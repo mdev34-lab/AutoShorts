@@ -62,7 +62,7 @@ MODEL_TEXT = os.getenv("MODEL_TEXT", "nova-micro")
 MODEL_IMAGE = os.getenv("MODEL_IMAGE", "flux")
 
 # TTS Configuration
-VOICE = os.getenv("VOICE", "de-DE-FlorianMultilingualNeural")
+VOICE = os.getenv("VOICE", "en-US-BrianMultilingualNeural")
 TTS_RATE = os.getenv("TTS_RATE", "+20%")
 
 # Background Processing Mode
