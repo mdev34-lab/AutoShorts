@@ -234,7 +234,7 @@ class TestVideoCompositor:
         mock_video.close = Mock()
         mock_vfc.return_value = mock_video
 
-        with patch.object(self.vc, "_apply_fast_blur") as mock_blur, patch(
+        with patch.object(self.vc, "_apply_fast_blur"), patch(
             "autoshorts.modules.video_compositor.CompositeVideoClip"
         ) as mock_composite:
             mock_composite.return_value.with_effects = Mock(
@@ -291,7 +291,6 @@ class TestVideoCompositor:
         mock_video.with_audio = Mock(return_value=mock_video)
         mock_video.with_effects = Mock(return_value=mock_video)
         mock_video.close = Mock()
-        mock_video_clip = Mock(return_value=mock_video)
 
         # Mock audio
         mock_audio_clip = Mock()
