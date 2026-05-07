@@ -123,7 +123,9 @@ class TestVideoBackgroundManager:
                 },
             ]
         }
-        mock_ydl.return_value.__enter__.return_value.extract_info.return_value = mock_info
+        mock_ydl.return_value.__enter__.return_value.extract_info.return_value = (
+            mock_info
+        )
         mock_ydl.return_value.__enter__.return_value.download.return_value = None
 
         with patch("pathlib.Path.glob") as mock_glob, patch(
@@ -140,7 +142,9 @@ class TestVideoBackgroundManager:
     def test_download_direct_url(self, mock_ydl):
         """Test direct URL download"""
         mock_info = {"title": "Test Video", "description": "Test description"}
-        mock_ydl.return_value.__enter__.return_value.extract_info.return_value = mock_info
+        mock_ydl.return_value.__enter__.return_value.extract_info.return_value = (
+            mock_info
+        )
         mock_ydl.return_value.__enter__.return_value.download.return_value = None
 
         with patch("pathlib.Path.glob") as mock_glob:
@@ -154,6 +158,7 @@ class TestVideoBackgroundManager:
 
     def test_extract_error_message(self):
         """Test error message extraction from various exception types"""
+
         class FakeYDLException:
             def __init__(self, msg=None, excn_msg=None):
                 self.msg = msg
@@ -275,9 +280,7 @@ class TestVideoCompositor:
         )
 
         with patch.object(self.vc, "_get_video_duration", return_value=60.0):
-            result = self.vc._create_simple_mode(
-                mock_v, mock_a, None, 60.0, 1.0
-            )
+            result = self.vc._create_simple_mode(mock_v, mock_a, None, 60.0, 1.0)
             assert result is not None
         # Mock square video (1080x1080)
         mock_video = Mock()

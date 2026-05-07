@@ -445,16 +445,17 @@ class VideoCompositor:
             final_video = self._jumpcut_background(base_composite, target_duration)
         else:
             speed_factor = video.duration / target_duration
-            final_video = (
-                base_composite.with_speed_scaled(speed_factor)
-                .with_duration(target_duration)
+            final_video = base_composite.with_speed_scaled(speed_factor).with_duration(
+                target_duration
             )
 
         # Add overlays and subtitles as a single composite operation
         all_clips = [final_video]
         if image_paths:
             num_overlays = max(
-                1, int((target_duration - IMAGE_BOUNCE_INTERVAL) / IMAGE_BOUNCE_INTERVAL) + 1
+                1,
+                int((target_duration - IMAGE_BOUNCE_INTERVAL) / IMAGE_BOUNCE_INTERVAL)
+                + 1,
             )
             for i in range(num_overlays):
                 start_time = (i + 1) * IMAGE_BOUNCE_INTERVAL
