@@ -69,7 +69,9 @@ def get_system_font():
     return "arial.ttf"
 
 
-def _load_pil_font(font_path: str, size: int) -> ImageFont.ImageFont | ImageFont.FreeTypeFont:
+def _load_pil_font(
+    font_path: str, size: int
+) -> ImageFont.ImageFont | ImageFont.FreeTypeFont:
     """Load PIL font with fallback to default."""
     try:
         return ImageFont.truetype(font_path, size)
@@ -105,7 +107,9 @@ def _get_text_size_pil(text: str, font_path: str, font_size: int) -> tuple[int, 
 
 
 @lru_cache(maxsize=256)
-def _get_line_dimensions_cached(line: str, font_path: str, font_size: int) -> tuple[int, int]:
+def _get_line_dimensions_cached(
+    line: str, font_path: str, font_size: int
+) -> tuple[int, int]:
     """Cached line dimension calculation."""
     return _get_text_size_pil(line, font_path, font_size)
 
@@ -162,7 +166,9 @@ class SubtitleRenderer:
         self.font = font_path or get_system_font()
         self._text_clip_cache: dict[str, tuple[int, int]] = {}
 
-    def _wrap_text_to_lines(self, text: str, max_chars_per_line: int = 22) -> list[list[str]]:
+    def _wrap_text_to_lines(
+        self, text: str, max_chars_per_line: int = 22
+    ) -> list[list[str]]:
         """Wrap text to lines with character limit."""
         words = text.split()
         lines: list[list[str]] = []
@@ -425,7 +431,6 @@ class SubtitleRenderer:
                     )
 
                     for word_idx, data in enumerate(line_clips_data):
-
                         word_start = start_time + (word_idx * word_duration)
                         word_end = min(word_start + word_duration + 0.1, end_time)
 
