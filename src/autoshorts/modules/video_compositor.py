@@ -432,6 +432,9 @@ class VideoCompositor:
         Create video with blurred background + AI image overlays (experimental style).
         Uses flattened structure to avoid MoviePy timing bugs with nested composites.
         """
+        # Subclip to target duration BEFORE processing to avoid encoding the full video
+        if video.duration > target_duration:
+            video = video.subclipped(0, target_duration)
         blurred = self._create_blurred_background_from_clip(video)
 
         content_h = int(VIDEO_HEIGHT * 0.45)
