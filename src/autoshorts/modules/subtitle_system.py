@@ -18,7 +18,7 @@ from typing import Any
 
 from moviepy import TextClip
 from PIL import Image, ImageDraw, ImageFont
-from webvtt import webvtt
+import webvtt
 
 from .config import (
     COLOR_HIGHLIGHT,
