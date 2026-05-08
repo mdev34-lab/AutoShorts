@@ -149,7 +149,10 @@ CRITICAL RULES:
             msg = exc.get("msg") or exc.get("error") or ""
             return str(msg) if msg else str(exc)
         if isinstance(exc, list) and exc:
-            return self._extract_error_message(exc[0])
+            first_item = exc[0]
+            if isinstance(first_item, dict):
+                return first_item.get("msg") or first_item.get("error") or str(first_item)
+            return str(first_item)
         return str(exc)
 
     def search_and_download(self, subject: str) -> str:
