@@ -16,9 +16,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+import webvtt
 from moviepy import TextClip
 from PIL import Image, ImageDraw, ImageFont
-import webvtt
 
 from .config import (
     COLOR_HIGHLIGHT,
