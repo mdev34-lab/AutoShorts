@@ -26,6 +26,7 @@ dependencies = [
     "edge-tts>=6.1.0",
     "requests>=2.28.0",
     "yt-dlp>=2023.1.0",
+    "ddgs>=9.14.2",
     "webvtt-py>=0.4.6",
     "pathlib2>=2.3.7; python_version<'3.4'",
     "python-dotenv>=1.0.0",

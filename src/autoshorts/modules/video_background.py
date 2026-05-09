@@ -156,14 +156,45 @@ CRITICAL RULES:
         return str(exc)
 
     def search_and_download(self, subject: str) -> str:
-        """Search and download video using optimized filtering."""
-        search_query = f"ytsearch20:{self.generate_search_query(subject)}"
+        """Search and download video using DDG first, then yt-dlp search as fallback."""
+        search_query = self.generate_search_query(subject)
+
+        video_path = self._search_with_ddg(search_query)
+        if video_path:
+            return video_path
+
+        log("DDG search failed, falling back to yt-dlp search...", "WARNING")
+        return self._search_with_ytdlp(search_query)
+
+    def _search_with_ddg(self, search_query: str) -> str | None:
+        """Search YouTube via DuckDuckGo and download with yt-dlp."""
+        try:
+            from ddgs import DDGS
+
+            log("Searching YouTube via DuckDuckGo...", "INFO")
+            results = list(DDGS().text(f"site:youtube.com {search_query}", max_results=10))
+            urls = [
+                r["href"] for r in results
+                if "youtube.com/watch" in r.get("href", "")
+            ]
+            if not urls:
+                log("No YouTube URLs found via DDG", "WARNING")
+                return None
+            log(f"Found {len(urls)} YouTube videos, extracting metadata...", "INFO")
+            return self._download_first_suitable(urls)
+        except Exception as e:
+            log(f"DDG search failed: {e}", "WARNING")
+            return None
+
+    def _search_with_ytdlp(self, search_query: str) -> str:
+        """Fallback search using yt-dlp built-in search."""
+        yt_query = f"ytsearch20:{search_query}"
 
         with yt_dlp.YoutubeDL(
             {"quiet": True, "no_warnings": True, "ignoreerrors": True}
         ) as ydl:
             try:
-                info = ydl.extract_info(search_query, download=False)
+                info = ydl.extract_info(yt_query, download=False)
 
                 if "entries" not in info or not info["entries"]:
                     raise ValueError("No video found")
@@ -188,54 +219,69 @@ CRITICAL RULES:
                 if not suitable_videos:
                     raise ValueError("No suitable videos found in search results")
 
-                download_temp_dir = create_temp_dir()
-                ydl_opts_with_dir = self.ydl_opts.copy()
-                ydl_opts_with_dir["outtmpl"] = str(
-                    download_temp_dir / "source_video.%(ext)s"
-                )
-
-                for attempt, video in enumerate(suitable_videos[:10]):
-                    video_url = video.get("webpage_url", "")
-                    if not video_url:
-                        continue
-
-                    log(
-                        f"Attempting video {attempt + 1}: {video.get('title', 'Unknown')[:40]}...",
-                        "INFO",
-                    )
-
-                    try:
-                        with yt_dlp.YoutubeDL(ydl_opts_with_dir) as ydl:
-                            ydl.download([video_url])
-                            log(
-                                f"Successfully downloaded: {video.get('title', 'Unknown')}",
-                                "SUCCESS",
-                            )
-                            video_files = list(download_temp_dir.glob("source_video.*"))
-                            if video_files:
-                                return str(video_files[0])
-                            return str(download_temp_dir / "source_video.mp4")
-                    except Exception as e:
-                        error_msg = self._extract_error_message(e)
-                        error_lower = error_msg.lower()
-                        if (
-                            "not available" in error_lower
-                            or "unavailable" in error_lower
-                            or "private" in error_lower
-                        ):
-                            log(
-                                "Video unavailable, trying next candidate...", "WARNING"
-                            )
-                            continue
-                        else:
-                            log(f"Download failed: {error_msg}", "ERROR")
-                            if attempt == len(suitable_videos) - 1:
-                                raise
-
+                urls = [v.get("webpage_url", "") for v in suitable_videos[:10] if v.get("webpage_url")]
+                path = self._download_first_suitable(urls)
+                if path:
+                    return path
                 raise ValueError("No available videos could be downloaded")
             except Exception as e:
-                log(f"Search failed: {e}", "ERROR")
+                log(f"yt-dlp search failed: {e}", "ERROR")
                 raise
+
+    def _download_first_suitable(self, urls: list[str]) -> str | None:
+        """Try URLs one by one, return path of first successful download."""
+        download_temp_dir = create_temp_dir()
+        ydl_opts_with_dir = self.ydl_opts.copy()
+        ydl_opts_with_dir["outtmpl"] = str(
+            download_temp_dir / "source_video.%(ext)s"
+        )
+
+        for attempt, video_url in enumerate(urls):
+            if not video_url:
+                continue
+
+            # Get metadata first to filter unsuitable videos
+            title = "Unknown"
+            try:
+                with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True}) as ydl:
+                    info = ydl.extract_info(video_url, download=False)
+                    if not self._is_suitable_video(info):
+                        log(f"Skipping unsuitable video {attempt + 1}", "WARNING")
+                        continue
+                    title = info.get("title", "Unknown")
+            except Exception as e:
+                error_msg = self._extract_error_message(e)
+                if "not available" in error_msg.lower() or "private" in error_msg.lower():
+                    log(f"Video {attempt + 1} unavailable, trying next...", "WARNING")
+                    continue
+                log(f"Metadata extraction failed: {error_msg}", "WARNING")
+
+            log(f"Attempting video {attempt + 1}: {title[:40]}...", "INFO")
+
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts_with_dir) as ydl:
+                    ydl.download([video_url])
+                    log(f"Successfully downloaded: {title}", "SUCCESS")
+                    video_files = list(download_temp_dir.glob("source_video.*"))
+                    if video_files:
+                        return str(video_files[0])
+                    return str(download_temp_dir / "source_video.mp4")
+            except Exception as e:
+                error_msg = self._extract_error_message(e)
+                error_lower = error_msg.lower()
+                if (
+                    "not available" in error_lower
+                    or "unavailable" in error_lower
+                    or "private" in error_lower
+                ):
+                    log("Video unavailable, trying next candidate...", "WARNING")
+                    continue
+                else:
+                    log(f"Download failed: {error_msg}", "ERROR")
+                    if attempt == len(urls) - 1:
+                        raise
+
+        return None
 
     def download_from_url(self, url: str) -> tuple:
         """Download directly from URL and return video path and metadata."""
