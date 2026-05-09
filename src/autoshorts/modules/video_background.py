@@ -155,85 +155,9 @@ CRITICAL RULES:
             return str(first_item)
         return str(exc)
 
-    def _pytubefix_video_to_dict(self, video) -> dict:
-        """Convert a pytubefix video object to a dict compatible with _is_suitable_video."""
-        return {
-            "duration": getattr(video, "length", 0) or 0,
-            "title": getattr(video, "title", "") or "",
-            "id": getattr(video, "video_id", "") or "",
-            "webpage_url": getattr(video, "watch_url", "") or "",
-            "availability": None,
-        }
-
-    def _download_with_pytubefix(self, video_url: str, output_dir, title: str) -> str | None:
-        """Try to download a video using pytubefix. Returns path or None."""
-        try:
-            from pytubefix import YouTube
-
-            log(f"Attempting pytubefix download: {title[:40]}...", "INFO")
-            yt = YouTube(video_url, use_oauth=False)
-            ys = yt.streams.get_highest_resolution()
-            if not ys:
-                log("No streams available via pytubefix", "WARNING")
-                return None
-            downloaded = ys.download(output_path=str(output_dir))
-            if downloaded:
-                log(f"Successfully downloaded via pytubefix: {title}", "SUCCESS")
-                return downloaded
-            return None
-        except Exception as e:
-            log(f"pytubefix failed: {e}", "WARNING")
-            return None
-
     def search_and_download(self, subject: str) -> str:
-        """Search and download video using pytubefix first, fall back to yt-dlp."""
-        search_query = self.generate_search_query(subject)
-
-        # Step 1: Try pytubefix search + download
-        video_path = self._try_pytubefix(search_query)
-        if video_path:
-            return video_path
-
-        # Step 2: Fall back to yt-dlp
-        log("pytubefix failed, falling back to yt-dlp...", "WARNING")
-        return self._try_ytdlp(search_query)
-
-    def _try_pytubefix(self, search_query: str) -> str | None:
-        """Search and download using pytubefix. Returns path or None."""
-        try:
-            from pytubefix import Search
-
-            log("Searching with pytubefix...", "INFO")
-            results = Search(search_query)
-            if not results.videos:
-                log("No pytubefix results", "WARNING")
-                return None
-
-            suitable = []
-            for v in results.videos:
-                info = self._pytubefix_video_to_dict(v)
-                if self._is_suitable_video(info):
-                    suitable.append((v.watch_url, info["title"]))
-
-            if not suitable:
-                log("No suitable videos found via pytubefix", "WARNING")
-                return None
-
-            download_dir = create_temp_dir()
-            for i, (url, title) in enumerate(suitable[:10]):
-                log(f"Attempting video {i + 1}: {title[:40]}...", "INFO")
-                path = self._download_with_pytubefix(url, download_dir, title)
-                if path:
-                    return path
-
-            return None
-        except Exception as e:
-            log(f"pytubefix search failed: {e}", "WARNING")
-            return None
-
-    def _try_ytdlp(self, search_query: str) -> str:
-        """Fallback search and download using yt-dlp."""
-        search_query = f"ytsearch20:{search_query}"
+        """Search and download video using optimized filtering."""
+        search_query = f"ytsearch20:{self.generate_search_query(subject)}"
 
         with yt_dlp.YoutubeDL(
             {"quiet": True, "no_warnings": True, "ignoreerrors": True}
