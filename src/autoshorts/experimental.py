@@ -63,151 +63,30 @@ class ExperimentalYouTubeProcessor:
     def _generate_ai_images(
         self, subject: str, script_paragraphs: list, num_images: int
     ) -> list:
-        """Generate AI images based on the subject and script with diverse visual styles."""
+        """Generate AI images based on the subject with diverse concrete scene descriptions."""
         log(f"Generating {num_images} AI images for experimental mode...")
 
-        # Visual pattern interrupts - create "wait, what?" moments
-        visual_styles = [
-            # High-impact openings (use for first image - pattern interrupt)
-            {
-                "angle": "extreme close-up",
-                "lighting": "dramatic sudden flash",
-                "mood": "shocking glimpse",
-                "shot": "detail shot",
-                "effect": "motion blur",
-            },
-            {
-                "angle": "low angle",
-                "lighting": "intense spotlight",
-                "mood": "jaw-dropping moment",
-                "shot": "wide shot",
-                "effect": "slow motion",
-            },
-            {
-                "angle": "Dutch angle",
-                "lighting": "neon pulse",
-                "mood": "unexpected revelation",
-                "shot": "medium shot",
-                "effect": "glitch",
-            },
-            {
-                "angle": "worm's eye view",
-                "lighting": "backlit silhouette",
-                "mood": "epic scale",
-                "shot": "ground level",
-                "effect": "dramatic sky",
-            },
-            # Dynamic mid-content styles
-            {
-                "angle": "bird's eye view",
-                "lighting": "dramatic rim lighting",
-                "mood": "epic and powerful",
-                "shot": "aerial view",
-                "effect": "cinematic",
-            },
-            {
-                "angle": "close-up",
-                "lighting": "soft diffused light",
-                "mood": "intimate and detailed",
-                "shot": "macro shot",
-                "effect": "depth of field",
-            },
-            {
-                "angle": "eye level",
-                "lighting": "misty morning light",
-                "mood": "mysterious and atmospheric",
-                "shot": "full shot",
-                "effect": "fog",
-            },
-            {
-                "angle": "high angle",
-                "lighting": "stark contrasted lighting",
-                "mood": "dramatic and tense",
-                "shot": "overhead shot",
-                "effect": "shadow play",
-            },
-            # Escalation/momentum styles
-            {
-                "angle": "side profile",
-                "lighting": "cold blue hour light",
-                "mood": "melancholic and reflective",
-                "shot": "profile shot",
-                "effect": "blue hour",
-            },
-            {
-                "angle": "high angle",
-                "lighting": "stark daylight",
-                "mood": "clarity and insight",
-                "shot": "aerial",
-                "effect": "bird's eye",
-            },
-            {
-                "angle": "panoramic",
-                "lighting": "vibrant sunset colors",
-                "mood": "uplifting and colorful",
-                "shot": "panoramic shot",
-                "effect": "golden hour",
-            },
-            {
-                "angle": "dynamic angle",
-                "lighting": "action lighting",
-                "mood": "energy and movement",
-                "shot": "action shot",
-                "effect": "motion",
-            },
-            # Landing/close styles for final frames
-            {
-                "angle": "symmetric",
-                "lighting": "soft warm light",
-                "mood": "satisfying conclusion",
-                "shot": "centered shot",
-                "effect": "clean composition",
-            },
-            {
-                "angle": "fade out",
-                "lighting": "end lighting",
-                "mood": "resolution",
-                "shot": "final shot",
-                "effect": "cinematic end",
-            },
+        # Concrete scene templates - tells the AI exactly what to draw
+        scene_templates = [
+            "wide shot showing the scene of {subject}, realistic photography",
+            "close up of {subject}, detailed view, professional photo",
+            "action shot of {subject}, dynamic moment, high quality photo",
+            "aerial view of {subject}, landscape, panoramic photo",
+            "detailed close up of {subject} event, texture, realistic photo",
+            "crowd and atmosphere of {subject}, event photography",
+            "key moment from {subject}, dramatic scene, photo quality",
+            "behind the scenes of {subject}, documentary photography",
+            "wide angle capturing {subject} in its environment, real photo",
+            "portrait style shot related to {subject}, professional photography",
+            "the aftermath scene of {subject}, still moment, documentary",
+            "Preparations for {subject}, behind the scenes, candid photo",
         ]
 
-        # Pattern interrupt color palettes - create curiosity/confusion
-        color_palettes = [
-            "high contrast dramatic",
-            "unexpected color pop",
-            "monochrome with accent",
-            "desaturated with shock",
-            "vibrant saturated energy",
-            "moody dark tones",
-            "warm cool contrast",
-            "cinematic desaturated",
-        ]
-
-        # Generate conservative, descriptive prompts for each image
+        # Generate concrete visual prompts
         image_prompts = []
         for i in range(num_images):
-            style = visual_styles[i % len(visual_styles)]
-            color = color_palettes[i % len(color_palettes)]
-
-            if script_paragraphs:
-                if i == 0:
-                    # First image based on opening context
-                    paragraph_text = script_paragraphs[0][:80]
-                else:
-                    # Cycle through paragraphs for variety
-                    para_idx = (i - 1) % len(script_paragraphs)
-                    paragraph_text = script_paragraphs[para_idx][:80]
-
-                prompt = (
-                    f"{subject}: {paragraph_text}, "
-                    f"{style['shot']}, {style['angle']}, {style['lighting']}, {style['mood']}"
-                )
-            else:
-                prompt = (
-                    f"{subject} scene, "
-                    f"{style['shot']}, {style['angle']}, {style['lighting']}, {style['mood']}"
-                )
+            template = scene_templates[i % len(scene_templates)]
+            prompt = template.format(subject=subject)
 
             image_prompts.append(prompt)
 
