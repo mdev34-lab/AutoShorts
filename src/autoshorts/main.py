@@ -210,7 +210,7 @@ class ExperimentalYouTubeProcessor:
             return False
 
 
-async def main():
+async def run():
     parser = argparse.ArgumentParser(
         description="AutoShorts Experimental Mode: YouTube + AI Image Cycling"
     )
@@ -309,18 +309,14 @@ async def main():
         traceback.print_exc()
 
 
-def cli_main():
+def main():
     """Synchronous entry point for script execution."""
     try:
-        asyncio.run(main())
+        asyncio.run(run())
     except KeyboardInterrupt:
         print("\nCancelled.")
         raise SystemExit(130) from None
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\nCancelled.")
-        raise SystemExit(130) from None
+    main()

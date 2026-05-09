@@ -45,7 +45,7 @@ dev = [
 [project.scripts]
 autoshorts-flux = "autoshorts.fluximages:main"
 autoshorts-yt = "autoshorts.yt_summarizer:main"
-autoshorts-beta = "autoshorts.experimental:cli_main"
+autoshorts = "autoshorts.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

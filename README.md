@@ -67,7 +67,7 @@ python -m autoshorts.yt_summarizer "https://www.youtube.com/watch?v=VIDEO_ID"
 
 #### Experimental Mode (YouTube background videos)
 ```bash
-autoshorts-beta --topic "space exploration"
+autoshorts "space exploration"
 ```
 
 ## Configuration
