@@ -171,7 +171,7 @@ CRITICAL RULES:
             from pytubefix import YouTube
 
             log(f"Attempting pytubefix download: {title[:40]}...", "INFO")
-            yt = YouTube(video_url, "WEB")
+            yt = YouTube(video_url, use_oauth=True, allow_oauth_cache=True)
             ys = yt.streams.get_highest_resolution()
             if not ys:
                 log("No streams available via pytubefix", "WARNING")
