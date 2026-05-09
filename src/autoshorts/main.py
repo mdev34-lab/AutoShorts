@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-AutoShorts Experimental Mode: YouTube Summarizer with AI Image Cycling
+AutoShorts: Automated YouTube Shorts Generator
 
-This experimental mode combines the logic from yt_summarizer.py with AI-generated images
-that cycle in and out every 5 seconds, creating a more diverse visual experience.
+Combines YouTube video backgrounds with AI narration and optional AI image overlays.
+Use --no-images for the classic blurred-background style (formerly yt_summarizer).
 """
 
 # General imports
@@ -37,8 +37,8 @@ from .modules import (
 )
 
 
-class ExperimentalYouTubeProcessor:
-    """Experimental processor that combines YouTube content with cycling AI images."""
+class YouTubeProcessor:
+    """Processes YouTube videos into narrated Shorts with optional AI image overlays."""
 
     def __init__(self):
         self.script_generator = ScriptGenerator()
@@ -129,11 +129,12 @@ class ExperimentalYouTubeProcessor:
 
         return img_paths
 
-    async def process_experimental_video(
-        self, subject: str, output_path: str, youtube_url: str | None = None
+    async def process_video(
+        self, subject: str, output_path: str, youtube_url: str | None = None,
+        no_images: bool = False,
     ) -> bool:
-        """Main processing function for experimental mode."""
-        log("Starting experimental video processing...")
+        """Main processing function."""
+        log("Starting video processing...")
         start_time = time.time()
 
         try:
@@ -148,10 +149,8 @@ class ExperimentalYouTubeProcessor:
             # Step 2: Generate script
             log("Step 2: Generating script...")
             if subject:
-                # User provided subject - use it (ignore video metadata)
                 script = self.script_generator.generate_script(subject)
             else:
-                # URL only - use video metadata
                 script = self.script_generator.generate_script_from_metadata(
                     title, description
                 )
@@ -168,25 +167,29 @@ class ExperimentalYouTubeProcessor:
             )
             log(f"Generated TTS audio: {duration:.1f}s")
 
-            # Step 4: Calculate number of images needed
-            num_images = max(3, int(duration / IMAGE_BOUNCE_INTERVAL) + 1)
-            log(
-                f"Generating {num_images} AI images for {duration:.1f}s video (overlays every {IMAGE_BOUNCE_INTERVAL}s)"
-            )
-
-            # Step 5: Generate AI images
-            log("Step 4: Generating AI images...")
-            img_paths = self._generate_ai_images(subject, script, num_images)
-
-            if len(img_paths) < 3:
+            image_paths = None
+            if no_images:
+                log("Skipping AI image generation (--no-images)")
+            else:
+                # Step 4: Calculate number of images needed
+                num_images = max(3, int(duration / IMAGE_BOUNCE_INTERVAL) + 1)
                 log(
-                    f"Failed to generate enough images ({len(img_paths)}/required)",
-                    "ERROR",
+                    f"Generating {num_images} AI images for {duration:.1f}s video (overlays every {IMAGE_BOUNCE_INTERVAL}s)"
                 )
-                return False
 
-            # Step 6: Create video with overlays via VideoCompositor
-            log("Step 5: Creating video with AI image overlays...")
+                # Step 5: Generate AI images
+                log("Step 4: Generating AI images...")
+                image_paths = self._generate_ai_images(subject, script, num_images)
+
+                if len(image_paths) < 3:
+                    log(
+                        f"Failed to generate enough images ({len(image_paths)}/required)",
+                        "ERROR",
+                    )
+                    return False
+
+            # Step 6: Create video via VideoCompositor
+            log("Step 5: Creating video...")
             if self.video_compositor.create_output_video(
                 video_path,
                 audio_path,
@@ -194,7 +197,7 @@ class ExperimentalYouTubeProcessor:
                 output_path,
                 duration,
                 use_blurred_bg=True,
-                image_paths=img_paths,
+                image_paths=image_paths,
             ):
                 total_time = time.time() - start_time
                 log(f"Experimental video completed in {total_time:.2f}s", "SUCCESS")
@@ -212,7 +215,7 @@ class ExperimentalYouTubeProcessor:
 
 async def run():
     parser = argparse.ArgumentParser(
-        description="AutoShorts Experimental Mode: YouTube + AI Image Cycling"
+        description="AutoShorts: Automated YouTube Shorts Generator"
     )
     parser.add_argument("subject", nargs="?", help="Video subject")
     parser.add_argument("-o", "--output", default="output", help="Output directory")
@@ -227,6 +230,11 @@ async def run():
         "--web-search",
         action="store_true",
         help="Use web search with gemini-fast model",
+    )
+    parser.add_argument(
+        "--no-images",
+        action="store_true",
+        help="Skip AI image overlays (blurred background only, like yt_summarizer)",
     )
     args = parser.parse_args()
 
@@ -249,7 +257,7 @@ async def run():
         filename = output_path.name
     else:
         output_dir = output_path
-        filename = f"experimental_{int(time.time())}.mp4"
+        filename = f"autoshorts_{int(time.time())}.mp4"
 
     setup_directories()
 
@@ -258,44 +266,45 @@ async def run():
 
     try:
         for i, subject in enumerate(subjects, 1):
-            log(f"Processing experimental {i}/{total_count}: {subject}")
+            log(f"Processing {i}/{total_count}: {subject}")
 
             try:
-                processor = ExperimentalYouTubeProcessor()
+                processor = YouTubeProcessor()
                 processor.script_generator = ScriptGenerator(web_search=args.web_search)
 
                 if args.batch:
                     output_file = (
                         output_dir
-                        / f"exp_{subject.replace(' ', '_')[:20]}_{int(time.time())}.mp4"
+                        / f"as_{subject.replace(' ', '_')[:20]}_{int(time.time())}.mp4"
                     )
                 elif output_path.suffix:
                     output_file = output_dir / filename
                 else:
-                    output_file = output_dir / f"experimental_{int(time.time())}.mp4"
+                    output_file = output_dir / f"autoshorts_{int(time.time())}.mp4"
 
-                success = await processor.process_experimental_video(
-                    subject if subject else "url video", str(output_file), youtube_url
+                success = await processor.process_video(
+                    subject if subject else "url video", str(output_file), youtube_url,
+                    no_images=args.no_images,
                 )
 
                 if success:
                     success_count += 1
-                    log(f"SUCCESS! Experimental video saved: {output_file}", "SUCCESS")
+                    log(f"SUCCESS! Video saved: {output_file}", "SUCCESS")
                 else:
-                    log("Experimental video processing failed", "ERROR")
+                    log("Video processing failed", "ERROR")
 
                 # Clean temp files between batch items
                 clean_temp_files(processor.temp_dir)
 
             except Exception as e:
                 log(
-                    f"Error processing experimental video '{subject or 'url video'}': {e}",
+                    f"Error processing video '{subject or 'url video'}': {e}",
                     "ERROR",
                 )
                 continue
 
         log(
-            f"Experimental batch processing complete: {success_count}/{total_count} videos created successfully",
+            f"Batch processing complete: {success_count}/{total_count} videos created successfully",
             "SUCCESS",
         )
 
@@ -303,7 +312,7 @@ async def run():
             shutdown_computer()
 
     except Exception as e:
-        log(f"Fatal error in experimental mode: {e}", "ERROR")
+        log(f"Fatal error: {e}", "ERROR")
         import traceback
 
         traceback.print_exc()

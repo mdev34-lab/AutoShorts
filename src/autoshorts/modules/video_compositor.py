@@ -8,7 +8,7 @@ Provides unified video compositing with:
 - Subtitle integration
 - Standardized rendering pipeline
 
-DRY principle: reused by both yt_summarizer and experimental modes.
+DRY principle: reused by both no-images and images modes.
 """
 
 import subprocess
