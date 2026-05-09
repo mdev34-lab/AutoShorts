@@ -184,59 +184,29 @@ class ExperimentalYouTubeProcessor:
             "cinematic desaturated",
         ]
 
-        # First image gets special "stop the scroll" treatment
+        # Generate conservative, descriptive prompts for each image
         image_prompts = []
         for i in range(num_images):
             style = visual_styles[i % len(visual_styles)]
             color = color_palettes[i % len(color_palettes)]
 
-            # First image = pattern interrupt (hook)
-            if i == 0:
-                # Use the most dramatic style for the hook
-                hook_style = visual_styles[0]
-                color = "high contrast dramatic, shocking visual"
-
-                if script_paragraphs:
-                    # Extract hook content from first paragraph
-                    hook_content = script_paragraphs[0][:60]
-                    prompt = (
-                        f"VIRAL HOOK: {hook_content}, "
-                        f"{hook_style['shot']}, {hook_style['angle']}, "
-                        f"{hook_style['lighting']}, {hook_style['mood']}, "
-                        f"{color}, highly detailed, 4K quality, "
-                        f"vertical composition, STOP THE SCROLL effect, "
-                        f"captivating frame, must-watch moment"
-                    )
+            if script_paragraphs:
+                if i == 0:
+                    # First image based on opening context
+                    paragraph_text = script_paragraphs[0][:80]
                 else:
-                    prompt = (
-                        f"SHOCKING {subject} moment, {hook_style['shot']}, "
-                        f"{hook_style['angle']}, {hook_style['lighting']}, "
-                        f"{hook_style['mood']}, {color}, "
-                        f"vertical 9:16, 4K, MUST STOP THE SCROLL, "
-                        f"viral thumbnail quality, curiosity gap visual"
-                    )
-            else:
-                # Subsequent images - story progression
-                if script_paragraphs and i < len(script_paragraphs) * 2:
-                    paragraph_idx = (i - 1) % len(script_paragraphs)
-                    paragraph_text = script_paragraphs[paragraph_idx][:80]
-                    content_focus = f"showing {paragraph_text}"
-                else:
-                    focuses = [
-                        f"the story continues with {subject}",
-                        f"revealing more about {subject}",
-                        f"the aftermath of {subject}",
-                        f"capturing {subject} in detail",
-                        f"the impact visual of {subject}",
-                    ]
-                    content_focus = focuses[i % len(focuses)]
+                    # Cycle through paragraphs for variety
+                    para_idx = (i - 1) % len(script_paragraphs)
+                    paragraph_text = script_paragraphs[para_idx][:80]
 
                 prompt = (
-                    f"{subject}, {content_focus}, "
-                    f"{style['shot']}, {style['angle']}, "
-                    f"{style['lighting']}, {style['mood']}, "
-                    f"{color}, highly detailed, 4K, "
-                    f"vertical composition, professional cinematography"
+                    f"{subject}: {paragraph_text}, "
+                    f"{style['shot']}, {style['angle']}, {style['lighting']}, {style['mood']}"
+                )
+            else:
+                prompt = (
+                    f"{subject} scene, "
+                    f"{style['shot']}, {style['angle']}, {style['lighting']}, {style['mood']}"
                 )
 
             image_prompts.append(prompt)
