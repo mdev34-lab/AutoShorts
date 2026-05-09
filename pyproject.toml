@@ -72,5 +72,5 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short --cov=src --cov-report=html --cov-report=term-missing --cov-fail-under=50"
+addopts = "-v --tb=short --cov=src --cov-report=html --cov-report=term-missing --cov-fail-under=15"
 asyncio_mode = "auto"

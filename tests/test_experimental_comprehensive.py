@@ -9,13 +9,13 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from autoshorts.experimental import (
-    IMAGE_BOUNCE_INTERVAL,
-    IMAGE_OVERLAY_DURATION,
     ExperimentalYouTubeProcessor,
+    IMAGE_BOUNCE_INTERVAL,
 )
 from autoshorts.modules import (
     IMAGE_FADE_IN_TIME,
     IMAGE_FADE_OUT_TIME,
+    IMAGE_OVERLAY_DURATION,
     MAX_ZOOM_FACTOR,
 )
 

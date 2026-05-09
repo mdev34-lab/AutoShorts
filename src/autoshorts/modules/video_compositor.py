@@ -38,6 +38,7 @@ from .config import (
     IMAGE_OVERLAY_DURATION,
     JUMPCUT_SEG_DUR,
     MAX_ZOOM_FACTOR,
+    START_WITH_IMAGE,
     VIDEO_CODEC,
     VIDEO_FPS,
     VIDEO_HEIGHT,
@@ -462,7 +463,10 @@ class VideoCompositor:
                 + 1,
             )
             for i in range(num_overlays):
-                start_time = (i + 1) * IMAGE_BOUNCE_INTERVAL
+                if START_WITH_IMAGE and i == 0:
+                    start_time = 0.0
+                else:
+                    start_time = (i + (0 if START_WITH_IMAGE else 1)) * IMAGE_BOUNCE_INTERVAL
                 if start_time >= target_duration:
                     break
 
@@ -515,7 +519,10 @@ class VideoCompositor:
         )
 
         for i in range(num_overlays):
-            start_time = (i + 1) * IMAGE_BOUNCE_INTERVAL
+            if START_WITH_IMAGE and i == 0:
+                start_time = 0.0
+            else:
+                start_time = (i + (0 if START_WITH_IMAGE else 1)) * IMAGE_BOUNCE_INTERVAL
             if start_time >= duration:
                 break
 

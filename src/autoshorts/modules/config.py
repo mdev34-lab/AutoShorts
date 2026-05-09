@@ -68,6 +68,7 @@ __all__ = [
     "IMAGE_BOUNCE_INTERVAL",
     "IMAGE_FADE_IN_TIME",
     "IMAGE_FADE_OUT_TIME",
+    "START_WITH_IMAGE",
     "MAX_ZOOM_FACTOR",
     "SUBTITLE_MODE",
     "API_TIMEOUT_TEXT",
@@ -192,6 +193,7 @@ IMAGE_OVERLAY_DURATION = _get_env_float("IMAGE_OVERLAY_DURATION", 1.0)
 IMAGE_BOUNCE_INTERVAL = _get_env_float("IMAGE_BOUNCE_INTERVAL", 5.0)
 IMAGE_FADE_IN_TIME = _get_env_float("IMAGE_FADE_IN_TIME", 0.2)
 IMAGE_FADE_OUT_TIME = _get_env_float("IMAGE_FADE_OUT_TIME", 0.2)
+START_WITH_IMAGE = _get_env_bool("START_WITH_IMAGE", True)
 MAX_ZOOM_FACTOR = _get_env_float("MAX_ZOOM_FACTOR", 1.05)
 
 # Subtitle Mode (simple = faster, no word highlighting)
