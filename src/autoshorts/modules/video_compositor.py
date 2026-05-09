@@ -13,6 +13,7 @@ DRY principle: reused by both yt_summarizer and experimental modes.
 
 import subprocess
 import time
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ from moviepy import (
     concatenate_videoclips,
 )
 from moviepy.video.fx import FadeIn, MultiplyColor, Resize
+from moviepy.video.io.ffmpeg_reader import FFMPEG_VideoReader
 
 from .config import (
     AUDIO_CODEC,
@@ -46,6 +48,21 @@ from .config import (
 )
 from .subtitle_system import SubtitleSystem
 from .utils import create_temp_dir, get_video_duration, log
+
+# Monkey-patch FFMPEG_VideoReader.close() to suppress WinError 6 during GC
+_orig_close = FFMPEG_VideoReader.close
+
+def _patched_close(self, delete_lastread=True):
+    try:
+        _orig_close(self, delete_lastread)
+    except OSError:
+        warnings.warn(
+            "FFMPEG_VideoReader: ignored OSError during close (handle already cleaned up)",
+            ResourceWarning,
+            stacklevel=2,
+        )
+
+FFMPEG_VideoReader.close = _patched_close
 
 
 class VideoCompositor:

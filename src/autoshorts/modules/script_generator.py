@@ -20,26 +20,15 @@ from .logging_system import log
 class ScriptGenerator:
     """Unified script generation using Pollinations API."""
 
-    # Viral Shorts hooks optimized for retention (first 1-3 seconds)
-    PATTERN_INTERRUPTS = [
-        "ninguém percebeu que",
-        "uma descoberta chocante",
-        "o detailedoque mudou tudo",
-        "ninguém estava esperando",
-        "o detalhe que todos",
-        "a verdade escondida",
-        "o segredo que",
-        "como algo aparentemente",
-    ]
-
-    CURIOSITY_GAPS = [
-        "e ninguém sabe por quê",
-        "até hoje ninguém explicou",
-        "a resposta vai te chocar",
-        "e a explicação vai te surpreender",
-        "mas有一个 segredo",
-        "o que aconteceu depois",
-        "o que ninguém esperava",
+    # Concrete opening hooks optimized for retention (first 1-3 seconds)
+    CONCRETE_HOOKS = [
+        "em [ano] algo mudou para sempre",
+        "tudo começou quando",
+        "o marco histórico que",
+        "em uma data que",
+        "o momento exato em que",
+        "a origem de tudo",
+        "foi em [ano] que",
     ]
 
     def __init__(self, web_search: bool = False):
@@ -60,22 +49,24 @@ class ScriptGenerator:
         system_prompt = """You are a master storyteller for viral YouTube Shorts.
 CRITICAL RETENTION RULES:
 1.Write in Brazilian Portuguese (PT-BR).
-2.First paragraph MUST start with a PATTERN INTERRUPT - create curiosity or shock
-3.NEVER start with " Este cara" or "Olá" or "Hey" - these are hook killers
-4.Use curiosity gaps, contradictions, or unexpected claims to stop the scroll
-5.Lead with the most engaging/curious element, NOT context setting
-6.Create "open loops" that make viewers want to keep watching
-7.Each paragraph 2-3 sentences for pacing (each ~3 seconds of audio)
-8.Write exactly 4-5 paragraphs.
-9.NO markdown formatting, NO JSON, just plain text paragraphs."""
+2.First paragraph MUST start with a SPECIFIC FACT (date, number, name, place) — not a generic teaser.
+3.NEVER start with "ninguém sabia", "o segredo", "a verdade escondida" or "você não vai acreditar" — these are vague and weak.
+4.Always lead with concrete, specific details: "Em 1914...", "Tudo começou quando...", "O placar foi 8 a 0..."
+5.Include origin stories — explain HOW something started or WHY it matters, not just THAT it exists.
+6.Each paragraph 2-3 sentences for pacing (each ~3 seconds of audio).
+7.Write exactly 4-5 paragraphs.
+8.NO markdown formatting, NO JSON, just plain text paragraphs.
+9.Every paragraph must advance the story with a new specific fact — no filler."""
 
         user_prompt = f"""Crie uma história envolvente em 4-5 parágrafos sobre "{subject}".
 
 REGRAS CRÍTICAS:
-- Primeiro parágrafo DEVE interromper o scroll: use curiosidade, surpresa ou contradição
-- Comece com algo que force o espectador a PAUSAR, não com contexto
-- Use gaps de curiosidade como "ninguém sabia que", "a verdade escondida", "o que aconteceu depois"
-- Crie tensão narrativa: o espectador deve querer saber mais
+- Primeiro parágrafo DEVE começar com um FATO CONCRETO (data, número, nome, lugar) — NÃO use ganchos genéricos
+- NUNCA comece com "ninguém sabia", "o segredo", "a verdade escondida" — isso é vago e fraco
+- Inclua nomes, datas, lugares e números específicos sempre que possível
+- Conte a ORIGEM: como tudo começou, por que existe
+- Cada parágrafo deve avançar a história com um novo fato concreto
+- NADA de frases de enchimento
 
 Escreva cada parágrafo em uma linha separada."""
 
@@ -92,23 +83,24 @@ Escreva cada parágrafo em uma linha separada."""
         system_prompt = """You are a master storyteller for viral YouTube Shorts.
 CRITICAL RETENTION RULES:
 1.Write in Brazilian Portuguese (PT-BR).
-2.First paragraph MUST start with a PATTERN INTERRUPT - create curiosity or shock
-3.NEVER start with "Este cara" or "Olá" or "Hey" - these are hook killers
-4.Use curiosity gaps, contradictions, or unexpected claims to stop the scroll
-5.Lead with the most engaging/curious element, NOT context setting
-6.Create "open loops" that make viewers want to keep watching
-7.Each paragraph 2-3 sentences for pacing (each ~3 seconds of audio)
-8.Write exactly 4-5 paragraphs.
-9.NO markdown formatting, NO JSON, just plain text paragraphs.
-10.Create a compelling story based on the provided YouTube video title and description."""
+2.First paragraph MUST start with a SPECIFIC FACT from the video (date, number, name, place).
+3.NEVER start with "ninguém sabia", "o segredo", or "a verdade escondida" — these are vague and weak.
+4.Extract concrete details from the video metadata: dates, names, places, statistics, historical context.
+5.Include origin stories — explain HOW something started, not just THAT it happened.
+6.Each paragraph 2-3 sentences for pacing (each ~3 seconds of audio).
+7.Write exactly 4-5 paragraphs.
+8.NO markdown formatting, NO JSON, just plain text paragraphs.
+9.Base your story entirely on the video's content, adding only well-known historical context."""
 
         user_prompt = f"""Crie uma história envolvente em 4-5 parágrafos baseada neste vídeo do YouTube.
 
 REGRAS CRÍTICAS:
-- Primeiro parágrafo DEVE interromper o scroll: use curiosidade, surpresa ou contradição
-- Comece com algo que force o espectador a PAUSAR, não com contexto
-- Use gaps de curiosidade como "ninguém sabia que", "a verdade escondida"
-- Crie tensão narrativa: o espectador deve querer saber mais
+- Primeiro parágrafo DEVE começar com um FATO CONCRETO extraído do vídeo (data, nome, lugar, número)
+- NUNCA comece com "ninguém sabia", "o segredo" ou "a verdade escondida"
+- Extraia detalhes específicos do título e descrição: datas, nomes, locais, estatísticas
+- Conte a ORIGEM: como tudo começou, por que é importante
+- Cada parágrafo deve avançar a história com um novo fato
+- NADA de ganchos genéricos ou frases de enchimento
 
 Vídeo:
 {combined_content}
@@ -124,11 +116,13 @@ Escreva cada parágrafo em uma linha separada."""
         system_prompt = """You are a master storyteller for viral YouTube Shorts.
 Output ONLY a JSON object with:
 1.'paragraphs': Array of 7 strings (PT-BR).
-CRITICAL: First paragraph MUST start with pattern interrupt (curiosity/shock), NOT context.
-Use curiosity gaps like "ninguém sabia que", "o segredo", "a verdade".
+CRITICAL: First paragraph MUST start with a SPECIFIC FACT (date, name, number, place).
+NEVER use "ninguém sabia", "o segredo", or "a verdade" — these are vague.
+Always lead with concrete details: dates, names, places, statistics.
+Include origin stories: explain how it started and why it matters.
 Keep each paragraph 2-3 sentences (~3 seconds audio each)."""
 
-        user_prompt = f"Create a viral emotional story about: {subject}.First hook must stop the scroll!"
+        user_prompt = f"Tell a story about: {subject}. Start with a specific concrete fact (date, name, number). Include origin and specific details."
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -276,11 +270,11 @@ Keep each paragraph 2-3 sentences (~3 seconds audio each)."""
             if len(lines) < 4:
                 # Pad with fallback content
                 fallback = [
-                    "Este é um vídeo interessante sobre o tema apresentado.",
-                    "O conteúdo mostra informações importantes e relevantes.",
-                    "Assista até o final para não perder nenhum detalhe.",
-                    "A história é envolvente e cheia de surpresas inesperadas.",
-                    "Cada cena revela algo novo e fascinante sobre o assunto.",
+                    "Esta história começa com um fato que marcou época.",
+                    "Os detalhes revelam como tudo aconteceu ao longo do tempo.",
+                    "Cada etapa trouxe consequências que mudaram o rumo dos acontecimentos.",
+                    "O desfecho mostra por que este tema continua relevante até hoje.",
+                    "No final, fica uma lição que vale a pena conhecer.",
                 ]
                 lines.extend(fallback[len(lines) :])
 
@@ -291,9 +285,9 @@ Keep each paragraph 2-3 sentences (~3 seconds audio each)."""
             log(f"Script generation failed: {e}", "ERROR")
             # Return fallback script
             return [
-                "Este é um vídeo interessante sobre o tema apresentado.",
-                "O conteúdo mostra informações importantes e relevantes.",
-                "Assista até o final para não perder nenhum detalhe.",
-                "A história é envolvente e cheia de surpresas inesperadas.",
-                "Cada cena revela algo novo e fascinante sobre o assunto.",
+                "Esta história começa com um fato que marcou época.",
+                "Os detalhes revelam como tudo aconteceu ao longo do tempo.",
+                "Cada etapa trouxe consequências que mudaram o rumo dos acontecimentos.",
+                "O desfecho mostra por que este tema continua relevante até hoje.",
+                "No final, fica uma lição que vale a pena conhecer.",
             ]
