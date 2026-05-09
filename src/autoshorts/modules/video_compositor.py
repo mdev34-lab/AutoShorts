@@ -450,12 +450,10 @@ class VideoCompositor:
         Create video with blurred background + AI image overlays (experimental style).
         Uses flattened structure to avoid MoviePy timing bugs with nested composites.
         """
-        # Subclip to target duration BEFORE processing to avoid encoding the full video
-        if video.duration > target_duration:
-            video = video.subclipped(0, target_duration)
         blurred = self._create_blurred_background_from_clip(video)
 
         content_h = int(VIDEO_HEIGHT * 0.45)
+        # Use full video for fg so jumpcut segments never land past its end
         fg = video.resized((VIDEO_WIDTH, content_h)).with_position(("center", "center"))
 
         base_composite = CompositeVideoClip(
@@ -466,6 +464,9 @@ class VideoCompositor:
             # _jumpcut_background already handles duration trimming
             final_video = self._jumpcut_background(base_composite, target_duration)
         else:
+            # Subclip to target for speed-scaling path only (keeps playback at normal speed)
+            if video.duration > target_duration:
+                video = video.subclipped(0, target_duration)
             speed_factor = video.duration / target_duration
             final_video = base_composite.with_speed_scaled(speed_factor).with_duration(
                 target_duration
