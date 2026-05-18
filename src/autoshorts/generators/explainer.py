@@ -131,6 +131,9 @@ class ExplainerGenerator:
                 image_paths=image_paths,
             ):
                 elapsed = time.time() - start_time
+                title = getattr(self.script_generator, "generated_title", None)
+                if title:
+                    log(f"Title: {title}", "SUCCESS")
                 log(f"Video completed in {elapsed:.2f}s", "SUCCESS")
                 log(f"Saved: {self.output}", "SUCCESS")
                 return True
@@ -233,6 +236,9 @@ class ExplainerGenerator:
             self._create_flux_video(img_paths, audio_path, paragraphs, self.output)
 
             elapsed = time.time() - start_time
+            title = getattr(self.script_generator, "generated_title", None)
+            if title:
+                log(f"Title: {title}", "SUCCESS")
             log(f"Video completed in {elapsed:.2f}s", "SUCCESS")
             log(f"Saved: {self.output}", "SUCCESS")
             return True
