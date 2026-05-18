@@ -23,9 +23,11 @@ FALLBACK_PARAGRAPHS = [
 class ScriptGenerator:
     """Unified script generation using Pollinations API.
 
-    When web_search is enabled, uses a two-pass approach:
+    When web_search is enabled, uses a three-pass approach:
       Pass 1 — generate a draft script + verification search queries + title
-      Pass 2 — search the web, then verify and fix factual errors in the draft
+      Search — run queries via DDGS
+      Pass 2 — extract every factual claim, verify each against web sources,
+               remove unverifiable claims, produce corrected script
     """
 
     def __init__(self, web_search: bool = True):
@@ -68,15 +70,15 @@ class ScriptGenerator:
             log("No queries generated, falling back to subject-based search")
             results = self.searcher.search(subject)
 
-        # Pass 2: verify draft against search results
+        # Pass 2: audit every claim against search results
         if results:
-            log(f"Pass 2: verifying draft against {len(results)} sources...")
+            log(f"Pass 2: auditing {len(draft)} paragraphs against {len(results)} sources...")
             context = self.searcher.format_context(results)
-            verified = self._verify_script(draft, context)
-            if verified:
-                log("Script verified and corrected", "SUCCESS")
-                return self._ensure_paragraph_count(verified, 5)
-            log("Verification failed, returning draft as-is", "WARNING")
+            audit_result = self._audit_claims(draft, context)
+            if audit_result and audit_result.get("paragraphs"):
+                log("Script audited and corrected", "SUCCESS")
+                return self._ensure_paragraph_count(audit_result["paragraphs"], 5)
+            log("Claim audit failed, returning draft as-is", "WARNING")
         else:
             log("No search results, returning unverified draft", "WARNING")
 
@@ -118,15 +120,15 @@ class ScriptGenerator:
         else:
             results = self.searcher.search(subject)
 
-        # Pass 2: verify against search results
+        # Pass 2: audit every claim against search results
         if results:
-            log(f"Pass 2: verifying draft against {len(results)} sources...")
+            log(f"Pass 2: auditing {len(draft)} paragraphs against {len(results)} sources...")
             context = self.searcher.format_context(results)
-            verified = self._verify_script(draft, context)
-            if verified:
-                log("Script verified and corrected", "SUCCESS")
-                return self._ensure_paragraph_count(verified, 7), []
-            log("Verification failed, returning draft as-is", "WARNING")
+            audit_result = self._audit_claims(draft, context)
+            if audit_result and audit_result.get("paragraphs"):
+                log("Script audited and corrected", "SUCCESS")
+                return self._ensure_paragraph_count(audit_result["paragraphs"], 7), []
+            log("Claim audit failed, returning draft as-is", "WARNING")
         else:
             log("No search results, returning unverified draft", "WARNING")
 
@@ -161,9 +163,9 @@ class ScriptGenerator:
             f"   - Include specific names, dates, statistics, locations.\n"
             f"   - Tell an origin story: how it started, why it matters.\n"
             f"   - This is a DRAFT \u2014 it may contain errors. Do NOT fact-check yourself.\n"
-             f'2. "queries": Array of 5-7 Portuguese web search queries to VERIFY '
+             f'2. "queries": Array of 7-9 Portuguese web search queries to VERIFY '
              f"the factual claims in your draft.\n"
-             f"   - At least 2 queries must be BROADER independent searches about the subject "
+             f"   - At least 3 queries must be BROADER independent searches about the subject "
              f"(e.g. 'Botafogo principais rivais' instead of 'hist\u00f3ria do cl\u00e1ssico X').\n"
              f"   - Each specific query should target one or more claims from the draft.\n"
              f"   - Be specific: include names, dates, unique terms.\n"
@@ -187,41 +189,95 @@ class ScriptGenerator:
             log(f"Draft generation failed: {e}", "ERROR")
             return {"draft": [], "queries": [subject], "title": ""}
 
-    def _verify_script(self, draft: list, search_context: str) -> list | None:
-        """Pass 2: verify and fix draft using web search results."""
+    def _audit_claims(self, draft: list, search_context: str) -> dict | None:
+        """Pass 2: extract every factual claim, verify each against search results,
+        then produce corrected paragraphs.
+
+        Returns dict with ''claim_audits'' and ''paragraphs'' keys, or None on failure.
+        """
         system_prompt = (
-            "You are a fact-checking editor for YouTube Shorts.\n"
-            "Fix factual errors in a draft script using the provided web sources.\n\n"
-            "CRITICAL \u2014 Be skeptical, do not just confirm terms exist:\n"
-            '   - Verify RELATIONSHIPS, not just names. E.g., if the draft says '
-            '"the classic is X", check whether the SUBJECT is part of X.\n'
-            "   - A web source mentioning a term does NOT mean the draft's claim about it is correct.\n"
-            "   - Broader context queries in the sources may override specific claim queries.\n\n"
-            "Output ONLY a JSON object with:\n"
-            '1. "paragraphs": Array of corrected strings (PT-BR).\n'
-            "   - Fix ANY factual errors based on the web sources.\n"
-            "   - Keep the engaging storytelling tone and the same number of paragraphs.\n"
-            "   - First paragraph MUST start with a specific VERIFIED fact.\n"
+            "You are a forensic fact-checker for YouTube Shorts.\n"
+            "Your job is to audit EVERY specific factual claim in the draft.\n\n"
+            "### Step 1 \u2014 Extract claims\n"
+            "Read each paragraph and extract ALL specific factual claims. "
+            "Categorize each claim:\n"
+            "  - date: years, months, days, time periods\n"
+            "  - name: people, organizations, brands, entities\n"
+            "  - number: statistics, percentages, monetary values, counts\n"
+            "  - person: individuals mentioned (verify they exist and are relevant)\n"
+            "  - event: occurrences, operations, discoveries\n"
+            "  - location: places, countries, cities\n"
+            "  - relationship: X is part of Y, X caused Y, X happened in period Y\n"
+            "  - other: any other verifiable factual assertion\n\n"
+            "### Step 2 \u2014 Verify each claim against the web sources\n"
+            "For each claim, assign one of these statuses:\n"
+            "  - 'verified': Sources EXPLICITLY SUPPORT the claim.\n"
+            '  - "corrected": Sources EXPLICITLY CONTRADICT the claim. '
+            "Provide the corrected value.\n"
+            "  - 'unverifiable': Sources do NOT mention the claim. "
+            "This is likely a hallucination \u2014 must be removed.\n\n"
+            "CRITICAL RULES:\n"
+            '  - Verify RELATIONSHIPS, not just terms. E.g., "Fla-Flu exists" '
+            "does NOT prove Botafogo is part of it.\n"
+            "  - A source mentioning a term does NOT mean the draft's claim about it is right.\n"
+            "  - Broader/context sources override narrow claim-confirmation sources.\n"
+            "  - Cross-check EVERY number: if sources say R$41B, don't trust draft's R$23.7B.\n"
+            "  - Cross-check EVERY year: if draft says 2018 but sources say 2025, correct.\n"
+            "  - Cross-check EVERY person: if draft mentions a reporter, verify they cover that beat.\n"
+            "  - If a claim is unverifiable, it MUST be removed from the final output.\n\n"
+            "### Step 3 \u2014 Produce corrected paragraphs\n"
+            "Rewrite the script using ONLY claims that are 'verified' or 'corrected'.\n"
+            "NEVER include an 'unverifiable' claim.\n\n"
+            "Output ONLY a valid JSON object with these exact keys:\n"
+            '1. "claim_audits": Array of objects, each with:\n'
+            '   - "claim": the exact claim from the draft\n'
+            '   - "category": one of the categories above\n'
+            '   - "status": "verified" | "corrected" | "unverifiable"\n'
+            '   - "correction": corrected text if status is "corrected", else ""\n'
+            '   - "evidence": the source snippet that supports or contradicts the claim\n'
+            '2. "paragraphs": Array of corrected strings (PT-BR).\n'
+            "   - Same number of paragraphs as the draft.\n"
             "   - Each paragraph 2-3 sentences.\n"
-            "   - If a fact in the draft contradicts a web source, ALWAYS trust the web source.\n"
-            "   - Remove or correct any claim that cannot be verified by the sources."
+            "   - First paragraph MUST start with a specific VERIFIED fact.\n"
+            "   - Only include claims that are verified or corrected.\n"
+            "   - Replace any unverifiable claim with a verified one from the sources."
         )
         user_prompt = (
-            f"Fix this draft using the web sources below.\n\n"
+            f"Audit every factual claim in this draft using the web sources.\n\n"
             f"DRAFT:\n{json.dumps(draft, ensure_ascii=False, indent=2)}\n\n"
             f"WEB SOURCES:\n{search_context}\n\n"
-            f"Output ONLY a JSON object with 'paragraphs'."
+            f"Output ONLY a JSON object with 'claim_audits' and 'paragraphs'."
         )
         try:
             data = self._make_json_api_call(system_prompt, user_prompt)
+            audits = data.get("claim_audits")
             paragraphs = data.get("paragraphs")
+            if audits:
+                verified = sum(1 for a in audits if a.get("status") == "verified")
+                corrected = sum(1 for a in audits if a.get("status") == "corrected")
+                removed = sum(1 for a in audits if a.get("status") == "unverifiable")
+                log(
+                    f"Claim audit: {len(audits)} total, "
+                    f"{verified} verified, {corrected} corrected, {removed} removed",
+                    "INFO",
+                )
+                for a in audits[:10]:
+                    log(
+                        f"  [{a.get('status','?')}] "
+                        f"({a.get('category','?')}) "
+                        f"{a.get('claim','')[:100]}",
+                        "INFO",
+                    )
             if paragraphs and len(paragraphs) >= 3:
-                log(f"Verification complete: {len(paragraphs)} paragraphs", "SUCCESS")
-                return paragraphs
-            log(f"Verification returned only {len(paragraphs) if paragraphs else 0} paragraphs", "WARNING")
+                log(f"Audit complete: {len(paragraphs)} paragraphs", "SUCCESS")
+                return data
+            log(
+                f"Audit returned only {len(paragraphs) if paragraphs else 0} paragraphs",
+                "WARNING",
+            )
             return None
         except Exception as e:
-            log(f"Verification failed: {e}", "WARNING")
+            log(f"Claim audit failed: {e}", "WARNING")
             return None
 
     # ── API helpers ──────────────────────────────────────────────────────
