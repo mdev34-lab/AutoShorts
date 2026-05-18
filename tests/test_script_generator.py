@@ -391,101 +391,52 @@ class TestScriptGenerator:
         assert len(result) == 5  # Should be padded to 5
 
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_audit_claims_success(self, mock_post):
-        """Test _audit_claims extracts and verifies claims correctly"""
-        draft = [
-            "Em 2018, o Banco Máxima veio a tona após investigação da PF.",
-            "O rombo foi de R$ 23,7 bilhões no FGC.",
+    def test_verify_script_success(self, mock_post):
+        """Test _verify_script corrects errors and keeps verified claims"""
+        paragraphs = [
+            "Em 2025, o Banco Master veio a tona após a Operação Compliance Zero.",
+            "O rombo foi de R$ 41 bilhões no Fundo Garantidor de Créditos.",
             "Daniel Vorcaro foi preso ao tentar deixar o país.",
         ]
-        context = "FONTES DA WEB:\n- Em 2025, Banco Master foi alvo da Operação Compliance Zero\n- FGC estima resgate de R$ 41 bilhões\n"
-        audit_data = {
-            "claim_audits": [
-                {
-                    "claim": "Em 2018, o Banco Máxima veio a tona",
-                    "category": "date",
-                    "status": "corrected",
-                    "correction": "Em 2025, o Banco Master veio a tona",
-                    "evidence": "Fontes indicam que o escândalo ocorreu em 2025.",
-                },
-                {
-                    "claim": "R$ 23,7 bilhões no FGC",
-                    "category": "number",
-                    "status": "corrected",
-                    "correction": "R$ 41 bilhões no FGC",
-                    "evidence": "FGC estima resgate de R$ 41 bilhões.",
-                },
-                {
-                    "claim": "Daniel Vorcaro foi preso ao tentar deixar o país",
-                    "category": "event",
-                    "status": "verified",
-                    "correction": "",
-                    "evidence": "Daniel Vorcaro foi detido ao tentar deixar o país.",
-                },
-            ],
-            "paragraphs": [
-                "Em 2025, o Banco Master veio a tona após a Operação Compliance Zero da Polícia Federal.",
-                "O rombo foi de R$ 41 bilhões no Fundo Garantidor de Créditos.",
-                "Daniel Vorcaro foi preso ao tentar deixar o país.",
-            ],
-        }
+        data = {"paragraphs": paragraphs}
         mock_response = Mock()
         mock_response.json.return_value = {
-            "choices": [{"message": {"content": json.dumps(audit_data)}}]
+            "choices": [{"message": {"content": json.dumps(data)}}]
         }
         mock_response.raise_for_status.return_value = None
         mock_post.return_value = mock_response
 
         generator = ScriptGenerator(web_search=True)
-        result = generator._audit_claims(draft, context)
-
-        assert result is not None
-        assert "claim_audits" in result
-        assert "paragraphs" in result
-        assert len(result["claim_audits"]) == 3
-        assert len(result["paragraphs"]) == 3
-        # Verify the year correction was applied
-        assert "2025" in result["paragraphs"][0]
-        assert "Banco Master" in result["paragraphs"][0]
-        # Verify the value correction was applied
-        assert "41" in result["paragraphs"][1]
-        # Verified claim preserved
-        assert "Daniel Vorcaro" in result["paragraphs"][2]
+        result = generator._verify_script(
+            ["Draft 1", "Draft 2", "Draft 3"],
+            "FONTES:\n- source 1\n- source 2",
+        )
+        assert result == paragraphs
 
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_audit_claims_few_paragraphs(self, mock_post):
-        """Test _audit_claims returns None when too few paragraphs"""
-        draft = ["Em 2018, algo aconteceu.", "E então veio o desfecho."]
-        context = "Some sources."
-        audit_data = {
-            "claim_audits": [
-                {
-                    "claim": "2018",
-                    "category": "date",
-                    "status": "verified",
-                    "correction": "",
-                    "evidence": "Confirmed.",
-                }
-            ],
-            "paragraphs": ["Em 2018, algo aconteceu.", "E então veio o desfecho."],
-        }
+    def test_verify_script_few_paragraphs(self, mock_post):
+        """Test _verify_script returns None when too few paragraphs"""
+        data = {"paragraphs": ["Apenas um."]}
         mock_response = Mock()
         mock_response.json.return_value = {
-            "choices": [{"message": {"content": json.dumps(audit_data)}}]
+            "choices": [{"message": {"content": json.dumps(data)}}]
         }
         mock_response.raise_for_status.return_value = None
         mock_post.return_value = mock_response
 
         generator = ScriptGenerator(web_search=True)
-        result = generator._audit_claims(draft, context)
+        result = generator._verify_script(
+            ["Draft 1", "Draft 2"],
+            "Some sources.",
+        )
         assert result is None  # < 3 paragraphs
 
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_audit_claims_api_error(self, mock_post):
-        """Test _audit_claims returns None on API error"""
+    def test_verify_script_api_error(self, mock_post):
+        """Test _verify_script returns None on API error"""
         mock_post.side_effect = Exception("API Error")
         generator = ScriptGenerator(web_search=True)
-        result = generator._audit_claims(
+        result = generator._verify_script(
             ["P1", "P2", "P3"], "Some context"
         )
         assert result is None
