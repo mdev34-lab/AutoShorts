@@ -499,6 +499,237 @@ class TestScriptGenerator:
         # Verify the description was truncated in the call
         mock_post.assert_called_once()
 
+    @patch("autoshorts.modules.script_generator.WebSearcher")
+    @patch("autoshorts.modules.script_generator.requests.post")
+    def test_generate_script_with_search_results(
+        self, mock_post, mock_searcher_class
+    ):
+        """Test generate_script with search results uses context in final call"""
+        mock_searcher = Mock()
+        mock_searcher.search_with_queries.return_value = [
+            {"title": "Flamengo", "url": "https://ex.com/1", "snippet": "Hist\u00f3ria do Flamengo"},
+            {"title": "Fluminense", "url": "https://ex.com/2", "snippet": "Origem do Fluminense"},
+        ]
+        mock_searcher.format_context.return_value = "FONTES DA WEB:\n..."
+        mock_searcher_class.return_value = mock_searcher
+
+        draft_json = json.dumps({
+            "draft": ["P1", "P2", "P3", "P4", "P5"],
+            "queries": ["flamengo hist\u00f3ria", "fluminense origem"],
+            "title": "Cl\u00e1ssico",
+        })
+        draft_response = Mock()
+        draft_response.json.return_value = {
+            "choices": [{"message": {"content": draft_json}}]
+        }
+        draft_response.raise_for_status.return_value = None
+
+        text_response = Mock()
+        text_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            "Primeiro par\u00e1grafo sobre o cl\u00e1ssico.\n"
+                            "Segundo par\u00e1grafo com mais detalhes.\n"
+                            "Terceiro par\u00e1grafo da hist\u00f3ria.\n"
+                            "Quarto par\u00e1grafo.\n"
+                            "Quinto par\u00e1grafo."
+                        )
+                    }
+                }
+            ]
+        }
+        text_response.raise_for_status.return_value = None
+
+        mock_post.side_effect = [draft_response, text_response]
+
+        generator = ScriptGenerator(web_search=True)
+        result = generator.generate_script("Flamengo x Fluminense")
+
+        assert isinstance(result, list)
+        assert len(result) == 5
+        assert "primeiro" in result[0].lower()
+        mock_searcher.search_with_queries.assert_called_once()
+        mock_searcher.format_context.assert_called_once()
+        # Verify _make_text_api_call received the context
+        assert mock_post.call_count == 2
+
+    @patch("autoshorts.modules.script_generator.WebSearcher")
+    @patch("autoshorts.modules.script_generator.requests.post")
+    def test_generate_script_with_prompts_web_search_success(
+        self, mock_post, mock_searcher_class
+    ):
+        """Test generate_script_with_prompts with search results success path"""
+        mock_searcher = Mock()
+        mock_searcher.search_with_queries.return_value = [
+            {"title": "Fla", "url": "https://ex.com/1", "snippet": "Flamengo info"},
+            {"title": "Flu", "url": "https://ex.com/2", "snippet": "Fluminense info"},
+        ]
+        mock_searcher.format_context.return_value = "FONTES DA WEB:\n..."
+        mock_searcher_class.return_value = mock_searcher
+
+        draft_json = json.dumps({
+            "draft": ["P1", "P2", "P3", "P4", "P5", "P6", "P7"],
+            "queries": ["query1", "query2"],
+            "title": "Test Title",
+        })
+        draft_response = Mock()
+        draft_response.json.return_value = {
+            "choices": [{"message": {"content": draft_json}}]
+        }
+        draft_response.raise_for_status.return_value = None
+
+        final_json = json.dumps({
+            "paragraphs": [f"P{i}" for i in range(1, 8)]
+        })
+        final_response = Mock()
+        final_response.json.return_value = {
+            "choices": [{"message": {"content": final_json}}]
+        }
+        final_response.raise_for_status.return_value = None
+
+        mock_post.side_effect = [draft_response, final_response]
+
+        generator = ScriptGenerator(web_search=True)
+        paragraphs, prompts = generator.generate_script_with_prompts("test")
+
+        assert len(paragraphs) == 7
+        assert prompts == []
+        mock_searcher.format_context.assert_called_once()
+        assert mock_post.call_count == 2
+
+    @patch("autoshorts.modules.script_generator.WebSearcher")
+    @patch("autoshorts.modules.script_generator.requests.post")
+    def test_generate_script_with_prompts_empty_draft_fallback(
+        self, mock_post, mock_searcher_class
+    ):
+        """Test generate_script_with_prompts falls back when draft is empty"""
+        mock_searcher = Mock()
+        mock_searcher.search_with_queries.return_value = None
+        mock_searcher.search.return_value = None
+        mock_searcher_class.return_value = mock_searcher
+
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": json.dumps({
+                "draft": [],
+                "queries": [],
+                "title": "",
+            })}}]
+        }
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+
+        generator = ScriptGenerator(web_search=True)
+        paragraphs, prompts = generator.generate_script_with_prompts("test")
+        assert len(paragraphs) == 5  # _ensure_paragraph_count([], 7) pads from 5 fallback entries
+        assert isinstance(paragraphs, list)
+        assert prompts == []
+
+    @patch("autoshorts.modules.script_generator.WebSearcher")
+    @patch("autoshorts.modules.script_generator.requests.post")
+    def test_generate_script_draft_api_error(
+        self, mock_post, mock_searcher_class
+    ):
+        """Test generate_script handles draft API error gracefully"""
+        mock_searcher = Mock()
+        mock_searcher.search_with_queries.return_value = None
+        mock_searcher_class.return_value = mock_searcher
+
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": json.dumps({
+                "draft": [],
+                "queries": ["fallback"],
+                "title": "",
+            })}}]
+        }
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+
+        generator = ScriptGenerator(web_search=True)
+        result = generator.generate_script("test")
+        assert isinstance(result, list)
+        assert len(result) == 5
+
+    @patch("autoshorts.modules.script_generator.requests.post")
+    def test_generate_draft_api_error_returns_fallback(self, mock_post):
+        """Test _generate_draft returns fallback on API error"""
+        mock_post.side_effect = Exception("API Error")
+        generator = ScriptGenerator(web_search=True)
+        result = generator._generate_draft("test")
+        assert "draft" in result
+        assert result["draft"] == []
+        assert "test" in result["queries"]
+
+    @patch("autoshorts.modules.script_generator.requests.post")
+    def test_generate_draft_missing_draft_key(self, mock_post):
+        """Test _generate_draft returns fallback when response has no draft key"""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": json.dumps({
+                "queries": ["q1"],
+                "title": "Titulo",
+            })}}]
+        }
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+
+        generator = ScriptGenerator(web_search=True)
+        result = generator._generate_draft("test")
+        assert result["draft"] == []
+        assert "test" in result["queries"]
+
+    @patch("autoshorts.modules.script_generator.requests.post")
+    def test_generate_image_prompts_success(self, mock_post):
+        """Test generate_image_prompts_from_script returns prompts"""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": json.dumps({
+                "image_prompts": [
+                    "A dramatic scene",
+                    "A close up shot",
+                ]
+            })}}]
+        }
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+
+        generator = ScriptGenerator(web_search=False)
+        result = generator.generate_image_prompts_from_script(
+            ["Para 1", "Para 2"], 2
+        )
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert "dramatic" in result[0]
+
+    @patch("autoshorts.modules.script_generator.requests.post")
+    def test_generate_image_prompts_api_error(self, mock_post):
+        """Test generate_image_prompts_from_script raises on API error"""
+        mock_post.side_effect = Exception("API Error")
+        generator = ScriptGenerator(web_search=False)
+        with pytest.raises(Exception):
+            generator.generate_image_prompts_from_script(["Para"], 1)
+
+    @patch("autoshorts.modules.script_generator.requests.post")
+    def test_generate_image_prompts_missing_key(self, mock_post):
+        """Test generate_image_prompts_from_script returns empty list when key missing"""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": json.dumps({
+                "other_key": ["value"]
+            })}}]
+        }
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+
+        generator = ScriptGenerator(web_search=False)
+        result = generator.generate_image_prompts_from_script(
+            ["Para 1", "Para 2"], 2
+        )
+        assert result == []
+
 
 class TestScriptGeneratorEdgeCases:
     """Test edge cases for ScriptGenerator"""
