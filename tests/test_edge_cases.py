@@ -2,10 +2,10 @@
 Test edge cases and error handling for AutoShorts modules
 """
 
+import subprocess
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
-import subprocess
 
 import pytest
 

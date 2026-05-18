@@ -8,12 +8,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from autoshorts.modules import SubtitleSystem
 from autoshorts.generators.explainer import ExplainerGenerator
-
-import tempfile
-from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from autoshorts.modules import SubtitleSystem
 
 
 class ScriptEngine:

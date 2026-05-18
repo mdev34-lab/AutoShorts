@@ -5,8 +5,8 @@ from pathlib import Path
 import typer
 
 from ...generators import VIDEO_TYPES
-from ..new import new_app
 from ...modules import log, shutdown_computer
+from ..new import new_app
 
 
 @new_app.command(name="explainer")

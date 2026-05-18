@@ -2,11 +2,9 @@
 Tests for VideoCompositor — easing, overlay animation, and composition helpers.
 """
 
-from unittest.mock import Mock, patch, MagicMock
-from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
-import pytest
 
 from autoshorts.modules.video_compositor import VideoCompositor
 
@@ -109,7 +107,8 @@ class TestOverlayAnimationFrameTransform:
 
         transform_call = mock_clip.transform.call_args[0][0]
 
-        dummy_get_frame = lambda t: np.ones((100, 100, 3), dtype=np.uint8) * 255
+        def dummy_get_frame(t):
+            return np.ones((100, 100, 3), dtype=np.uint8) * 255
 
         at_mid = transform_call(dummy_get_frame, 0.5)
         at_end = transform_call(dummy_get_frame, 1.0)

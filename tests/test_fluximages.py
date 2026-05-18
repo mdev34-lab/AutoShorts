@@ -3,16 +3,17 @@ Test FluxImages module functionality
 """
 
 import tempfile
+import warnings
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-import warnings
+from autoshorts.generators.explainer import ExplainerGenerator
+from autoshorts.modules.utils import shutdown_computer
+
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-from autoshorts.modules.utils import shutdown_computer
-from autoshorts.generators.explainer import ExplainerGenerator
 
 # Backward-compatible wrappers for existing test structure
 class ScriptEngine:
