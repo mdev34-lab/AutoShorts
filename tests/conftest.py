@@ -13,6 +13,17 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 
+@pytest.fixture(autouse=True)
+def isolate_image_cache():
+    """Patch IMAGE_CACHE_DIR to a unique temp dir per test to prevent cross-test pollution."""
+    from unittest.mock import patch
+    cache_dir = Path(tempfile.mkdtemp())
+    with patch("autoshorts.generators.explainer.IMAGE_CACHE_DIR", cache_dir):
+        yield
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir)
+
+
 @pytest.fixture
 def temp_dir():
     """Provide a temporary directory for tests"""

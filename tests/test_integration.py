@@ -8,8 +8,46 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from autoshorts.fluximages import AssetManager, ScriptEngine, VideoEngine
 from autoshorts.modules import SubtitleSystem
+from autoshorts.generators.explainer import ExplainerGenerator
+
+import tempfile
+from pathlib import Path
+from unittest.mock import AsyncMock, Mock, patch
+
+
+class ScriptEngine:
+    def __init__(self):
+        self.gen = ExplainerGenerator(subject="test", images_only=True)
+        self.script_generator = self.gen.script_generator
+
+    def generate(self, subject):
+        return self.script_generator.generate_script_with_prompts(subject)
+
+
+class AssetManager:
+    def __init__(self, temp_dir):
+        self.temp_dir = temp_dir
+        self.gen = ExplainerGenerator(subject="test", images_only=True)
+
+    def generate_ai_images(self, prompts):
+        import shutil
+        if hasattr(self.gen, "temp_dir") and self.gen.temp_dir.exists():
+            shutil.rmtree(self.gen.temp_dir)
+        self.gen.temp_dir = self.temp_dir
+        return self.gen._generate_ai_images("test", [], prompts=prompts)
+
+    async def generate_audio(self, paragraphs):
+        self.gen.temp_dir = self.temp_dir
+        return await self.gen.tts_system.generate_audio_only(paragraphs, self.temp_dir)
+
+
+class VideoEngine:
+    def __init__(self):
+        self.gen = ExplainerGenerator(subject="test", images_only=True)
+
+    def create_video(self, img_paths, audio_path, paragraphs, output_path):
+        self.gen._create_flux_video(img_paths, audio_path, paragraphs, output_path)
 
 
 class TestScriptEngineIntegration:
@@ -103,7 +141,7 @@ class TestAssetManagerIntegration:
             assert result is not None
             assert result.endswith(".mp3")
 
-    @patch("autoshorts.fluximages.requests.get")
+    @patch("autoshorts.generators.explainer.requests.get")
     def test_image_generation_workflow(self, mock_get):
         """Test image generation workflow"""
         prompts = ["Test prompt 1", "Test prompt 2"]
@@ -120,7 +158,7 @@ class TestAssetManagerIntegration:
         assert len(result) == len(prompts)
         assert all(Path(path).exists() for path in result)
 
-    @patch("autoshorts.fluximages.requests.get")
+    @patch("autoshorts.generators.explainer.requests.get")
     def test_image_generation_error_handling(self, mock_get):
         """Test image generation error handling"""
         prompts = ["Test prompt"]
@@ -215,7 +253,7 @@ class TestCompleteWorkflowIntegration:
 
     @patch("autoshorts.modules.script_generator.requests.post")
     @patch("edge_tts.Communicate")
-    @patch("autoshorts.fluximages.requests.get")
+    @patch("autoshorts.generators.explainer.requests.get")
     def test_complete_flux_workflow(self, mock_get, mock_communicate, mock_post):
         """Test complete flux image generation workflow"""
         # Mock script generation

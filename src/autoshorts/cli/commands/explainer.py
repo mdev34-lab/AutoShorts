@@ -1,0 +1,87 @@
+import asyncio
+import time
+from pathlib import Path
+
+import typer
+
+from ...generators import VIDEO_TYPES
+from ..new import new_app
+from ...modules import log, shutdown_computer
+
+
+@new_app.command(name="explainer")
+def explainer_command(
+    subject: str = typer.Argument(None, help="Video subject"),
+    output: str = typer.Option("output", "--output", "-o", help="Output directory or file path"),
+    youtube_url: str = typer.Option(None, "--youtube-url", "-y", help="Direct YouTube URL"),
+    goodnight: bool = typer.Option(False, "--goodnight", help="Shutdown after processing"),
+    batch: list[str] = typer.Option(None, "--batch", help="Batch: multiple subjects"),
+    web_search: bool = typer.Option(False, "--web-search", help="Use web search"),
+    no_images: bool = typer.Option(False, "--no-images", help="Skip AI image overlays"),
+    images_only: bool = typer.Option(False, "--images-only", help="AI images only (no YouTube bg)"),
+):
+    if no_images and images_only:
+        raise typer.BadParameter("--no-images and --images-only are mutually exclusive")
+    if images_only and youtube_url:
+        raise typer.BadParameter("--youtube-url cannot be used with --images-only")
+    if not subject and not youtube_url and not batch:
+        raise typer.BadParameter("subject, --youtube-url, or --batch is required")
+
+    subjects: list[str | None] = []
+    if batch:
+        subjects = batch
+    elif subject:
+        subjects = [subject]
+    elif youtube_url:
+        subjects = [None]
+
+    is_batch = batch is not None
+    output_path = Path(output)
+    success_count = 0
+    total_count = len(subjects)
+
+    for i, subj in enumerate(subjects, 1):
+        log(f"Processing {i}/{total_count}: {subj or 'youtube-url'}")
+        try:
+            if output_path.suffix:
+                out_dir = output_path.parent
+                if is_batch:
+                    prefix = "explainer_" if images_only else "as_"
+                    name = f"{prefix}{subj.replace(' ', '_')[:20] if subj else 'video'}_{int(time.time())}.mp4"
+                else:
+                    name = output_path.name
+            else:
+                out_dir = output_path
+                if is_batch:
+                    prefix = "explainer_" if images_only else "as_"
+                    name = f"{prefix}{subj.replace(' ', '_')[:20] if subj else 'video'}_{int(time.time())}.mp4"
+                else:
+                    prefix = "explainer_" if images_only else "autoshorts_"
+                    name = f"{prefix}{int(time.time())}.mp4"
+
+            out_file = out_dir / name
+
+            gen = VIDEO_TYPES["explainer"](
+                subject=subj,
+                output=str(out_file),
+                youtube_url=youtube_url,
+                web_search=web_search,
+                no_images=no_images or images_only,
+                images_only=images_only,
+            )
+            success = asyncio.run(gen.generate())
+            if success:
+                success_count += 1
+            gen.cleanup()
+        except Exception as e:
+            log(f"Error processing '{subj}': {e}", "ERROR")
+            continue
+
+    log(
+        f"Done: {success_count}/{total_count} videos created",
+        "SUCCESS" if success_count == total_count else "WARNING",
+    )
+
+    if goodnight and success_count > 0:
+        log("Shutting down in 30s...")
+        shutdown_computer()

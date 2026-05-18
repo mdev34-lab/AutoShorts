@@ -148,7 +148,7 @@ Keep each paragraph 2-3 sentences (~3 seconds audio each)."""
             response.raise_for_status()
             content = response.json()["choices"][0]["message"]["content"]
             data = json.loads(content)
-            return data["paragraphs"], []  # Return empty list for image prompts
+            return data["paragraphs"], data.get("image_prompts", [])
 
         except Exception as e:
             log(f"Script generation failed: {e}", "ERROR")
