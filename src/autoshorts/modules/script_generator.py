@@ -72,8 +72,12 @@ class ScriptGenerator:
 
         # Pass 2: audit every claim against search results
         if results:
-            log(f"Pass 2: auditing {len(draft)} paragraphs against {len(results)} sources...")
-            context = self.searcher.format_context(results)
+            results_to_audit = results[:15]
+            log(
+                f"Pass 2: auditing {len(draft)} paragraphs against "
+                f"{len(results_to_audit)}/{len(results)} sources...",
+            )
+            context = self.searcher.format_context(results_to_audit)
             audit_result = self._audit_claims(draft, context)
             if audit_result and audit_result.get("paragraphs"):
                 log("Script audited and corrected", "SUCCESS")
@@ -122,8 +126,12 @@ class ScriptGenerator:
 
         # Pass 2: audit every claim against search results
         if results:
-            log(f"Pass 2: auditing {len(draft)} paragraphs against {len(results)} sources...")
-            context = self.searcher.format_context(results)
+            results_to_audit = results[:15]
+            log(
+                f"Pass 2: auditing {len(draft)} paragraphs against "
+                f"{len(results_to_audit)}/{len(results)} sources...",
+            )
+            context = self.searcher.format_context(results_to_audit)
             audit_result = self._audit_claims(draft, context)
             if audit_result and audit_result.get("paragraphs"):
                 log("Script audited and corrected", "SUCCESS")
@@ -283,7 +291,9 @@ class ScriptGenerator:
     # ── API helpers ──────────────────────────────────────────────────────
 
     def _make_json_api_call(self, system_prompt: str, user_prompt: str) -> dict:
-        """Make API call expecting JSON response."""
+        """Make API call expecting JSON response. Retries once on empty content."""
+        import time
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -297,12 +307,24 @@ class ScriptGenerator:
             "response_format": {"type": "json_object"},
             "temperature": 0.7,
         }
-        response = requests.post(
-            self.api_url, headers=headers, json=payload, timeout=API_TIMEOUT_TEXT
-        )
-        response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
-        return json.loads(content)
+        for attempt in range(2):
+            try:
+                response = requests.post(
+                    self.api_url, headers=headers, json=payload, timeout=API_TIMEOUT_TEXT
+                )
+                response.raise_for_status()
+                content = response.json()["choices"][0]["message"]["content"]
+                if content and content.strip():
+                    return json.loads(content)
+                log(f"API returned empty content (attempt {attempt + 1})", "WARNING")
+            except (json.JSONDecodeError, KeyError, requests.RequestException) as e:
+                log(
+                    f"JSON API call failed (attempt {attempt + 1}): {e}",
+                    "WARNING",
+                )
+            if attempt == 0:
+                time.sleep(1)
+        raise ValueError("JSON API call failed after 2 attempts")
 
     def _make_text_api_call(self, system_prompt: str, user_prompt: str) -> list:
         """Make API call and parse plain text response into paragraphs."""

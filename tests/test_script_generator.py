@@ -180,7 +180,7 @@ class TestScriptGenerator:
         mock_response.raise_for_status.return_value = None
         mock_post.return_value = mock_response
 
-        with pytest.raises(json.JSONDecodeError):
+        with pytest.raises(ValueError):
             self.script_generator.generate_script_with_prompts("test subject")
 
     @patch("autoshorts.modules.script_generator.requests.post")
