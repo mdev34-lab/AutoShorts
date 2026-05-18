@@ -2,20 +2,44 @@
 Test FluxImages module functionality
 """
 
-import asyncio
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from autoshorts.fluximages import (
-    AssetManager,
-    ScriptEngine,
-    VideoEngine,
-    main,
-    shutdown_computer,
-)
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+from autoshorts.modules.utils import shutdown_computer
+from autoshorts.generators.explainer import ExplainerGenerator
+
+# Backward-compatible wrappers for existing test structure
+class ScriptEngine:
+    def __init__(self):
+        self.gen = ExplainerGenerator(subject="test", images_only=True)
+        self.script_generator = self.gen.script_generator
+
+    def generate(self, subject):
+        return self.script_generator.generate_script_with_prompts(subject)
+
+
+class AssetManager:
+    def __init__(self, temp_dir):
+        self.temp_dir = temp_dir
+        self.gen = ExplainerGenerator(subject="test", images_only=True)
+        self.tts_system = self.gen.tts_system
+
+    def generate_ai_images(self, prompts):
+        import shutil
+        if hasattr(self.gen, "temp_dir") and self.gen.temp_dir.exists():
+            shutil.rmtree(self.gen.temp_dir)
+        self.gen.temp_dir = self.temp_dir
+        return self.gen._generate_ai_images("test", [], prompts=prompts)
+
+    async def generate_audio(self, paragraphs):
+        self.gen.temp_dir = self.temp_dir
+        return await self.gen.tts_system.generate_audio_only(paragraphs, self.temp_dir)
 
 
 class TestScriptEngine:
@@ -29,7 +53,7 @@ class TestScriptEngine:
         """Test ScriptEngine initialization"""
         assert hasattr(self.script_engine, "script_generator")
 
-    @patch("autoshorts.fluximages.ScriptGenerator")
+    @patch("autoshorts.generators.explainer.ScriptGenerator")
     def test_generate(self, mock_generator_class):
         """Test script generation with prompts"""
         mock_generator = Mock()
@@ -70,8 +94,8 @@ class TestAssetManager:
         assert hasattr(self.asset_manager, "temp_dir")
         assert hasattr(self.asset_manager, "tts_system")
 
-    @patch("autoshorts.fluximages.requests.get")
-    @patch("autoshorts.fluximages.random.randint")
+    @patch("autoshorts.generators.explainer.requests.get")
+    @patch("autoshorts.generators.explainer.random.randint")
     def test_generate_ai_images_success(self, mock_randint, mock_get):
         """Test successful AI image generation"""
         mock_randint.return_value = 12345
@@ -90,8 +114,8 @@ class TestAssetManager:
         assert len(result) == 2
         assert all(path.endswith(".jpg") for path in result)
 
-    @patch("autoshorts.fluximages.requests.get")
-    @patch("autoshorts.fluximages.random.randint")
+    @patch("autoshorts.generators.explainer.requests.get")
+    @patch("autoshorts.generators.explainer.random.randint")
     def test_generate_ai_images_failure(self, mock_randint, mock_get):
         """Test AI image generation failure"""
         mock_randint.return_value = 12345
@@ -106,8 +130,8 @@ class TestAssetManager:
         with pytest.raises(Exception):
             self.asset_manager.generate_ai_images(prompts)
 
-    @patch("autoshorts.fluximages.requests.get")
-    @patch("autoshorts.fluximages.random.randint")
+    @patch("autoshorts.generators.explainer.requests.get")
+    @patch("autoshorts.generators.explainer.random.randint")
     def test_generate_ai_images_network_error(self, mock_randint, mock_get):
         """Test AI image generation with network error"""
         mock_randint.return_value = 12345
@@ -121,7 +145,7 @@ class TestAssetManager:
     @pytest.mark.asyncio
     async def test_generate_audio(self):
         """Test audio generation"""
-        with patch("autoshorts.fluximages.TTSSystem") as mock_tts_class:
+        with patch("autoshorts.generators.explainer.TTSSystem") as mock_tts_class:
             mock_tts = Mock()
             mock_tts.generate_audio_only = AsyncMock(return_value="audio.mp3")
             mock_tts_class.return_value = mock_tts
@@ -136,6 +160,20 @@ class TestAssetManager:
             assert result == "audio.mp3"
 
 
+class VideoEngine:
+    def __init__(self):
+        self.gen = ExplainerGenerator(subject="test", images_only=True)
+
+    def _u_curve_zoom(self, *a, **kw):
+        return self.gen._u_curve_zoom(*a, **kw)
+
+    def _apply_u_curve_zoom(self, *a, **kw):
+        return self.gen._apply_u_curve_zoom(*a, **kw)
+
+    def create_video(self, img_paths, audio_path, paragraphs, output_path):
+        self.gen._create_flux_video(img_paths, audio_path, paragraphs, output_path)
+
+
 class TestVideoEngine:
     """Test cases for VideoEngine class"""
 
@@ -145,13 +183,13 @@ class TestVideoEngine:
 
     def test_init(self):
         """Test VideoEngine initialization"""
-        assert hasattr(self.video_engine, "subtitle_system")
+        assert hasattr(self.video_engine, "gen")
 
-    @patch("autoshorts.fluximages.AudioFileClip")
-    @patch("autoshorts.fluximages.ImageClip")
-    @patch("autoshorts.fluximages.concatenate_videoclips")
-    @patch("autoshorts.fluximages.CompositeVideoClip")
-    @patch("autoshorts.fluximages.SubtitleSystem")
+    @patch("autoshorts.generators.explainer.AudioFileClip")
+    @patch("autoshorts.generators.explainer.ImageClip")
+    @patch("autoshorts.generators.explainer.concatenate_videoclips")
+    @patch("autoshorts.generators.explainer.CompositeVideoClip")
+    @patch("autoshorts.generators.explainer.SubtitleSystem")
     def test_create_video_basic(
         self,
         mock_subtitle_class,
@@ -172,6 +210,7 @@ class TestVideoEngine:
 
         # Mock image clips
         mock_clip = Mock()
+        mock_clip.size = (1080, 1920)
         mock_clip.with_duration = Mock(return_value=mock_clip)
         mock_clip.resized = Mock(return_value=mock_clip)
         mock_clip.with_effects = Mock(return_value=mock_clip)
@@ -180,6 +219,7 @@ class TestVideoEngine:
 
         # Mock concatenated video
         mock_video = Mock()
+        mock_video.duration = 30.0
         mock_video.with_audio = Mock(return_value=mock_video)
         mock_video.write_videofile = Mock()
         mock_video.close = Mock()
@@ -225,7 +265,7 @@ class TestVideoEngine:
             if temp_dir.exists():
                 shutil.rmtree(temp_dir)
 
-    @patch("autoshorts.fluximages.AudioFileClip")
+    @patch("autoshorts.generators.explainer.AudioFileClip")
     def test_create_video_no_clips(self, mock_audio_clip):
         """Test video creation with no clips raises error"""
         mock_audio = Mock()
@@ -243,9 +283,9 @@ class TestVideoEngine:
 class TestShutdownComputer:
     """Test cases for shutdown_computer function"""
 
-    @patch("autoshorts.fluximages.platform.system")
-    @patch("autoshorts.fluximages.os.system")
-    @patch("autoshorts.fluximages.log")
+    @patch("autoshorts.modules.utils.platform.system")
+    @patch("autoshorts.modules.utils.os.system")
+    @patch("autoshorts.modules.utils.log")
     def test_shutdown_windows(self, mock_log, mock_system, mock_platform):
         """Test shutdown on Windows"""
         mock_platform.return_value = "Windows"
@@ -254,9 +294,9 @@ class TestShutdownComputer:
 
         mock_system.assert_called_once_with("shutdown /s /t 30")
 
-    @patch("autoshorts.fluximages.platform.system")
-    @patch("autoshorts.fluximages.os.system")
-    @patch("autoshorts.fluximages.log")
+    @patch("autoshorts.modules.utils.platform.system")
+    @patch("autoshorts.modules.utils.os.system")
+    @patch("autoshorts.modules.utils.log")
     def test_shutdown_linux(self, mock_log, mock_system, mock_platform):
         """Test shutdown on Linux"""
         mock_platform.return_value = "Linux"
@@ -265,9 +305,9 @@ class TestShutdownComputer:
 
         mock_system.assert_called_once_with("shutdown -h +1")
 
-    @patch("autoshorts.fluximages.platform.system")
-    @patch("autoshorts.fluximages.os.system")
-    @patch("autoshorts.fluximages.log")
+    @patch("autoshorts.modules.utils.platform.system")
+    @patch("autoshorts.modules.utils.os.system")
+    @patch("autoshorts.modules.utils.log")
     def test_shutdown_macos(self, mock_log, mock_system, mock_platform):
         """Test shutdown on macOS"""
         mock_platform.return_value = "Darwin"
@@ -276,8 +316,8 @@ class TestShutdownComputer:
 
         mock_system.assert_called_once_with("shutdown -h +1")
 
-    @patch("autoshorts.fluximages.platform.system")
-    @patch("autoshorts.fluximages.log")
+    @patch("autoshorts.modules.utils.platform.system")
+    @patch("autoshorts.modules.utils.log")
     def test_shutdown_unsupported_os(self, mock_log, mock_platform):
         """Test shutdown on unsupported OS"""
         mock_platform.return_value = "UnsupportedOS"
@@ -287,9 +327,9 @@ class TestShutdownComputer:
         # Should log warning about unsupported OS
         assert mock_log.called
 
-    @patch("autoshorts.fluximages.platform.system")
-    @patch("autoshorts.fluximages.os.system")
-    @patch("autoshorts.fluximages.log")
+    @patch("autoshorts.modules.utils.platform.system")
+    @patch("autoshorts.modules.utils.os.system")
+    @patch("autoshorts.modules.utils.log")
     def test_shutdown_exception_handling(self, mock_log, mock_system, mock_platform):
         """Test shutdown handles exceptions gracefully"""
         mock_platform.return_value = "Windows"
@@ -302,198 +342,64 @@ class TestShutdownComputer:
         assert mock_log.called
 
 
-class TestMainFunction:
-    """Test cases for main function"""
+class TestExplainerGenerator:
+    """Test cases for ExplainerGenerator.generate()"""
 
-    def setup_method(self):
-        """Setup test fixtures"""
-        self.temp_dir = Path(tempfile.mkdtemp())
-
-    def teardown_method(self):
-        """Cleanup test fixtures"""
-        import shutil
-
-        if self.temp_dir.exists():
-            shutil.rmtree(self.temp_dir)
-
-    @patch("autoshorts.fluximages.argparse.ArgumentParser")
-    @patch("autoshorts.fluximages.ScriptEngine")
-    @patch("autoshorts.fluximages.AssetManager")
-    @patch("autoshorts.fluximages.VideoEngine")
-    @patch("autoshorts.fluximages.tempfile.mkdtemp")
-    @patch("autoshorts.fluximages.Path.mkdir")
-    @patch("autoshorts.fluximages.shutil.rmtree")
-    def test_main_with_subject(
-        self,
-        mock_rmtree,
-        mock_mkdir,
-        mock_mkdtemp,
-        mock_video_engine_class,
-        mock_asset_class,
-        mock_script_class,
-        mock_parser_class,
+    @pytest.mark.asyncio
+    @patch("autoshorts.generators.explainer.ScriptGenerator")
+    @patch("autoshorts.generators.explainer.VideoBackgroundManager")
+    @patch("autoshorts.generators.explainer.VideoCompositor")
+    async def test_generate_normal_mode(
+        self, mock_compositor_class, mock_bg_class, mock_script_class
     ):
-        """Test main function with subject argument"""
-        # Mock argument parser
-        mock_parser = Mock()
-        mock_args = Mock()
-        mock_args.subject = "test subject"
-        mock_args.goodnight = False
-        mock_args.batch = None
-        mock_args.web_search = False
-        mock_parser.parse_args.return_value = mock_args
-        mock_parser_class.return_value = mock_parser
-
-        # Mock temp directory
-        mock_mkdtemp.return_value = str(self.temp_dir)
-
-        # Mock script engine
+        gen = ExplainerGenerator(subject="test")
         mock_script = Mock()
-        mock_script.generate.return_value = (
-            ["Para 1", "Para 2", "Para 3", "Para 4", "Para 5"],
-            [
-                "Prompt 1",
-                "Prompt 2",
-                "Prompt 3",
-                "Prompt 4",
-                "Prompt 5",
-                "Prompt 6",
-                "Prompt 7",
-                "Prompt 8",
-                "Prompt 9",
-            ],
+        mock_script.generate_script.return_value = ["Para 1", "Para 2"]
+        mock_script.generate_script_from_metadata.return_value = ["Para 1", "Para 2"]
+        gen.script_generator = mock_script
+
+        mock_bg = Mock()
+        mock_bg.search_and_download.return_value = "video.mp4"
+        gen.video_bg = mock_bg
+
+        mock_compositor = Mock()
+        mock_compositor.create_output_video.return_value = True
+        mock_compositor_class.return_value = mock_compositor
+
+        with patch.object(gen.tts_system, "generate_audio_and_subtitles", AsyncMock(return_value=("audio.mp3", "subs.vtt", 30.0))):
+            with patch.object(gen, "_generate_ai_images", return_value=["img.jpg"] * 5):
+                result = await gen.generate()
+                assert result is True
+
+    @pytest.mark.asyncio
+    @patch("autoshorts.generators.explainer.AudioFileClip")
+    @patch("autoshorts.generators.explainer.SubtitleSystem")
+    async def test_generate_images_only_mode(
+        self, mock_subtitle_class, mock_audio_clip
+    ):
+        gen = ExplainerGenerator(subject="test", images_only=True)
+        mock_script = Mock()
+        mock_script.generate_script_with_prompts.return_value = (
+            ["Para 1", "Para 2"],
+            ["Prompt 1", "Prompt 2"],
         )
-        mock_script_class.return_value = mock_script
+        gen.script_generator = mock_script
 
-        # Mock asset manager
-        mock_asset = Mock()
-        mock_asset.generate_audio = AsyncMock(return_value="audio.mp3")
-        mock_asset.generate_ai_images = Mock(return_value=["img1.jpg"] * 9)
-        mock_asset_class.return_value = mock_asset
+        mock_audio = Mock()
+        mock_audio.duration = 10.0
+        mock_audio.close = Mock()
+        mock_audio_clip.return_value = mock_audio
 
-        # Mock video engine
-        mock_video = Mock()
-        mock_video.create_video = Mock()
-        mock_video_engine_class.return_value = mock_video
+        mock_subtitle = Mock()
+        mock_subtitle.generate_subtitles.return_value = "subs.vtt"
+        mock_subtitle.render_subtitles.return_value = []
+        mock_subtitle_class.return_value = mock_subtitle
 
-        # Run main
-        asyncio.run(main())
-
-        # Verify script was generated
-        mock_script.generate.assert_called_once_with("test subject")
-
-    @patch("autoshorts.fluximages.argparse.ArgumentParser")
-    @patch("autoshorts.fluximages.tempfile.mkdtemp")
-    @patch("autoshorts.fluximages.Path.mkdir")
-    @patch("autoshorts.fluximages.shutil.rmtree")
-    def test_main_batch_processing(
-        self, mock_rmtree, mock_mkdir, mock_mkdtemp, mock_parser_class
-    ):
-        """Test main function with batch processing"""
-        # Mock argument parser
-        mock_parser = Mock()
-        mock_args = Mock()
-        mock_args.subject = None
-        mock_args.goodnight = False
-        mock_args.batch = ["subject1", "subject2"]
-        mock_args.web_search = False
-        mock_parser.parse_args.return_value = mock_args
-        mock_parser_class.return_value = mock_parser
-
-        # Mock temp directory
-        mock_mkdtemp.return_value = str(self.temp_dir)
-
-        with patch("autoshorts.fluximages.ScriptEngine") as mock_script_class, patch(
-            "autoshorts.fluximages.AssetManager"
-        ) as mock_asset_class, patch(
-            "autoshorts.fluximages.VideoEngine"
-        ) as mock_video_class:
-            # Setup mocks for successful processing
-            mock_script = Mock()
-            mock_script.generate.return_value = (
-                ["Para 1", "Para 2", "Para 3", "Para 4", "Para 5"],
-                ["Prompt 1"] * 9,
-            )
-            mock_script_class.return_value = mock_script
-
-            mock_asset = Mock()
-            mock_asset.generate_audio = AsyncMock(return_value="audio.mp3")
-            mock_asset.generate_ai_images = Mock(return_value=["img.jpg"] * 9)
-            mock_asset_class.return_value = mock_asset
-
-            mock_video = Mock()
-            mock_video.create_video = Mock()
-            mock_video_class.return_value = mock_video
-
-            asyncio.run(main())
-
-            # Verify batch was processed
-            assert mock_script.generate.call_count == 2
-
-    @patch("autoshorts.fluximages.argparse.ArgumentParser")
-    @patch("autoshorts.fluximages.tempfile.mkdtemp")
-    @patch("autoshorts.fluximages.Path.mkdir")
-    @patch("autoshorts.fluximages.shutil.rmtree")
-    @patch("autoshorts.fluximages.shutdown_computer")
-    def test_main_with_goodnight(
-        self, mock_shutdown, mock_rmtree, mock_mkdir, mock_mkdtemp, mock_parser_class
-    ):
-        """Test main function with goodnight flag"""
-        # Mock argument parser
-        mock_parser = Mock()
-        mock_args = Mock()
-        mock_args.subject = "test subject"
-        mock_args.goodnight = True
-        mock_args.batch = None
-        mock_args.web_search = False
-        mock_parser.parse_args.return_value = mock_args
-        mock_parser_class.return_value = mock_parser
-
-        # Mock temp directory
-        mock_mkdtemp.return_value = str(self.temp_dir)
-
-        with patch("autoshorts.fluximages.ScriptEngine") as mock_script_class, patch(
-            "autoshorts.fluximages.AssetManager"
-        ) as mock_asset_class, patch(
-            "autoshorts.fluximages.VideoEngine"
-        ) as mock_video_class:
-            # Setup mocks for successful processing
-            mock_script = Mock()
-            mock_script.generate.return_value = (
-                ["Para 1", "Para 2", "Para 3", "Para 4", "Para 5"],
-                ["Prompt 1"] * 9,
-            )
-            mock_script_class.return_value = mock_script
-
-            mock_asset = Mock()
-            mock_asset.generate_audio = AsyncMock(return_value="audio.mp3")
-            mock_asset.generate_ai_images = Mock(return_value=["img.jpg"] * 9)
-            mock_asset_class.return_value = mock_asset
-
-            mock_video = Mock()
-            mock_video.create_video = Mock()
-            mock_video_class.return_value = mock_video
-
-            asyncio.run(main())
-
-            # Verify shutdown was called
-            mock_shutdown.assert_called_once()
-
-    @patch("autoshorts.fluximages.argparse.ArgumentParser")
-    def test_main_no_subject(self, mock_parser_class):
-        """Test main function with no subject raises error"""
-        mock_parser = Mock()
-        mock_args = Mock()
-        mock_args.subject = None
-        mock_args.goodnight = False
-        mock_args.batch = None
-        mock_args.web_search = False
-        mock_parser.parse_args.return_value = mock_args
-        mock_parser.error = Mock(side_effect=SystemExit(1))
-        mock_parser_class.return_value = mock_parser
-
-        with pytest.raises(SystemExit):
-            asyncio.run(main())
+        with patch.object(gen.tts_system, "generate_audio_only", AsyncMock(return_value="audio.mp3")):
+            with patch.object(gen, "_generate_ai_images", return_value=["img.jpg"] * 3):
+                with patch.object(gen, "_create_flux_video"):
+                    result = await gen.generate()
+                    assert result is True
 
 
 class TestEdgeCases:
@@ -510,8 +416,8 @@ class TestEdgeCases:
         if self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
 
-    @patch("autoshorts.fluximages.requests.get")
-    @patch("autoshorts.fluximages.random.randint")
+    @patch("autoshorts.generators.explainer.requests.get")
+    @patch("autoshorts.generators.explainer.random.randint")
     def test_generate_ai_images_empty_prompts(self, mock_randint, mock_get):
         """Test AI image generation with empty prompts"""
         mock_randint.return_value = 12345
@@ -525,8 +431,8 @@ class TestEdgeCases:
 
         assert result == []
 
-    @patch("autoshorts.fluximages.requests.get")
-    @patch("autoshorts.fluximages.random.randint")
+    @patch("autoshorts.generators.explainer.requests.get")
+    @patch("autoshorts.generators.explainer.random.randint")
     def test_generate_ai_images_special_characters_in_prompt(
         self, mock_randint, mock_get
     ):
@@ -551,7 +457,7 @@ class TestEdgeCases:
 
     def test_script_engine_with_web_search(self):
         """Test ScriptEngine with web search enabled"""
-        with patch("autoshorts.fluximages.ScriptGenerator") as mock_gen_class:
+        with patch("autoshorts.generators.explainer.ScriptGenerator") as mock_gen_class:
             mock_gen = Mock()
             mock_gen.generate_script_with_prompts.return_value = (
                 ["Para 1"],
@@ -565,6 +471,60 @@ class TestEdgeCases:
             result = engine.generate("test subject")
 
             assert result is not None
+
+
+
+class TestOverlayAnimation:
+    """Test cases for overlay animation helper methods."""
+
+    def setup_method(self):
+        self.gen = ExplainerGenerator(subject="test", images_only=True)
+
+    def test_ease_in_out_cubic_boundaries(self):
+        assert self.gen._ease_in_out_cubic(0.0) == 0.0
+        assert self.gen._ease_in_out_cubic(1.0) == 1.0
+
+    def test_ease_in_out_cubic_midpoint(self):
+        assert self.gen._ease_in_out_cubic(0.5) == 0.5
+
+    def test_ease_in_out_cubic_symmetric(self):
+        for t in [0.1, 0.2, 0.3, 0.4, 0.6, 0.7, 0.8, 0.9]:
+            assert abs(self.gen._ease_in_out_cubic(t) - (1 - self.gen._ease_in_out_cubic(1 - t))) < 1e-10
+
+    def test_ease_in_out_cubic_monotonic(self):
+        prev = -1.0
+        for i in range(101):
+            val = self.gen._ease_in_out_cubic(i / 100.0)
+            assert val >= prev
+            prev = val
+
+    def test_ease_in_out_cubic_out_of_range(self):
+        assert self.gen._ease_in_out_cubic(-0.5) == 0.0
+        assert self.gen._ease_in_out_cubic(1.5) == 1.0
+
+    @patch("autoshorts.generators.explainer.vfx.Resize")
+    def test_apply_overlay_animation_returns_clip(self, mock_resize):
+        mock_clip = Mock()
+        mock_clip.size = (1080, 1920)
+        mock_clip.with_effects = Mock(return_value=mock_clip)
+        mock_clip.transform = Mock(return_value=mock_clip)
+
+        result = self.gen._apply_overlay_animation(mock_clip, 3.0)
+
+        assert result is mock_clip
+        mock_clip.with_effects.assert_called_once()
+        mock_clip.transform.assert_called_once()
+
+    @patch("autoshorts.generators.explainer.vfx.Resize")
+    def test_apply_overlay_animation_zero_duration(self, mock_resize):
+        mock_clip = Mock()
+        mock_clip.size = (1080, 1920)
+        mock_clip.with_effects = Mock(return_value=mock_clip)
+        mock_clip.transform = Mock(return_value=mock_clip)
+
+        result = self.gen._apply_overlay_animation(mock_clip, 0.0)
+
+        assert result is mock_clip
 
 
 if __name__ == "__main__":

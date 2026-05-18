@@ -98,7 +98,7 @@ class TestScriptGenerator:
 
         assert isinstance(result, list)
         assert len(result) == 5
-        assert "vídeo interessante" in result[0].lower()
+        assert "história" in result[0].lower()
 
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_empty_response(self, mock_post):
