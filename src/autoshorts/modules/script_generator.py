@@ -161,11 +161,13 @@ class ScriptGenerator:
             f"   - Include specific names, dates, statistics, locations.\n"
             f"   - Tell an origin story: how it started, why it matters.\n"
             f"   - This is a DRAFT \u2014 it may contain errors. Do NOT fact-check yourself.\n"
-            f'2. "queries": Array of 4-6 Portuguese web search queries to VERIFY '
-            f"the factual claims in your draft.\n"
-            f"   - Each query should target one or more specific claims from the draft.\n"
-            f"   - Be specific: include names, dates, unique terms.\n"
-            f"   - Cover all major factual claims (dates, names, places, statistics, origins).\n"
+             f'2. "queries": Array of 5-7 Portuguese web search queries to VERIFY '
+             f"the factual claims in your draft.\n"
+             f"   - At least 2 queries must be BROADER independent searches about the subject "
+             f"(e.g. 'Botafogo principais rivais' instead of 'hist\u00f3ria do cl\u00e1ssico X').\n"
+             f"   - Each specific query should target one or more claims from the draft.\n"
+             f"   - Be specific: include names, dates, unique terms.\n"
+             f"   - Cover all major factual claims (dates, names, places, statistics, origins).\n"
             f'3. "title": string, max 60 chars (PT-BR) \u2014 catchy YouTube Shorts title about {subject}.'
         )
         user_prompt = (
@@ -190,6 +192,11 @@ class ScriptGenerator:
         system_prompt = (
             "You are a fact-checking editor for YouTube Shorts.\n"
             "Fix factual errors in a draft script using the provided web sources.\n\n"
+            "CRITICAL \u2014 Be skeptical, do not just confirm terms exist:\n"
+            '   - Verify RELATIONSHIPS, not just names. E.g., if the draft says '
+            '"the classic is X", check whether the SUBJECT is part of X.\n'
+            "   - A web source mentioning a term does NOT mean the draft's claim about it is correct.\n"
+            "   - Broader context queries in the sources may override specific claim queries.\n\n"
             "Output ONLY a JSON object with:\n"
             '1. "paragraphs": Array of corrected strings (PT-BR).\n'
             "   - Fix ANY factual errors based on the web sources.\n"
