@@ -55,7 +55,7 @@ class ExplainerGenerator:
         subject: str | None = None,
         output: str = "output",
         youtube_url: str | None = None,
-        web_search: bool = False,
+        web_search: bool = True,
         no_images: bool = False,
         images_only: bool = False,
     ):

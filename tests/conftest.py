@@ -24,6 +24,16 @@ def isolate_image_cache():
         shutil.rmtree(cache_dir)
 
 
+@pytest.fixture(autouse=True)
+def prevent_web_search_network():
+    """Prevent WebSearcher from making real DDGS network calls in tests."""
+    from unittest.mock import patch
+    with patch("ddgs.DDGS") as mock_ddgs:
+        mock_instance = mock_ddgs.return_value
+        mock_instance.text.return_value = []
+        yield
+
+
 @pytest.fixture
 def temp_dir():
     """Provide a temporary directory for tests"""

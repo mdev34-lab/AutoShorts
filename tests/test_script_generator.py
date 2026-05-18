@@ -15,7 +15,7 @@ class TestScriptGenerator:
 
     def setup_method(self):
         """Setup test fixtures"""
-        self.script_generator = ScriptGenerator()
+        self.script_generator = ScriptGenerator(web_search=False)
 
     def test_init(self):
         """Test script generator initialization"""
@@ -27,14 +27,13 @@ class TestScriptGenerator:
         """Test script generator initialization with web search"""
         generator = ScriptGenerator(web_search=True)
         assert generator.web_search
-        assert generator.model == "gemini-fast"
-        assert generator.tools is not None
+        assert generator.searcher is not None
 
     def test_init_without_web_search(self):
         """Test script generator initialization without web search"""
         generator = ScriptGenerator(web_search=False)
         assert not generator.web_search
-        assert generator.tools is None
+        assert generator.searcher is None
 
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_success(self, mock_post):
@@ -59,16 +58,36 @@ class TestScriptGenerator:
         assert len(result) == 5
         assert "primeiro" in result[0].lower()
 
+    @patch("autoshorts.modules.script_generator.WebSearcher")
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_generate_script_with_web_search(self, mock_post):
-        """Test script generation with web search enabled"""
-        # Mock API response
+    def test_generate_script_with_web_search(self, mock_post, mock_searcher_class):
+        """Test script generation with web search enabled (two-pass)"""
+        # Mock WebSearcher to return no results (falls back to draft)
+        mock_searcher = Mock()
+        mock_searcher.search_with_queries.return_value = None
+        mock_searcher_class.return_value = mock_searcher
+
+        # Mock draft API response (Pass 1)
         mock_response = Mock()
         mock_response.json.return_value = {
             "choices": [
                 {
                     "message": {
-                        "content": "Web search result about artificial intelligence.\nSecond paragraph here.\nThird paragraph.\nFourth paragraph.\nFifth paragraph."
+                        "content": json.dumps({
+                            "draft": [
+                                "AI transformed technology in the 21st century.",
+                                "The field was founded in 1956 at Dartmouth.",
+                                "Machine learning emerged as a key approach.",
+                                "Neural networks revolutionized the field.",
+                                "Today AI powers everything from search to self-driving cars.",
+                            ],
+                            "queries": [
+                                "intelig\u00eancia artificial hist\u00f3ria 1956",
+                                "Deep learning revolu\u00e7\u00e3o tecnologia",
+                                "IA aplica\u00e7\u00f5es atuais",
+                            ],
+                            "title": "A Revolu\u00e7\u00e3o da Intelig\u00eancia Artificial",
+                        })
                     }
                 }
             ]
@@ -81,12 +100,14 @@ class TestScriptGenerator:
 
         assert isinstance(result, list)
         assert len(result) > 0
+        # Verify search was called with the queries from the draft
+        mock_searcher.search_with_queries.assert_called_once()
 
-        # Verify tools were included in the request
-        mock_post.assert_called_once()
-        call_args = mock_post.call_args
-        payload = call_args[1]["json"]
-        assert "tools" in payload
+        # Verify no API-level tools (search is now local)
+        payload = mock_post.call_args[1]["json"]
+        assert "tools" not in payload
+        # Draft call should use JSON response_format
+        assert payload.get("response_format") == {"type": "json_object"}
 
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_api_error_fallback(self, mock_post):
@@ -369,15 +390,25 @@ class TestScriptGenerator:
         assert isinstance(result, list)
         assert len(result) == 5  # Should be padded to 5
 
+    @patch("autoshorts.modules.script_generator.WebSearcher")
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_generate_script_with_prompts_web_search(self, mock_post):
-        """Test script generation with prompts and web search"""
+    def test_generate_script_with_prompts_web_search(self, mock_post, mock_searcher_class):
+        """Test script generation with prompts and web search (two-pass)"""
+        mock_searcher = Mock()
+        mock_searcher.search_with_queries.return_value = None
+        mock_searcher_class.return_value = mock_searcher
+
+        # Mock draft API response (Pass 1)
         mock_response = Mock()
         mock_response.json.return_value = {
             "choices": [
                 {
                     "message": {
-                        "content": '{"paragraphs": ["P1", "P2", "P3", "P4", "P5", "P6", "P7"], "image_prompts": ["I1", "I2", "I3", "I4", "I5", "I6", "I7", "I8", "I9"]}'
+                        "content": json.dumps({
+                            "draft": ["P1", "P2", "P3", "P4", "P5", "P6", "P7"],
+                            "queries": ["test query 1", "test query 2"],
+                            "title": "Test Title",
+                        })
                     }
                 }
             ]
@@ -388,11 +419,15 @@ class TestScriptGenerator:
         generator = ScriptGenerator(web_search=True)
         paragraphs, prompts = generator.generate_script_with_prompts("test")
 
-        # Verify tools were included
-        mock_post.assert_called_once()
-        call_args = mock_post.call_args
-        payload = call_args[1]["json"]
-        assert "tools" in payload
+        # No search results found, returns draft as-is
+        assert len(paragraphs) == 7
+        assert prompts == []
+
+        mock_searcher.search_with_queries.assert_called_once()
+
+        # Verify no API-level tools (search is now local)
+        payload = mock_post.call_args[1]["json"]
+        assert "tools" not in payload
 
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_from_metadata_long_description(self, mock_post):
@@ -425,7 +460,7 @@ class TestScriptGeneratorEdgeCases:
 
     def setup_method(self):
         """Setup test fixtures"""
-        self.script_generator = ScriptGenerator()
+        self.script_generator = ScriptGenerator(web_search=False)
 
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_timeout(self, mock_post):

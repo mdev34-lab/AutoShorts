@@ -16,7 +16,7 @@ def explainer_command(
     youtube_url: str = typer.Option(None, "--youtube-url", "-y", help="Direct YouTube URL"),
     goodnight: bool = typer.Option(False, "--goodnight", help="Shutdown after processing"),
     batch: list[str] = typer.Option(None, "--batch", help="Batch: multiple subjects"),
-    web_search: bool = typer.Option(False, "--web-search", help="Use web search"),
+    no_web_search: bool = typer.Option(False, "--no-web-search", help="Disable web search (use model knowledge only)"),
     no_images: bool = typer.Option(False, "--no-images", help="Skip AI image overlays"),
     images_only: bool = typer.Option(False, "--images-only", help="AI images only (no YouTube bg)"),
 ):
@@ -65,7 +65,7 @@ def explainer_command(
                 subject=subj,
                 output=str(out_file),
                 youtube_url=youtube_url,
-                web_search=web_search,
+                web_search=not no_web_search,
                 no_images=no_images or images_only,
                 images_only=images_only,
             )

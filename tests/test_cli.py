@@ -209,14 +209,14 @@ class TestExplainerCommand:
 
     @patch("autoshorts.cli.commands.explainer.VIDEO_TYPES")
     @patch("autoshorts.cli.commands.explainer.asyncio.run")
-    def test_web_search_flag(self, mock_asyncio_run, mock_video_types):
+    def test_no_web_search_flag(self, mock_asyncio_run, mock_video_types):
         gen_mock = Mock()
         gen_mock.generate = Mock(return_value=True)
         gen_mock.cleanup = Mock()
         mock_video_types.__getitem__.return_value = lambda **kw: gen_mock
         mock_asyncio_run.return_value = True
 
-        result = self.runner.invoke(app, ["new", "explainer", "test", "--web-search"])
+        result = self.runner.invoke(app, ["new", "explainer", "test", "--no-web-search"])
         assert result.exit_code == 0
 
     @patch("autoshorts.cli.commands.explainer.VIDEO_TYPES")

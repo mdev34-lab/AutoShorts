@@ -76,6 +76,7 @@ from .utils import (
 )
 from .video_background import VideoBackgroundManager
 from .video_compositor import VideoCompositor
+from .web_search import WebSearcher
 
 __all__ = [
     "API_KEY",
@@ -140,6 +141,7 @@ __all__ = [
     "TTSSystem",
     "VideoBackgroundManager",
     "VideoCompositor",
+    "WebSearcher",
     "setup_directories",
     "create_temp_dir",
     "clean_temp_files",
