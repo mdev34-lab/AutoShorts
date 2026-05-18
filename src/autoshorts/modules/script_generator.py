@@ -23,11 +23,9 @@ FALLBACK_PARAGRAPHS = [
 class ScriptGenerator:
     """Unified script generation using Pollinations API.
 
-    When web_search is enabled, uses a three-pass approach:
-      Pass 1 — generate a draft script + verification search queries + title
-      Search — run queries via DDGS
-      Pass 2 — verify every claim against web sources, remove unverifiable claims,
-               produce corrected script
+    When web_search is enabled, uses a two-step approach:
+      Step 1 — generate verification search queries + title (draft is a byproduct)
+      Step 2 — search the web, then generate the final script grounded in results
     """
 
     def __init__(self, web_search: bool = True):
@@ -41,7 +39,7 @@ class ScriptGenerator:
     # ── Public API ──────────────────────────────────────────────────────
 
     def generate_script(self, subject: str) -> list:
-        """Generate script from subject. Two-pass when web_search is enabled."""
+        """Generate script from subject. Two-step when web_search is enabled."""
         log("Generating script...")
 
         if not self.web_search or not self.searcher or not subject:
@@ -50,16 +48,11 @@ class ScriptGenerator:
                 _user_prompt_single(subject, ""),
             )
 
-        # Pass 1: draft + verification queries + title
-        log("Pass 1: generating draft and verification queries...")
+        # Step 1: generate search queries + title
+        log("Step 1: generating search queries...")
         draft_data = self._generate_draft(subject, num_paragraphs=5)
         self.generated_title = draft_data.get("title") or None
-        draft = draft_data.get("draft") or []
         queries = draft_data.get("queries") or []
-
-        if not draft:
-            log("Draft generation returned empty, using fallback", "WARNING")
-            return list(FALLBACK_PARAGRAPHS)
 
         # Search using LLM-generated queries
         results = None
@@ -70,22 +63,22 @@ class ScriptGenerator:
             log("No queries generated, falling back to subject-based search")
             results = self.searcher.search(subject)
 
-        # Pass 2: audit every claim against search results
+        # Step 2: generate final script grounded in search results
         if results:
-            results_for_audit = results[:15]
-            log(
-                f"Pass 2: auditing {len(draft)} paragraphs against "
-                f"{len(results_for_audit)}/{len(results)} sources...",
+            context = self.searcher.format_context(results[:15])
+            log("Step 2: generating script with search context...")
+            script = self._make_text_api_call(
+                _SYSTEM_PROMPT_SINGLE,
+                _user_prompt_single(subject, context),
             )
-            context = self.searcher.format_context(results_for_audit)
-            verified = self._verify_script(draft, context)
-            if verified:
-                log("Script audited and corrected", "SUCCESS")
-                return self._ensure_paragraph_count(verified, 5)
-            log("Claim audit failed, returning draft as-is", "WARNING")
+            if script:
+                log("Script generated with web sources", "SUCCESS")
+                return self._ensure_paragraph_count(script, 5)
+            log("Script generation with context failed", "WARNING")
         else:
-            log("No search results, returning unverified draft", "WARNING")
+            log("No search results, returning draft as-is", "WARNING")
 
+        draft = draft_data.get("draft") or []
         return self._ensure_paragraph_count(draft, 5)
 
     def generate_script_from_metadata(self, title: str, description: str) -> list:
@@ -99,22 +92,17 @@ class ScriptGenerator:
         )
 
     def generate_script_with_prompts(self, subject: str) -> tuple:
-        """Generate script paragraphs. Two-pass when web_search is enabled."""
+        """Generate script paragraphs. Two-step when web_search is enabled."""
         log(f"Generating script paragraphs for: {subject}...")
 
         if not self.web_search or not self.searcher or not subject:
             return self._generate_script_with_prompts_single(subject)
 
-        # Pass 1: draft + verification queries + title
-        log("Pass 1: generating draft and verification queries...")
+        # Step 1: generate search queries + title
+        log("Step 1: generating search queries...")
         draft_data = self._generate_draft(subject, num_paragraphs=7)
         self.generated_title = draft_data.get("title") or None
-        draft = draft_data.get("draft") or []
         queries = draft_data.get("queries") or []
-
-        if not draft:
-            log("Draft generation returned empty, using fallback", "WARNING")
-            return list(FALLBACK_PARAGRAPHS), []
 
         # Search using LLM-generated queries
         results = None
@@ -124,22 +112,19 @@ class ScriptGenerator:
         else:
             results = self.searcher.search(subject)
 
-        # Pass 2: audit every claim against search results
+        # Step 2: generate final script grounded in search results
         if results:
-            results_for_audit = results[:15]
-            log(
-                f"Pass 2: auditing {len(draft)} paragraphs against "
-                f"{len(results_for_audit)}/{len(results)} sources...",
-            )
-            context = self.searcher.format_context(results_for_audit)
-            verified = self._verify_script(draft, context)
-            if verified:
-                log("Script audited and corrected", "SUCCESS")
-                return self._ensure_paragraph_count(verified, 7), []
-            log("Claim audit failed, returning draft as-is", "WARNING")
+            context = self.searcher.format_context(results[:15])
+            log("Step 2: generating script with search context...")
+            paragraphs = self._generate_script_with_context(subject, context)
+            if paragraphs:
+                log("Script generated with web sources", "SUCCESS")
+                return self._ensure_paragraph_count(paragraphs, 7), []
+            log("Script generation with context failed", "WARNING")
         else:
-            log("No search results, returning unverified draft", "WARNING")
+            log("No search results, returning draft as-is", "WARNING")
 
+        draft = draft_data.get("draft") or []
         return self._ensure_paragraph_count(draft, 7), []
 
     def generate_image_prompts_from_script(
@@ -197,57 +182,10 @@ class ScriptGenerator:
             log(f"Draft generation failed: {e}", "ERROR")
             return {"draft": [], "queries": [subject], "title": ""}
 
-    def _verify_script(self, draft: list, search_context: str) -> list | None:
-        """Pass 2: verify every claim against web sources, producing corrected paragraphs.
-
-        Returns list of paragraphs, or None on failure.
-        """
-        system_prompt = (
-            "You return ONLY valid JSON. No other text.\n"
-            "Fix factual errors in this draft using the web sources.\n\n"
-            "For EVERY claim in the draft, check the sources:\n"
-            "  - Source EXPLICITLY SUPPORTS \u2192 keep it\n"
-            "  - Source EXPLICITLY CONTRADICTS \u2192 correct with source value\n"
-            "  - Source does NOT mention \u2192 REMOVE the claim (hallucination)\n\n"
-            "Cross-check ALL: dates, names, numbers, persons, relationships.\n"
-            '  E.g.: "Fla-Flu exists" does NOT prove Botafogo is part of it.\n'
-            "  If sources say 2025 and draft says 2018, use 2025.\n"
-            "  If sources say R$41B and draft says R$23.7B, use R$41B.\n"
-            "  If a person is not in any source, remove them.\n\n"
-            "Return ONLY JSON: {\"paragraphs\": [...]}\n"
-            "  - Same count, 2-3 sentences each, PT-BR, storytelling.\n"
-            "  - First paragraph starts with a specific VERIFIED fact.\n"
-            "  - NEVER keep an unverifiable claim."
-        )
-        user_prompt = (
-            f"Fix factual errors in this draft.\n\n"
-            f"DRAFT:\n{json.dumps(draft, ensure_ascii=False, indent=2)}\n\n"
-            f"WEB SOURCES:\n{search_context}"
-        )
-        try:
-            data = self._make_json_api_call(
-                system_prompt, user_prompt, enforce_json_mode=False
-            )
-            paragraphs = data.get("paragraphs")
-            if paragraphs and len(paragraphs) >= 3:
-                log(f"Audit complete: {len(paragraphs)} paragraphs", "SUCCESS")
-                return paragraphs
-            log(
-                f"Audit returned only {len(paragraphs) if paragraphs else 0} paragraphs",
-                "WARNING",
-            )
-            return None
-        except Exception as e:
-            log(f"Claim audit failed: {e}", "WARNING")
-            return None
-
     # ── API helpers ──────────────────────────────────────────────────────
 
-    def _make_json_api_call(
-        self, system_prompt: str, user_prompt: str, *, enforce_json_mode: bool = True
-    ) -> dict:
+    def _make_json_api_call(self, system_prompt: str, user_prompt: str) -> dict:
         """Make API call expecting JSON response. Retries once on empty content."""
-        import re
         import time
 
         headers = {
@@ -260,10 +198,9 @@ class ScriptGenerator:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
+            "response_format": {"type": "json_object"},
             "temperature": 0.7,
         }
-        if enforce_json_mode:
-            payload["response_format"] = {"type": "json_object"}
         for attempt in range(2):
             try:
                 response = requests.post(
@@ -274,21 +211,11 @@ class ScriptGenerator:
                 if content and content.strip():
                     return json.loads(content)
                 log(f"API returned empty content (attempt {attempt + 1})", "WARNING")
-            except json.JSONDecodeError as e:
-                log(f"JSON parse failed (attempt {attempt + 1}): {e}", "WARNING")
-                if not enforce_json_mode:
-                    try:
-                        response_data = response.json()
-                        msg = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                        if msg:
-                            log(f"Raw: {msg[:300]}", "WARNING")
-                            m = re.search(r"\{.*\}", msg, re.DOTALL)
-                            if m:
-                                return json.loads(m.group())
-                    except Exception:
-                        pass
-            except (KeyError, requests.RequestException) as e:
-                log(f"API call failed (attempt {attempt + 1}): {e}", "WARNING")
+            except (json.JSONDecodeError, KeyError, requests.RequestException) as e:
+                log(
+                    f"JSON API call failed (attempt {attempt + 1}): {e}",
+                    "WARNING",
+                )
             if attempt == 0:
                 time.sleep(1)
         raise ValueError("JSON API call failed after 2 attempts")
@@ -364,6 +291,32 @@ class ScriptGenerator:
         return paragraphs + FALLBACK_PARAGRAPHS[len(paragraphs):target]
 
     # ── Single-pass path for images-only without web search ──────────────
+
+    def _generate_script_with_context(self, subject: str, search_context: str) -> list | None:
+        """Generate paragraphs grounded in search context (JSON API call)."""
+        system_prompt = (
+            "You are a master storyteller for viral YouTube Shorts.\n"
+            "Output ONLY a JSON object with:\n"
+            "1.'paragraphs': Array of 7 strings (PT-BR).\n"
+            "CRITICAL: First paragraph MUST start with a SPECIFIC FACT (date, name, number, place).\n"
+            "NEVER use \"ningu\u00e9m sabia\", \"o segredo\", or \"a verdade\" \u2014 these are vague.\n"
+            "Always lead with concrete details: dates, names, places, statistics.\n"
+            "Include origin stories: explain how it started and why it matters.\n"
+            "Keep each paragraph 2-3 sentences (~3 seconds audio each).\n"
+            "Use the provided web sources as your primary source of facts."
+        )
+        user_prompt = (
+            f"Tell a story about: {subject}. "
+            f"Start with a specific concrete fact (date, name, number). "
+            f"Include origin and specific details.\n\n"
+            f"WEB SOURCES:\n{search_context}"
+        )
+        try:
+            data = self._make_json_api_call(system_prompt, user_prompt)
+            return data.get("paragraphs")
+        except Exception as e:
+            log(f"Script generation with context failed: {e}", "WARNING")
+            return None
 
     def _generate_script_with_prompts_single(self, subject: str) -> tuple:
         """Original single-pass JSON generation (no web search)."""

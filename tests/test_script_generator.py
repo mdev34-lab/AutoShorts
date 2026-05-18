@@ -391,8 +391,8 @@ class TestScriptGenerator:
         assert len(result) == 5  # Should be padded to 5
 
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_verify_script_success(self, mock_post):
-        """Test _verify_script corrects errors and keeps verified claims"""
+    def test_generate_script_with_context_success(self, mock_post):
+        """Test _generate_script_with_context returns paragraphs from API"""
         paragraphs = [
             "Em 2025, o Banco Master veio a tona após a Operação Compliance Zero.",
             "O rombo foi de R$ 41 bilhões no Fundo Garantidor de Créditos.",
@@ -407,16 +407,23 @@ class TestScriptGenerator:
         mock_post.return_value = mock_response
 
         generator = ScriptGenerator(web_search=True)
-        result = generator._verify_script(
-            ["Draft 1", "Draft 2", "Draft 3"],
-            "FONTES:\n- source 1\n- source 2",
+        result = generator._generate_script_with_context(
+            "Banco Master", "FONTES:\n- source 1\n- source 2"
         )
         assert result == paragraphs
 
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_verify_script_few_paragraphs(self, mock_post):
-        """Test _verify_script returns None when too few paragraphs"""
-        data = {"paragraphs": ["Apenas um."]}
+    def test_generate_script_with_context_api_error(self, mock_post):
+        """Test _generate_script_with_context returns None on API error"""
+        mock_post.side_effect = Exception("API Error")
+        generator = ScriptGenerator(web_search=True)
+        result = generator._generate_script_with_context("test", "sources")
+        assert result is None
+
+    @patch("autoshorts.modules.script_generator.requests.post")
+    def test_generate_script_with_context_empty_response(self, mock_post):
+        """Test _generate_script_with_context returns None when no paragraphs key"""
+        data = {"other_key": ["value"]}
         mock_response = Mock()
         mock_response.json.return_value = {
             "choices": [{"message": {"content": json.dumps(data)}}]
@@ -425,20 +432,7 @@ class TestScriptGenerator:
         mock_post.return_value = mock_response
 
         generator = ScriptGenerator(web_search=True)
-        result = generator._verify_script(
-            ["Draft 1", "Draft 2"],
-            "Some sources.",
-        )
-        assert result is None  # < 3 paragraphs
-
-    @patch("autoshorts.modules.script_generator.requests.post")
-    def test_verify_script_api_error(self, mock_post):
-        """Test _verify_script returns None on API error"""
-        mock_post.side_effect = Exception("API Error")
-        generator = ScriptGenerator(web_search=True)
-        result = generator._verify_script(
-            ["P1", "P2", "P3"], "Some context"
-        )
+        result = generator._generate_script_with_context("test", "sources")
         assert result is None
 
     @patch("autoshorts.modules.script_generator.WebSearcher")
