@@ -38,7 +38,7 @@ class VideoBackgroundManager:
             "http_headers": {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.5",
+                "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.5",
                 "Accept-Encoding": "gzip, deflate",
                 "Connection": "keep-alive",
                 "Upgrade-Insecure-Requests": "1",
@@ -55,18 +55,17 @@ class VideoBackgroundManager:
 
         system_prompt = """You are an expert at crafting YouTube search queries to find high-quality, family-friendly content.
 CRITICAL RULES:
-1. Output ONLY a single search query string in ENGLISH
-2. Translate the subject to English first, then create the search query
-3. Use NATURAL English with spaces, NOT dashes
-4. Include terms like "explained", "story", "documentary", "educational"
-5. Add "-shorts" to exclude YouTube Shorts
-6. Make it specific and searchable
-7. NO quotes, NO special formatting, NO excessive dashes
-8. DO NOT just append the original text to template words
-9. Example: "mysterious flash drive found on street explained documentary"
+1. Use the SAME language as the subject (do NOT translate)
+2. Use NATURAL language with spaces, NOT dashes
+3. Include terms like "explicado", "hist\u00f3ria", "document\u00e1rio", "reportagem"
+4. Add "-shorts" to exclude YouTube Shorts
+5. Make it specific and searchable
+6. NO quotes, NO special formatting, NO excessive dashes
+7. DO NOT just append the original text to template words
+8. Example: "flash drive encontrado na rua hist\u00f3ria completa document\u00e1rio"
 """
 
-        user_prompt = f"Subject: {subject}\n\nCreate an ENGLISH YouTube search query that will find family-friendly, educational videos about this subject. Focus on documentary-style content, news reports, or educational explanations. Avoid anything that might be age-restricted."
+        user_prompt = f"Subject: {subject}\n\nCreate a YouTube search query in the SAME language as the subject that will find family-friendly, educational videos about this subject. Focus on documentary-style content, news reports, or educational explanations. Avoid anything that might be age-restricted."
 
         headers = {
             "Authorization": f"Bearer {API_KEY}",
