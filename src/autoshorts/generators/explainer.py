@@ -94,6 +94,7 @@ class ExplainerGenerator:
                 video_path, title, _ = video_bg.download_from_url(self.youtube_url)
                 log(f"Downloaded video: {title[:50]}...")
             else:
+                assert subject is not None
                 video_path = video_bg.search_and_download(subject)
                 title = Path(video_path).stem if video_path else "Unknown"
                 log(f"Downloaded video: {title[:50]}...")
@@ -155,10 +156,10 @@ class ExplainerGenerator:
 
     def _generate_ai_images(
         self,
-        subject: str,
+        subject: str | None,
         script_paragraphs: list,
         num_images: int = 0,
-        prompts: list = None,
+        prompts: list | None = None,
     ) -> list:
         if prompts is not None and prompts:
             if isinstance(prompts[0], dict):
@@ -221,6 +222,7 @@ class ExplainerGenerator:
             OUTPUT_DIR.mkdir(exist_ok=True)
 
             log("Step 1: Generating script with image prompts...")
+            assert self.subject is not None
             paragraphs, _ = self.script_generator.generate_script_with_prompts(
                 self.subject
             )
@@ -241,6 +243,7 @@ class ExplainerGenerator:
             )
 
             log("Step 5: Generating images...")
+            assert self.subject is not None
             img_paths = self._generate_ai_images(
                 self.subject, paragraphs, prompts=image_prompts
             )

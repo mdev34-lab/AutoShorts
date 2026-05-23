@@ -91,7 +91,7 @@ class ImageSearcher:
             new_width = self.target_width
             new_height = int(new_width / img_ratio)
 
-        img = img.resize((new_width, new_height), Image.LANCZOS)
+        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
         left = (new_width - self.target_width) // 2
         top = (new_height - self.target_height) // 2

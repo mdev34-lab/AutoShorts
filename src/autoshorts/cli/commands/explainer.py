@@ -46,7 +46,7 @@ def explainer_command(
 
     subjects: list[str | None] = []
     if batch:
-        subjects = batch
+        subjects = [s for s in batch]
     elif subject:
         subjects = [subject]
     elif youtube_url:
