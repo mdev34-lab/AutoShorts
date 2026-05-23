@@ -65,6 +65,7 @@ from .config import (
     YOUTUBE_FORMAT,
     YOUTUBE_MAX_HEIGHT,
 )
+from .image_searcher import ImageSearcher
 from .logging_system import Colors, log
 from .script_generator import ScriptGenerator
 from .subtitle_system import SubtitleGenerator, SubtitleRenderer, SubtitleSystem
@@ -80,7 +81,6 @@ from .utils import (
     setup_directories,
     shutdown_computer,
 )
-from .image_searcher import ImageSearcher
 from .video_background import VideoBackgroundManager
 from .video_compositor import VideoCompositor
 from .web_search import WebSearcher

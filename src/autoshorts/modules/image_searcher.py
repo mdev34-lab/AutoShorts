@@ -10,14 +10,14 @@ from .config import (
     API_KEY,
     API_TIMEOUT_IMAGE,
     IMAGE_CACHE_DIR,
+    IMAGE_MIN_HEIGHT,
+    IMAGE_MIN_WIDTH,
     IMAGE_SEARCH_PER_QUERY,
     IMAGE_SEARCH_SAFE,
-    IMAGE_MIN_WIDTH,
-    IMAGE_MIN_HEIGHT,
     IMG_URL,
     MODEL_IMAGE,
-    TARGET_IMAGE_WIDTH,
     TARGET_IMAGE_HEIGHT,
+    TARGET_IMAGE_WIDTH,
 )
 from .logging_system import log
 
@@ -140,7 +140,7 @@ class ImageSearcher:
                         temp_path.unlink(missing_ok=True)
 
             if not downloaded:
-                log(f"  Web search failed for prompt, generating via AI instead", "WARNING")
+                log("  Web search failed for prompt, generating via AI instead", "WARNING")
                 self._fallback_to_ai([prompt], img_paths)
 
         return img_paths

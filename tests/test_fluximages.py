@@ -689,7 +689,7 @@ class TestImageSearcher:
 
         assert len(paths) == 3
         assert str(cached_path) in paths
-        mock_search.call_count == 2  # cached prompt doesn't search
+        assert mock_search.call_count == 2  # cached prompt doesn't search
 
         cached_path.unlink(missing_ok=True)
 
