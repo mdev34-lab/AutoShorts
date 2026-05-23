@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 def isolate_image_cache():
     """Patch IMAGE_CACHE_DIR to a unique temp dir per test to prevent cross-test pollution."""
     from unittest.mock import patch
+
     cache_dir = Path(tempfile.mkdtemp())
     with patch("autoshorts.generators.explainer.IMAGE_CACHE_DIR", cache_dir):
         yield
@@ -28,6 +29,7 @@ def isolate_image_cache():
 def prevent_web_search_network():
     """Prevent WebSearcher from making real DDGS network calls in tests."""
     from unittest.mock import patch
+
     with patch("ddgs.DDGS") as mock_ddgs:
         mock_instance = mock_ddgs.return_value
         mock_instance.text.return_value = []

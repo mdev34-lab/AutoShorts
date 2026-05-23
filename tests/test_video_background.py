@@ -17,15 +17,32 @@ class TestIsSuitableVideo:
         self.manager = VideoBackgroundManager()
 
     def test_suitable_video(self):
-        info = {"duration": 120, "title": "Great Video", "id": "abc123", "webpage_url": "https://youtube.com/watch?v=abc123"}
+        info = {
+            "duration": 120,
+            "title": "Great Video",
+            "id": "abc123",
+            "webpage_url": "https://youtube.com/watch?v=abc123",
+        }
         assert self.manager._is_suitable_video(info) is True
 
     def test_private_video(self):
-        info = {"duration": 120, "title": "Private", "id": "abc123", "webpage_url": "url", "availability": "private"}
+        info = {
+            "duration": 120,
+            "title": "Private",
+            "id": "abc123",
+            "webpage_url": "url",
+            "availability": "private",
+        }
         assert self.manager._is_suitable_video(info) is False
 
     def test_unavailable_video(self):
-        info = {"duration": 120, "title": "Unavailable", "id": "abc123", "webpage_url": "url", "availability": "unavailable"}
+        info = {
+            "duration": 120,
+            "title": "Unavailable",
+            "id": "abc123",
+            "webpage_url": "url",
+            "availability": "unavailable",
+        }
         assert self.manager._is_suitable_video(info) is False
 
     def test_missing_id(self):
@@ -174,7 +191,10 @@ class TestDownloadFromUrl:
     def test_download_from_url_no_file_raises(self, mock_ydl_class):
         mock_ydl_instance = MagicMock()
         mock_ydl_class.return_value.__enter__.return_value = mock_ydl_instance
-        mock_ydl_instance.extract_info.return_value = {"title": "Test", "description": ""}
+        mock_ydl_instance.extract_info.return_value = {
+            "title": "Test",
+            "description": "",
+        }
 
         self.manager.temp_dir.glob.return_value = []
         with pytest.raises(FileNotFoundError):
@@ -200,7 +220,9 @@ class TestSearchAndDownload:
     @patch.object(VideoBackgroundManager, "_search_with_ddg")
     @patch.object(VideoBackgroundManager, "_search_with_ytdlp")
     @patch.object(VideoBackgroundManager, "generate_search_query")
-    def test_ddg_failure_falls_back_to_ytdlp(self, mock_gen_query, mock_ytdlp, mock_ddg):
+    def test_ddg_failure_falls_back_to_ytdlp(
+        self, mock_gen_query, mock_ytdlp, mock_ddg
+    ):
         mock_gen_query.return_value = "test query"
         mock_ddg.return_value = None
         mock_ytdlp.return_value = "/path/to/video.mp4"

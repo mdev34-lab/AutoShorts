@@ -74,11 +74,15 @@ class TestTTSSystem:
         mock_subprocess_result.stdout = "10.0"
         mock_subprocess_result.stderr = ""
 
-        with patch(
-            "autoshorts.modules.tts_system.edge_tts.Communicate", return_value=mock_comm
-        ), patch(
-            "autoshorts.modules.tts_system.subprocess.run",
-            return_value=mock_subprocess_result,
+        with (
+            patch(
+                "autoshorts.modules.tts_system.edge_tts.Communicate",
+                return_value=mock_comm,
+            ),
+            patch(
+                "autoshorts.modules.tts_system.subprocess.run",
+                return_value=mock_subprocess_result,
+            ),
         ):
             tts_system = TTSSystem()
             (
@@ -177,11 +181,15 @@ class TestTTSSystem:
             return_value=str(self.temp_dir / "subs.vtt")
         )
 
-        with patch(
-            "autoshorts.modules.tts_system.edge_tts.Communicate", return_value=mock_comm
-        ), patch(
-            "autoshorts.modules.tts_system.subprocess.run",
-            return_value=mock_subprocess_result,
+        with (
+            patch(
+                "autoshorts.modules.tts_system.edge_tts.Communicate",
+                return_value=mock_comm,
+            ),
+            patch(
+                "autoshorts.modules.tts_system.subprocess.run",
+                return_value=mock_subprocess_result,
+            ),
         ):
             tts_system = TTSSystem()
             tts_system.subtitle_system = mock_subtitle_system
@@ -260,11 +268,15 @@ class TestTTSSystemIntegration:
         mock_subprocess_result.stdout = "15.0"
         mock_subprocess_result.stderr = ""
 
-        with patch(
-            "autoshorts.modules.tts_system.edge_tts.Communicate", return_value=mock_comm
-        ), patch(
-            "autoshorts.modules.tts_system.subprocess.run",
-            return_value=mock_subprocess_result,
+        with (
+            patch(
+                "autoshorts.modules.tts_system.edge_tts.Communicate",
+                return_value=mock_comm,
+            ),
+            patch(
+                "autoshorts.modules.tts_system.subprocess.run",
+                return_value=mock_subprocess_result,
+            ),
         ):
             tts_system = TTSSystem()
             (

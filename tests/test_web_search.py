@@ -26,8 +26,16 @@ class TestWebSearcher:
         mock_ddgs = MagicMock()
         mock_ddgs_class.return_value = mock_ddgs
         mock_ddgs.text.return_value = [
-            {"href": "https://example.com/1", "title": "Result 1", "body": "Snippet one"},
-            {"href": "https://example.com/2", "title": "Result 2", "body": "Snippet two"},
+            {
+                "href": "https://example.com/1",
+                "title": "Result 1",
+                "body": "Snippet one",
+            },
+            {
+                "href": "https://example.com/2",
+                "title": "Result 2",
+                "body": "Snippet two",
+            },
         ]
 
         results = self.searcher.search("test subject")
@@ -43,7 +51,11 @@ class TestWebSearcher:
         mock_ddgs_class.return_value = mock_ddgs
         mock_ddgs.text.return_value = [
             {"href": "https://example.com/1", "title": "Result 1", "body": "Snippet"},
-            {"href": "https://example.com/1", "title": "Result 1 dup", "body": "Duplicate"},
+            {
+                "href": "https://example.com/1",
+                "title": "Result 1 dup",
+                "body": "Duplicate",
+            },
         ]
 
         results = self.searcher.search("test subject")
@@ -93,8 +105,16 @@ class TestWebSearcher:
 
     def test_format_context(self):
         results = [
-            {"title": "Guerra Fria", "url": "https://ex.com/gf", "snippet": "A Guerra Fria foi um per\u00edodo..."},
-            {"title": "Origem", "url": "https://ex.com/origem", "snippet": "Tudo comecou em 1945..."},
+            {
+                "title": "Guerra Fria",
+                "url": "https://ex.com/gf",
+                "snippet": "A Guerra Fria foi um per\u00edodo...",
+            },
+            {
+                "title": "Origem",
+                "url": "https://ex.com/origem",
+                "snippet": "Tudo comecou em 1945...",
+            },
         ]
         formatted = WebSearcher.format_context(results)
 

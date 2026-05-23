@@ -212,7 +212,10 @@ class TestSubtitleRenderer:
         result = self.renderer._vtt_time_to_seconds("00:00:05.250")
         assert result == 5.25
 
-    @patch("autoshorts.modules.subtitle_system._get_text_size_pil", side_effect=Exception("PIL fail"))
+    @patch(
+        "autoshorts.modules.subtitle_system._get_text_size_pil",
+        side_effect=Exception("PIL fail"),
+    )
     @patch("autoshorts.modules.subtitle_system.TextClip")
     def test_get_text_dimensions(self, mock_textclip, mock_pil):
         """Test text dimension caching"""
@@ -443,7 +446,10 @@ class TestGetSystemFont:
         result = get_system_font()
         assert result == "arial.ttf"
 
-    @patch("autoshorts.modules.config.DEFAULT_FONT", "/usr/share/fonts/liberation/LiberationSans-Bold.ttf")
+    @patch(
+        "autoshorts.modules.config.DEFAULT_FONT",
+        "/usr/share/fonts/liberation/LiberationSans-Bold.ttf",
+    )
     def test_get_font_linux_second_fallback(self):
         """Test font fallback on Linux with second font"""
         result = get_system_font()

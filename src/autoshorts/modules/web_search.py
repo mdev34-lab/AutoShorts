@@ -39,20 +39,20 @@ class WebSearcher:
             for i, q in enumerate(queries, 1):
                 try:
                     log(f"Web search query {i}/{len(queries)}: '{q[:80]}'", "INFO")
-                    batch = list(
-                        DDGS().text(q, max_results=self.max_results_per_query)
-                    )
+                    batch = list(DDGS().text(q, max_results=self.max_results_per_query))
                     log(f"Web search query {i}: {len(batch)} raw results", "INFO")
                     new_count = 0
                     for r in batch:
                         url = r.get("href", "")
                         if url and url not in seen_urls:
                             seen_urls.add(url)
-                            results.append({
-                                "title": r.get("title", ""),
-                                "url": url,
-                                "snippet": r.get("body", ""),
-                            })
+                            results.append(
+                                {
+                                    "title": r.get("title", ""),
+                                    "url": url,
+                                    "snippet": r.get("body", ""),
+                                }
+                            )
                             new_count += 1
                     log(
                         f"Web search query {i}: {new_count} new unique URLs",
@@ -64,9 +64,7 @@ class WebSearcher:
 
             if results:
                 domains = set(
-                    r["url"].split("/")[2]
-                    for r in results
-                    if "//" in r["url"]
+                    r["url"].split("/")[2] for r in results if "//" in r["url"]
                 )
                 log(
                     f"Web search complete: {len(results)} unique sources from "

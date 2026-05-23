@@ -106,7 +106,11 @@ class ExplainerGenerator:
             log(f"Generated script with {len(script)} paragraphs")
 
             log("Step 3: Generating TTS audio...")
-            audio_path, vtt_path, duration = await self.tts_system.generate_audio_and_subtitles(
+            (
+                audio_path,
+                vtt_path,
+                duration,
+            ) = await self.tts_system.generate_audio_and_subtitles(
                 script, self.temp_dir
             )
             log(f"Generated TTS audio: {duration:.1f}s")
@@ -149,7 +153,13 @@ class ExplainerGenerator:
             traceback.print_exc()
             return False
 
-    def _generate_ai_images(self, subject: str, script_paragraphs: list, num_images: int = 0, prompts: list = None) -> list:
+    def _generate_ai_images(
+        self,
+        subject: str,
+        script_paragraphs: list,
+        num_images: int = 0,
+        prompts: list = None,
+    ) -> list:
         if prompts is not None and prompts:
             if isinstance(prompts[0], dict):
                 paired = prompts
@@ -211,10 +221,14 @@ class ExplainerGenerator:
             OUTPUT_DIR.mkdir(exist_ok=True)
 
             log("Step 1: Generating script with image prompts...")
-            paragraphs, _ = self.script_generator.generate_script_with_prompts(self.subject)
+            paragraphs, _ = self.script_generator.generate_script_with_prompts(
+                self.subject
+            )
 
             log("Step 2: Generating TTS audio...")
-            audio_path = await self.tts_system.generate_audio_only(paragraphs, self.temp_dir)
+            audio_path = await self.tts_system.generate_audio_only(
+                paragraphs, self.temp_dir
+            )
 
             log("Step 3: Calculating image count from TTS duration...")
             audio = AudioFileClip(audio_path)
@@ -227,7 +241,9 @@ class ExplainerGenerator:
             )
 
             log("Step 5: Generating images...")
-            img_paths = self._generate_ai_images(self.subject, paragraphs, prompts=image_prompts)
+            img_paths = self._generate_ai_images(
+                self.subject, paragraphs, prompts=image_prompts
+            )
             if len(img_paths) < 3:
                 log(f"Only {len(img_paths)} images, need >= 3", "ERROR")
                 return False
@@ -298,7 +314,9 @@ class ExplainerGenerator:
         clip = clip.with_effects([vfx.Resize(scale_anim)])
         return clip.transform(apply_opacity)
 
-    def _create_flux_video(self, img_paths: list, audio_path: str, paragraphs: list, output_path: str):
+    def _create_flux_video(
+        self, img_paths: list, audio_path: str, paragraphs: list, output_path: str
+    ):
         log("Composing video with U-curve zoom...")
         audio = AudioFileClip(audio_path)
         num_imgs = len(img_paths)
@@ -308,7 +326,11 @@ class ExplainerGenerator:
 
         clips = []
         for i, path in enumerate(img_paths):
-            clip = ImageClip(path).with_duration(dur_per_img).resized(new_size=(1080, 1920))
+            clip = (
+                ImageClip(path)
+                .with_duration(dur_per_img)
+                .resized(new_size=(1080, 1920))
+            )
             clip = self._apply_overlay_animation(clip, dur_per_img)
             if i > 0:
                 clip = clip.with_effects([vfx.CrossFadeIn(CROSSFADE_TIME)])
@@ -328,7 +350,9 @@ class ExplainerGenerator:
 
         subtitle_system = SubtitleSystem()
         vtt_dir = tempfile.mkdtemp()
-        vtt_path = subtitle_system.generate_subtitles(paragraphs, video.duration, vtt_dir)
+        vtt_path = subtitle_system.generate_subtitles(
+            paragraphs, video.duration, vtt_dir
+        )
         subs = subtitle_system.render_subtitles(vtt_path, (VIDEO_WIDTH, VIDEO_HEIGHT))
 
         final = CompositeVideoClip([video] + subs, size=(VIDEO_WIDTH, VIDEO_HEIGHT))

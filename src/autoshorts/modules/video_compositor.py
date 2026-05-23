@@ -52,6 +52,7 @@ from .utils import create_temp_dir, get_video_duration, log
 # Monkey-patch FFMPEG_VideoReader.close() to suppress WinError 6 during GC
 _orig_close = FFMPEG_VideoReader.close
 
+
 def _patched_close(self, delete_lastread=True):
     try:
         _orig_close(self, delete_lastread)
@@ -61,6 +62,7 @@ def _patched_close(self, delete_lastread=True):
             ResourceWarning,
             stacklevel=2,
         )
+
 
 FFMPEG_VideoReader.close = _patched_close
 
@@ -484,7 +486,9 @@ class VideoCompositor:
                 if START_WITH_IMAGE and i == 0:
                     start_time = 0.0
                 else:
-                    start_time = (i + (0 if START_WITH_IMAGE else 1)) * IMAGE_BOUNCE_INTERVAL
+                    start_time = (
+                        i + (0 if START_WITH_IMAGE else 1)
+                    ) * IMAGE_BOUNCE_INTERVAL
                 if start_time >= target_duration:
                     break
 
@@ -540,7 +544,9 @@ class VideoCompositor:
             if START_WITH_IMAGE and i == 0:
                 start_time = 0.0
             else:
-                start_time = (i + (0 if START_WITH_IMAGE else 1)) * IMAGE_BOUNCE_INTERVAL
+                start_time = (
+                    i + (0 if START_WITH_IMAGE else 1)
+                ) * IMAGE_BOUNCE_INTERVAL
             if start_time >= duration:
                 break
 

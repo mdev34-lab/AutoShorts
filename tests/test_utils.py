@@ -228,8 +228,19 @@ class TestSystemFunctions:
                 get_system_font()
 
     @patch("platform.system", return_value="Linux")
-    @patch("autoshorts.modules.utils.FALLBACK_FONTS", ["/nonexistent/font.ttf", "/usr/share/fonts/liberation/LiberationSans-Bold.ttf"])
-    @patch("os.path.exists", side_effect=lambda p: p == "/usr/share/fonts/liberation/LiberationSans-Bold.ttf")
+    @patch(
+        "autoshorts.modules.utils.FALLBACK_FONTS",
+        [
+            "/nonexistent/font.ttf",
+            "/usr/share/fonts/liberation/LiberationSans-Bold.ttf",
+        ],
+    )
+    @patch(
+        "os.path.exists",
+        side_effect=lambda p: (
+            p == "/usr/share/fonts/liberation/LiberationSans-Bold.ttf"
+        ),
+    )
     def test_get_system_font_linux_second_fallback(self, mock_exists, mock_platform):
         """Test font fallback on Linux with second font"""
         font = get_system_font()

@@ -162,13 +162,13 @@ class ScriptGenerator:
             f"   - Include specific names, dates, statistics, locations.\n"
             f"   - Tell an origin story: how it started, why it matters.\n"
             f"   - This is a DRAFT \u2014 it may contain errors. Do NOT fact-check yourself.\n"
-             f'2. "queries": Array of 7-9 Portuguese web search queries to VERIFY '
-             f"the factual claims in your draft.\n"
-             f"   - At least 3 queries must be BROADER independent searches about the subject "
-             f"(e.g. 'Botafogo principais rivais' instead of 'hist\u00f3ria do cl\u00e1ssico X').\n"
-             f"   - Each specific query should target one or more claims from the draft.\n"
-             f"   - Be specific: include names, dates, unique terms.\n"
-             f"   - Cover all major factual claims (dates, names, places, statistics, origins).\n"
+            f'2. "queries": Array of 7-9 Portuguese web search queries to VERIFY '
+            f"the factual claims in your draft.\n"
+            f"   - At least 3 queries must be BROADER independent searches about the subject "
+            f"(e.g. 'Botafogo principais rivais' instead of 'hist\u00f3ria do cl\u00e1ssico X').\n"
+            f"   - Each specific query should target one or more claims from the draft.\n"
+            f"   - Be specific: include names, dates, unique terms.\n"
+            f"   - Cover all major factual claims (dates, names, places, statistics, origins).\n"
             f'3. "title": string, max 60 chars (PT-BR) \u2014 catchy YouTube Shorts title about {subject}.'
         )
         user_prompt = (
@@ -182,7 +182,10 @@ class ScriptGenerator:
                 log("Draft response missing 'draft' key", "ERROR")
                 return {"draft": [], "queries": [subject], "title": ""}
             num_q = len(data.get("queries") or [])
-            log(f"Draft generated: {len(data['draft'])} paragraphs, {num_q} queries", "INFO")
+            log(
+                f"Draft generated: {len(data['draft'])} paragraphs, {num_q} queries",
+                "INFO",
+            )
             return data
         except Exception as e:
             log(f"Draft generation failed: {e}", "ERROR")
@@ -210,7 +213,10 @@ class ScriptGenerator:
         for attempt in range(2):
             try:
                 response = requests.post(
-                    self.api_url, headers=headers, json=payload, timeout=API_TIMEOUT_TEXT
+                    self.api_url,
+                    headers=headers,
+                    json=payload,
+                    timeout=API_TIMEOUT_TEXT,
                 )
                 response.raise_for_status()
                 content = response.json()["choices"][0]["message"]["content"]
@@ -281,7 +287,7 @@ class ScriptGenerator:
                     lines.append(current_para)
 
             if len(lines) < 4:
-                lines.extend(FALLBACK_PARAGRAPHS[len(lines):])
+                lines.extend(FALLBACK_PARAGRAPHS[len(lines) :])
 
             return lines[:5]
 
@@ -294,18 +300,20 @@ class ScriptGenerator:
         """Pad or trim paragraphs to target count."""
         if len(paragraphs) >= target:
             return paragraphs[:target]
-        return paragraphs + FALLBACK_PARAGRAPHS[len(paragraphs):target]
+        return paragraphs + FALLBACK_PARAGRAPHS[len(paragraphs) : target]
 
     # ── Single-pass path for images-only without web search ──────────────
 
-    def _generate_script_with_context(self, subject: str, search_context: str) -> list | None:
+    def _generate_script_with_context(
+        self, subject: str, search_context: str
+    ) -> list | None:
         """Generate paragraphs grounded in search context (JSON API call)."""
         system_prompt = (
             "You are a master storyteller for viral YouTube Shorts.\n"
             "Output ONLY a JSON object with:\n"
             "1.'paragraphs': Array of 7 strings (PT-BR).\n"
             "CRITICAL: First paragraph MUST start with a SPECIFIC FACT (date, name, number, place).\n"
-            "NEVER use \"ningu\u00e9m sabia\", \"o segredo\", or \"a verdade\" \u2014 these are vague.\n"
+            'NEVER use "ningu\u00e9m sabia", "o segredo", or "a verdade" \u2014 these are vague.\n'
             "Always lead with concrete details: dates, names, places, statistics.\n"
             "Include origin stories: explain how it started and why it matters.\n"
             "Keep each paragraph 2-3 sentences (~3 seconds audio each).\n"
@@ -331,7 +339,7 @@ class ScriptGenerator:
             "Output ONLY a JSON object with:\n"
             "1.'paragraphs': Array of 7 strings (PT-BR).\n"
             "CRITICAL: First paragraph MUST start with a SPECIFIC FACT (date, name, number, place).\n"
-            "NEVER use \"ningu\u00e9m sabia\", \"o segredo\", or \"a verdade\" \u2014 these are vague.\n"
+            'NEVER use "ningu\u00e9m sabia", "o segredo", or "a verdade" \u2014 these are vague.\n'
             "Always lead with concrete details: dates, names, places, statistics.\n"
             "Include origin stories: explain how it started and why it matters.\n"
             "Keep each paragraph 2-3 sentences (~3 seconds audio each)."

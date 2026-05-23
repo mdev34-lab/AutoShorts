@@ -12,14 +12,28 @@ from ..new import new_app
 @new_app.command(name="explainer")
 def explainer_command(
     subject: str = typer.Argument(None, help="Video subject"),
-    output: str = typer.Option("output", "--output", "-o", help="Output directory or file path"),
-    youtube_url: str = typer.Option(None, "--youtube-url", "-y", help="Direct YouTube URL"),
-    goodnight: bool = typer.Option(False, "--goodnight", help="Shutdown after processing"),
+    output: str = typer.Option(
+        "output", "--output", "-o", help="Output directory or file path"
+    ),
+    youtube_url: str = typer.Option(
+        None, "--youtube-url", "-y", help="Direct YouTube URL"
+    ),
+    goodnight: bool = typer.Option(
+        False, "--goodnight", help="Shutdown after processing"
+    ),
     batch: list[str] = typer.Option(None, "--batch", help="Batch: multiple subjects"),
-    no_web_search: bool = typer.Option(False, "--no-web-search", help="Disable web search (use model knowledge only)"),
+    no_web_search: bool = typer.Option(
+        False, "--no-web-search", help="Disable web search (use model knowledge only)"
+    ),
     no_images: bool = typer.Option(False, "--no-images", help="Skip image overlays"),
-    images_only: bool = typer.Option(False, "--images-only", help="Images only (no YouTube bg)"),
-    images: str = typer.Option("web", "--images", help="Image source: 'web' (DDGS search) or 'ai' (Pollinations)"),
+    images_only: bool = typer.Option(
+        False, "--images-only", help="Images only (no YouTube bg)"
+    ),
+    images: str = typer.Option(
+        "web",
+        "--images",
+        help="Image source: 'web' (DDGS search) or 'ai' (Pollinations)",
+    ),
 ):
     if no_images and images_only:
         raise typer.BadParameter("--no-images and --images-only are mutually exclusive")

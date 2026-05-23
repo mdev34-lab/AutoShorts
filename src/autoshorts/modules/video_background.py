@@ -150,7 +150,9 @@ CRITICAL RULES:
         if isinstance(exc, list) and exc:
             first_item = exc[0]
             if isinstance(first_item, dict):
-                return first_item.get("msg") or first_item.get("error") or str(first_item)
+                return (
+                    first_item.get("msg") or first_item.get("error") or str(first_item)
+                )
             return str(first_item)
         return str(exc)
 
@@ -171,10 +173,11 @@ CRITICAL RULES:
             from ddgs import DDGS
 
             log("Searching YouTube via DuckDuckGo...", "INFO")
-            results = list(DDGS().text(f"site:youtube.com {search_query}", max_results=10))
+            results = list(
+                DDGS().text(f"site:youtube.com {search_query}", max_results=10)
+            )
             urls = [
-                r["href"] for r in results
-                if "youtube.com/watch" in r.get("href", "")
+                r["href"] for r in results if "youtube.com/watch" in r.get("href", "")
             ]
             if not urls:
                 log("No YouTube URLs found via DDG", "WARNING")
@@ -218,7 +221,11 @@ CRITICAL RULES:
                 if not suitable_videos:
                     raise ValueError("No suitable videos found in search results")
 
-                urls = [v.get("webpage_url", "") for v in suitable_videos[:10] if v.get("webpage_url")]
+                urls = [
+                    v.get("webpage_url", "")
+                    for v in suitable_videos[:10]
+                    if v.get("webpage_url")
+                ]
                 path = self._download_first_suitable(urls)
                 if path:
                     return path
@@ -231,9 +238,7 @@ CRITICAL RULES:
         """Try URLs one by one, return path of first successful download."""
         download_temp_dir = create_temp_dir()
         ydl_opts_with_dir = self.ydl_opts.copy()
-        ydl_opts_with_dir["outtmpl"] = str(
-            download_temp_dir / "source_video.%(ext)s"
-        )
+        ydl_opts_with_dir["outtmpl"] = str(download_temp_dir / "source_video.%(ext)s")
 
         for attempt, video_url in enumerate(urls):
             if not video_url:
@@ -250,7 +255,10 @@ CRITICAL RULES:
                     title = info.get("title", "Unknown")
             except Exception as e:
                 error_msg = self._extract_error_message(e)
-                if "not available" in error_msg.lower() or "private" in error_msg.lower():
+                if (
+                    "not available" in error_msg.lower()
+                    or "private" in error_msg.lower()
+                ):
                     log(f"Video {attempt + 1} unavailable, trying next...", "WARNING")
                     continue
                 log(f"Metadata extraction failed: {error_msg}", "WARNING")

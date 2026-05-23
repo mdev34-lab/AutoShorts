@@ -120,13 +120,19 @@ class ImageSearcher:
                 url = r.get("image", "")
                 if not url:
                     continue
-                temp_path = IMAGE_CACHE_DIR / f"dl_{cache_key}_{hashlib.md5(url.encode()).hexdigest()[:8]}.jpg"
+                temp_path = (
+                    IMAGE_CACHE_DIR
+                    / f"dl_{cache_key}_{hashlib.md5(url.encode()).hexdigest()[:8]}.jpg"
+                )
                 if self.download_image(url, temp_path):
                     try:
                         with Image.open(temp_path) as check:
                             actual_w, actual_h = check.size
                         if actual_w < 100 or actual_h < 100:
-                            log(f"  Downloaded image too small ({actual_w}×{actual_h}), skipping", "WARNING")
+                            log(
+                                f"  Downloaded image too small ({actual_w}×{actual_h}), skipping",
+                                "WARNING",
+                            )
                             temp_path.unlink(missing_ok=True)
                             continue
                         self.resize_to_fill(temp_path, cached_path)
@@ -140,13 +146,21 @@ class ImageSearcher:
                         temp_path.unlink(missing_ok=True)
 
             if not downloaded:
-                log("  Web search failed for prompt, generating via AI instead", "WARNING")
+                log(
+                    "  Web search failed for prompt, generating via AI instead",
+                    "WARNING",
+                )
                 self._fallback_to_ai([prompt], img_paths)
 
         return img_paths
 
-    def _fallback_to_ai(self, remaining_prompts: list[str], collected_paths: list[str]) -> list[str]:
-        log(f"Falling back to Pollinations.ai for {len(remaining_prompts)} images", "INFO")
+    def _fallback_to_ai(
+        self, remaining_prompts: list[str], collected_paths: list[str]
+    ) -> list[str]:
+        log(
+            f"Falling back to Pollinations.ai for {len(remaining_prompts)} images",
+            "INFO",
+        )
         headers = {"Authorization": f"Bearer {API_KEY}"}
 
         for prompt in remaining_prompts:

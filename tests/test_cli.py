@@ -115,14 +115,23 @@ class TestExplainerCommand:
 
     @patch("autoshorts.cli.commands.explainer.VIDEO_TYPES")
     @patch("autoshorts.cli.commands.explainer.asyncio.run")
-    def test_youtube_url_with_images_only_fails(self, mock_asyncio_run, mock_video_types):
+    def test_youtube_url_with_images_only_fails(
+        self, mock_asyncio_run, mock_video_types
+    ):
         gen_mock = Mock()
         gen_mock.generate = Mock(return_value=True)
         gen_mock.cleanup = Mock()
         mock_video_types.__getitem__.return_value = lambda **kw: gen_mock
 
         result = self.runner.invoke(
-            app, ["new", "explainer", "--youtube-url", "https://youtube.com/watch?v=123", "--images-only"]
+            app,
+            [
+                "new",
+                "explainer",
+                "--youtube-url",
+                "https://youtube.com/watch?v=123",
+                "--images-only",
+            ],
         )
         assert result.exit_code != 0
 
@@ -188,7 +197,9 @@ class TestExplainerCommand:
         mock_video_types.__getitem__.return_value = lambda **kw: gen_mock
         mock_asyncio_run.return_value = True
 
-        with patch("autoshorts.cli.commands.explainer.shutdown_computer") as mock_shutdown:
+        with patch(
+            "autoshorts.cli.commands.explainer.shutdown_computer"
+        ) as mock_shutdown:
             result = self.runner.invoke(
                 app, ["new", "explainer", "test", "--goodnight"]
             )
@@ -216,7 +227,9 @@ class TestExplainerCommand:
         mock_video_types.__getitem__.return_value = lambda **kw: gen_mock
         mock_asyncio_run.return_value = True
 
-        result = self.runner.invoke(app, ["new", "explainer", "test", "--no-web-search"])
+        result = self.runner.invoke(
+            app, ["new", "explainer", "test", "--no-web-search"]
+        )
         assert result.exit_code == 0
 
     @patch("autoshorts.cli.commands.explainer.VIDEO_TYPES")
@@ -228,7 +241,9 @@ class TestExplainerCommand:
         mock_video_types.__getitem__.return_value = lambda **kw: gen_mock
         mock_asyncio_run.return_value = True
 
-        result = self.runner.invoke(app, ["new", "explainer", "test", "--images", "web"])
+        result = self.runner.invoke(
+            app, ["new", "explainer", "test", "--images", "web"]
+        )
         assert result.exit_code == 0
 
     @patch("autoshorts.cli.commands.explainer.VIDEO_TYPES")
@@ -244,7 +259,9 @@ class TestExplainerCommand:
         assert result.exit_code == 0
 
     def test_images_flag_invalid(self):
-        result = self.runner.invoke(app, ["new", "explainer", "test", "--images", "invalid"])
+        result = self.runner.invoke(
+            app, ["new", "explainer", "test", "--images", "invalid"]
+        )
         assert result.exit_code != 0
 
     def test_images_flag_shows_in_help(self):

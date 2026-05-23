@@ -73,21 +73,23 @@ class TestScriptGenerator:
             "choices": [
                 {
                     "message": {
-                        "content": json.dumps({
-                            "draft": [
-                                "AI transformed technology in the 21st century.",
-                                "The field was founded in 1956 at Dartmouth.",
-                                "Machine learning emerged as a key approach.",
-                                "Neural networks revolutionized the field.",
-                                "Today AI powers everything from search to self-driving cars.",
-                            ],
-                            "queries": [
-                                "intelig\u00eancia artificial hist\u00f3ria 1956",
-                                "Deep learning revolu\u00e7\u00e3o tecnologia",
-                                "IA aplica\u00e7\u00f5es atuais",
-                            ],
-                            "title": "A Revolu\u00e7\u00e3o da Intelig\u00eancia Artificial",
-                        })
+                        "content": json.dumps(
+                            {
+                                "draft": [
+                                    "AI transformed technology in the 21st century.",
+                                    "The field was founded in 1956 at Dartmouth.",
+                                    "Machine learning emerged as a key approach.",
+                                    "Neural networks revolutionized the field.",
+                                    "Today AI powers everything from search to self-driving cars.",
+                                ],
+                                "queries": [
+                                    "intelig\u00eancia artificial hist\u00f3ria 1956",
+                                    "Deep learning revolu\u00e7\u00e3o tecnologia",
+                                    "IA aplica\u00e7\u00f5es atuais",
+                                ],
+                                "title": "A Revolu\u00e7\u00e3o da Intelig\u00eancia Artificial",
+                            }
+                        )
                     }
                 }
             ]
@@ -437,7 +439,9 @@ class TestScriptGenerator:
 
     @patch("autoshorts.modules.script_generator.WebSearcher")
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_generate_script_with_prompts_web_search(self, mock_post, mock_searcher_class):
+    def test_generate_script_with_prompts_web_search(
+        self, mock_post, mock_searcher_class
+    ):
         """Test script generation with prompts and web search (two-pass)"""
         mock_searcher = Mock()
         mock_searcher.search_with_queries.return_value = None
@@ -449,11 +453,13 @@ class TestScriptGenerator:
             "choices": [
                 {
                     "message": {
-                        "content": json.dumps({
-                            "draft": ["P1", "P2", "P3", "P4", "P5", "P6", "P7"],
-                            "queries": ["test query 1", "test query 2"],
-                            "title": "Test Title",
-                        })
+                        "content": json.dumps(
+                            {
+                                "draft": ["P1", "P2", "P3", "P4", "P5", "P6", "P7"],
+                                "queries": ["test query 1", "test query 2"],
+                                "title": "Test Title",
+                            }
+                        )
                     }
                 }
             ]
@@ -501,23 +507,31 @@ class TestScriptGenerator:
 
     @patch("autoshorts.modules.script_generator.WebSearcher")
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_generate_script_with_search_results(
-        self, mock_post, mock_searcher_class
-    ):
+    def test_generate_script_with_search_results(self, mock_post, mock_searcher_class):
         """Test generate_script with search results uses context in final call"""
         mock_searcher = Mock()
         mock_searcher.search_with_queries.return_value = [
-            {"title": "Flamengo", "url": "https://ex.com/1", "snippet": "Hist\u00f3ria do Flamengo"},
-            {"title": "Fluminense", "url": "https://ex.com/2", "snippet": "Origem do Fluminense"},
+            {
+                "title": "Flamengo",
+                "url": "https://ex.com/1",
+                "snippet": "Hist\u00f3ria do Flamengo",
+            },
+            {
+                "title": "Fluminense",
+                "url": "https://ex.com/2",
+                "snippet": "Origem do Fluminense",
+            },
         ]
         mock_searcher.format_context.return_value = "FONTES DA WEB:\n..."
         mock_searcher_class.return_value = mock_searcher
 
-        draft_json = json.dumps({
-            "draft": ["P1", "P2", "P3", "P4", "P5"],
-            "queries": ["flamengo hist\u00f3ria", "fluminense origem"],
-            "title": "Cl\u00e1ssico",
-        })
+        draft_json = json.dumps(
+            {
+                "draft": ["P1", "P2", "P3", "P4", "P5"],
+                "queries": ["flamengo hist\u00f3ria", "fluminense origem"],
+                "title": "Cl\u00e1ssico",
+            }
+        )
         draft_response = Mock()
         draft_response.json.return_value = {
             "choices": [{"message": {"content": draft_json}}]
@@ -569,20 +583,20 @@ class TestScriptGenerator:
         mock_searcher.format_context.return_value = "FONTES DA WEB:\n..."
         mock_searcher_class.return_value = mock_searcher
 
-        draft_json = json.dumps({
-            "draft": ["P1", "P2", "P3", "P4", "P5", "P6", "P7"],
-            "queries": ["query1", "query2"],
-            "title": "Test Title",
-        })
+        draft_json = json.dumps(
+            {
+                "draft": ["P1", "P2", "P3", "P4", "P5", "P6", "P7"],
+                "queries": ["query1", "query2"],
+                "title": "Test Title",
+            }
+        )
         draft_response = Mock()
         draft_response.json.return_value = {
             "choices": [{"message": {"content": draft_json}}]
         }
         draft_response.raise_for_status.return_value = None
 
-        final_json = json.dumps({
-            "paragraphs": [f"P{i}" for i in range(1, 8)]
-        })
+        final_json = json.dumps({"paragraphs": [f"P{i}" for i in range(1, 8)]})
         final_response = Mock()
         final_response.json.return_value = {
             "choices": [{"message": {"content": final_json}}]
@@ -612,26 +626,34 @@ class TestScriptGenerator:
 
         mock_response = Mock()
         mock_response.json.return_value = {
-            "choices": [{"message": {"content": json.dumps({
-                "draft": [],
-                "queries": [],
-                "title": "",
-            })}}]
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "draft": [],
+                                "queries": [],
+                                "title": "",
+                            }
+                        )
+                    }
+                }
+            ]
         }
         mock_response.raise_for_status.return_value = None
         mock_post.return_value = mock_response
 
         generator = ScriptGenerator(web_search=True)
         paragraphs, prompts = generator.generate_script_with_prompts("test")
-        assert len(paragraphs) == 5  # _ensure_paragraph_count([], 7) pads from 5 fallback entries
+        assert (
+            len(paragraphs) == 5
+        )  # _ensure_paragraph_count([], 7) pads from 5 fallback entries
         assert isinstance(paragraphs, list)
         assert prompts == []
 
     @patch("autoshorts.modules.script_generator.WebSearcher")
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_generate_script_draft_api_error(
-        self, mock_post, mock_searcher_class
-    ):
+    def test_generate_script_draft_api_error(self, mock_post, mock_searcher_class):
         """Test generate_script handles draft API error gracefully"""
         mock_searcher = Mock()
         mock_searcher.search_with_queries.return_value = None
@@ -639,11 +661,19 @@ class TestScriptGenerator:
 
         mock_response = Mock()
         mock_response.json.return_value = {
-            "choices": [{"message": {"content": json.dumps({
-                "draft": [],
-                "queries": ["fallback"],
-                "title": "",
-            })}}]
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "draft": [],
+                                "queries": ["fallback"],
+                                "title": "",
+                            }
+                        )
+                    }
+                }
+            ]
         }
         mock_response.raise_for_status.return_value = None
         mock_post.return_value = mock_response
@@ -668,10 +698,18 @@ class TestScriptGenerator:
         """Test _generate_draft returns fallback when response has no draft key"""
         mock_response = Mock()
         mock_response.json.return_value = {
-            "choices": [{"message": {"content": json.dumps({
-                "queries": ["q1"],
-                "title": "Titulo",
-            })}}]
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "queries": ["q1"],
+                                "title": "Titulo",
+                            }
+                        )
+                    }
+                }
+            ]
         }
         mock_response.raise_for_status.return_value = None
         mock_post.return_value = mock_response
@@ -686,20 +724,32 @@ class TestScriptGenerator:
         """Test generate_image_prompts_from_script returns paired prompts"""
         mock_response = Mock()
         mock_response.json.return_value = {
-            "choices": [{"message": {"content": json.dumps({
-                "images": [
-                    {"web_query": "dramatic scene", "ai_prompt": "A dramatic cinematic scene with dramatic lighting, ultra detailed 4k"},
-                    {"web_query": "close up shot", "ai_prompt": "A close up shot with dramatic lighting, ultra detailed 4k"},
-                ]
-            })}}]
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "images": [
+                                    {
+                                        "web_query": "dramatic scene",
+                                        "ai_prompt": "A dramatic cinematic scene with dramatic lighting, ultra detailed 4k",
+                                    },
+                                    {
+                                        "web_query": "close up shot",
+                                        "ai_prompt": "A close up shot with dramatic lighting, ultra detailed 4k",
+                                    },
+                                ]
+                            }
+                        )
+                    }
+                }
+            ]
         }
         mock_response.raise_for_status.return_value = None
         mock_post.return_value = mock_response
 
         generator = ScriptGenerator(web_search=False)
-        result = generator.generate_image_prompts_from_script(
-            ["Para 1", "Para 2"], 2
-        )
+        result = generator.generate_image_prompts_from_script(["Para 1", "Para 2"], 2)
         assert isinstance(result, list)
         assert len(result) == 2
         assert "web_query" in result[0]
@@ -719,17 +769,13 @@ class TestScriptGenerator:
         """Test generate_image_prompts_from_script returns empty list when key missing"""
         mock_response = Mock()
         mock_response.json.return_value = {
-            "choices": [{"message": {"content": json.dumps({
-                "other_key": ["value"]
-            })}}]
+            "choices": [{"message": {"content": json.dumps({"other_key": ["value"]})}}]
         }
         mock_response.raise_for_status.return_value = None
         mock_post.return_value = mock_response
 
         generator = ScriptGenerator(web_search=False)
-        result = generator.generate_image_prompts_from_script(
-            ["Para 1", "Para 2"], 2
-        )
+        result = generator.generate_image_prompts_from_script(["Para 1", "Para 2"], 2)
         assert result == []
 
 

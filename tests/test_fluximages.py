@@ -21,7 +21,9 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 # Backward-compatible wrappers for existing test structure
 class ScriptEngine:
     def __init__(self):
-        self.gen = ExplainerGenerator(subject="test", images_only=True, image_source="ai")
+        self.gen = ExplainerGenerator(
+            subject="test", images_only=True, image_source="ai"
+        )
         self.script_generator = self.gen.script_generator
 
     def generate(self, subject):
@@ -31,11 +33,14 @@ class ScriptEngine:
 class AssetManager:
     def __init__(self, temp_dir):
         self.temp_dir = temp_dir
-        self.gen = ExplainerGenerator(subject="test", images_only=True, image_source="ai")
+        self.gen = ExplainerGenerator(
+            subject="test", images_only=True, image_source="ai"
+        )
         self.tts_system = self.gen.tts_system
 
     def generate_ai_images(self, prompts):
         import shutil
+
         if hasattr(self.gen, "temp_dir") and self.gen.temp_dir.exists():
             shutil.rmtree(self.gen.temp_dir)
         self.gen.temp_dir = self.temp_dir
@@ -166,7 +171,9 @@ class TestAssetManager:
 
 class VideoEngine:
     def __init__(self):
-        self.gen = ExplainerGenerator(subject="test", images_only=True, image_source="ai")
+        self.gen = ExplainerGenerator(
+            subject="test", images_only=True, image_source="ai"
+        )
 
     def _u_curve_zoom(self, *a, **kw):
         return self.gen._u_curve_zoom(*a, **kw)
@@ -370,7 +377,11 @@ class TestExplainerGenerator:
         mock_compositor.create_output_video.return_value = True
         mock_compositor_class.return_value = mock_compositor
 
-        with patch.object(gen.tts_system, "generate_audio_and_subtitles", AsyncMock(return_value=("audio.mp3", "subs.vtt", 30.0))):
+        with patch.object(
+            gen.tts_system,
+            "generate_audio_and_subtitles",
+            AsyncMock(return_value=("audio.mp3", "subs.vtt", 30.0)),
+        ):
             with patch.object(gen, "_generate_ai_images", return_value=["img.jpg"] * 5):
                 result = await gen.generate()
                 assert result is True
@@ -399,7 +410,9 @@ class TestExplainerGenerator:
         mock_subtitle.render_subtitles.return_value = []
         mock_subtitle_class.return_value = mock_subtitle
 
-        with patch.object(gen.tts_system, "generate_audio_only", AsyncMock(return_value="audio.mp3")):
+        with patch.object(
+            gen.tts_system, "generate_audio_only", AsyncMock(return_value="audio.mp3")
+        ):
             with patch.object(gen, "_generate_ai_images", return_value=["img.jpg"] * 3):
                 with patch.object(gen, "_create_flux_video"):
                     result = await gen.generate()
@@ -477,12 +490,13 @@ class TestEdgeCases:
             assert result is not None
 
 
-
 class TestOverlayAnimation:
     """Test cases for overlay animation helper methods."""
 
     def setup_method(self):
-        self.gen = ExplainerGenerator(subject="test", images_only=True, image_source="ai")
+        self.gen = ExplainerGenerator(
+            subject="test", images_only=True, image_source="ai"
+        )
 
     def test_ease_in_out_cubic_boundaries(self):
         assert self.gen._ease_in_out_cubic(0.0) == 0.0
@@ -493,7 +507,13 @@ class TestOverlayAnimation:
 
     def test_ease_in_out_cubic_symmetric(self):
         for t in [0.1, 0.2, 0.3, 0.4, 0.6, 0.7, 0.8, 0.9]:
-            assert abs(self.gen._ease_in_out_cubic(t) - (1 - self.gen._ease_in_out_cubic(1 - t))) < 1e-10
+            assert (
+                abs(
+                    self.gen._ease_in_out_cubic(t)
+                    - (1 - self.gen._ease_in_out_cubic(1 - t))
+                )
+                < 1e-10
+            )
 
     def test_ease_in_out_cubic_monotonic(self):
         prev = -1.0
@@ -540,6 +560,7 @@ class TestImageSearcher:
 
     def teardown_method(self):
         import shutil
+
         if self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
 
@@ -555,7 +576,9 @@ class TestImageSearcher:
 
         results = self.searcher.search_images("test query")
 
-        assert len(results) == 3  # metadata dimensions not filtered — resizer handles upscale
+        assert (
+            len(results) == 3
+        )  # metadata dimensions not filtered — resizer handles upscale
 
     @patch("ddgs.DDGS")
     def test_search_images_empty_results(self, mock_ddgs_class):
@@ -576,7 +599,9 @@ class TestImageSearcher:
         mock_ddgs_class.return_value = mock_ddgs
 
         results = self.searcher.search_images("test query")
-        assert len(results) == 2  # metadata not filtered — real PIL check happens after download
+        assert (
+            len(results) == 2
+        )  # metadata not filtered — real PIL check happens after download
 
     def test_download_image_success(self):
         cache_path = self.temp_dir / "test.jpg"
@@ -586,7 +611,9 @@ class TestImageSearcher:
             mock_response.iter_content.return_value = [b"data_chunk"]
             mock_get.return_value = mock_response
 
-            result = self.searcher.download_image("http://example.com/img.jpg", cache_path)
+            result = self.searcher.download_image(
+                "http://example.com/img.jpg", cache_path
+            )
 
             assert result is True
             assert cache_path.exists()
@@ -599,7 +626,9 @@ class TestImageSearcher:
             mock_response.status_code = 404
             mock_get.return_value = mock_response
 
-            result = self.searcher.download_image("http://example.com/img.jpg", cache_path)
+            result = self.searcher.download_image(
+                "http://example.com/img.jpg", cache_path
+            )
             assert result is False
             assert not cache_path.exists()
 
@@ -607,6 +636,7 @@ class TestImageSearcher:
         source = self.temp_dir / "source.jpg"
         output = self.temp_dir / "output.jpg"
         from PIL import Image as PILImage
+
         img = PILImage.new("RGB", (1920, 1080), color="red")
         img.save(source)
 
@@ -621,6 +651,7 @@ class TestImageSearcher:
         source = self.temp_dir / "source.jpg"
         output = self.temp_dir / "output.jpg"
         from PIL import Image as PILImage
+
         img = PILImage.new("RGB", (1080, 1920), color="blue")
         img.save(source)
 
@@ -635,6 +666,7 @@ class TestImageSearcher:
         source = self.temp_dir / "source.jpg"
         output = self.temp_dir / "output.jpg"
         from PIL import Image as PILImage
+
         img = PILImage.new("RGB", (1000, 1000), color="green")
         img.save(source)
 
@@ -649,6 +681,7 @@ class TestImageSearcher:
     @patch("autoshorts.modules.image_searcher.ImageSearcher.download_image")
     def test_get_images_all_from_web(self, mock_download, mock_search):
         import time
+
         uid = str(time.time())
         mock_search.return_value = [
             {"image": "http://example.com/img1.jpg"},
@@ -660,7 +693,9 @@ class TestImageSearcher:
             patch.object(self.searcher, "resize_to_fill"),
         ):
             mock_open.return_value.__enter__.return_value.size = (800, 600)
-            paths = self.searcher.get_images([f"prompt A {uid}", f"prompt B {uid}", f"prompt C {uid}"])
+            paths = self.searcher.get_images(
+                [f"prompt A {uid}", f"prompt B {uid}", f"prompt C {uid}"]
+            )
 
         assert len(paths) == 3
         assert mock_search.call_count == 3
@@ -710,18 +745,32 @@ class TestImageSearcher:
     def test_explainer_branches_to_web(self):
         gen = ExplainerGenerator(subject="test", image_source="web")
         paired = [{"web_query": "test query", "ai_prompt": "test prompt"}]
-        with patch.object(gen.script_generator, "generate_image_prompts_from_script", return_value=paired):
-            with patch("autoshorts.generators.explainer.ImageSearcher") as mock_searcher:
+        with patch.object(
+            gen.script_generator,
+            "generate_image_prompts_from_script",
+            return_value=paired,
+        ):
+            with patch(
+                "autoshorts.generators.explainer.ImageSearcher"
+            ) as mock_searcher:
                 mock_searcher.return_value.get_images.return_value = ["img.jpg"]
                 result = gen._generate_ai_images("test", [], 1)
-                mock_searcher.return_value.get_images.assert_called_once_with(["test query"])
+                mock_searcher.return_value.get_images.assert_called_once_with(
+                    ["test query"]
+                )
                 assert result == ["img.jpg"]
 
     def test_explainer_branches_to_ai(self):
         gen = ExplainerGenerator(subject="test", image_source="ai")
         paired = [{"web_query": "test query", "ai_prompt": "test prompt"}]
-        with patch.object(gen.script_generator, "generate_image_prompts_from_script", return_value=paired):
-            with patch.object(gen, "_call_pollinations_api", return_value=["img.jpg"]) as mock_ai:
+        with patch.object(
+            gen.script_generator,
+            "generate_image_prompts_from_script",
+            return_value=paired,
+        ):
+            with patch.object(
+                gen, "_call_pollinations_api", return_value=["img.jpg"]
+            ) as mock_ai:
                 result = gen._generate_ai_images("test", [], 1)
                 mock_ai.assert_called_once_with(["test prompt"])
                 assert result == ["img.jpg"]

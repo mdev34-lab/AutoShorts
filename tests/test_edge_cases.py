@@ -204,6 +204,7 @@ class TestEdgeCasesUtilityFunctions:
         ensure_dir_exists(nested_dir)
         assert nested_dir.exists()
         import shutil
+
         shutil.rmtree(temp_dir)
 
     def test_get_file_size_mb_edge_cases(self):
@@ -224,13 +225,15 @@ class TestIntegrationEdgeCases:
         temp_dir = Path(tempfile.mkdtemp())
 
         try:
-            with patch(
-                "autoshorts.modules.script_generator.ScriptGenerator"
-            ) as mock_script_class, patch(
-                "autoshorts.modules.tts_system.TTSSystem"
-            ) as mock_tts_class, patch(
-                "autoshorts.modules.subtitle_system.SubtitleSystem"
-            ) as mock_subtitle_class:
+            with (
+                patch(
+                    "autoshorts.modules.script_generator.ScriptGenerator"
+                ) as mock_script_class,
+                patch("autoshorts.modules.tts_system.TTSSystem") as mock_tts_class,
+                patch(
+                    "autoshorts.modules.subtitle_system.SubtitleSystem"
+                ) as mock_subtitle_class,
+            ):
                 mock_script = Mock()
                 mock_script.generate_script_with_prompts.return_value = ([], [])
                 mock_script_class.return_value = mock_script
