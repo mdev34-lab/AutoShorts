@@ -221,6 +221,39 @@ class TestExplainerCommand:
 
     @patch("autoshorts.cli.commands.explainer.VIDEO_TYPES")
     @patch("autoshorts.cli.commands.explainer.asyncio.run")
+    def test_images_flag_web(self, mock_asyncio_run, mock_video_types):
+        gen_mock = Mock()
+        gen_mock.generate = Mock(return_value=True)
+        gen_mock.cleanup = Mock()
+        mock_video_types.__getitem__.return_value = lambda **kw: gen_mock
+        mock_asyncio_run.return_value = True
+
+        result = self.runner.invoke(app, ["new", "explainer", "test", "--images", "web"])
+        assert result.exit_code == 0
+
+    @patch("autoshorts.cli.commands.explainer.VIDEO_TYPES")
+    @patch("autoshorts.cli.commands.explainer.asyncio.run")
+    def test_images_flag_ai(self, mock_asyncio_run, mock_video_types):
+        gen_mock = Mock()
+        gen_mock.generate = Mock(return_value=True)
+        gen_mock.cleanup = Mock()
+        mock_video_types.__getitem__.return_value = lambda **kw: gen_mock
+        mock_asyncio_run.return_value = True
+
+        result = self.runner.invoke(app, ["new", "explainer", "test", "--images", "ai"])
+        assert result.exit_code == 0
+
+    def test_images_flag_invalid(self):
+        result = self.runner.invoke(app, ["new", "explainer", "test", "--images", "invalid"])
+        assert result.exit_code != 0
+
+    def test_images_flag_shows_in_help(self):
+        result = self.runner.invoke(app, ["new", "explainer", "--help"])
+        assert result.exit_code == 0
+        assert "--images" in result.output
+
+    @patch("autoshorts.cli.commands.explainer.VIDEO_TYPES")
+    @patch("autoshorts.cli.commands.explainer.asyncio.run")
     def test_generator_failure_handled(self, mock_asyncio_run, mock_video_types):
         gen_mock = Mock()
         gen_mock.generate = Mock(return_value=False)

@@ -17,8 +17,9 @@ def explainer_command(
     goodnight: bool = typer.Option(False, "--goodnight", help="Shutdown after processing"),
     batch: list[str] = typer.Option(None, "--batch", help="Batch: multiple subjects"),
     no_web_search: bool = typer.Option(False, "--no-web-search", help="Disable web search (use model knowledge only)"),
-    no_images: bool = typer.Option(False, "--no-images", help="Skip AI image overlays"),
-    images_only: bool = typer.Option(False, "--images-only", help="AI images only (no YouTube bg)"),
+    no_images: bool = typer.Option(False, "--no-images", help="Skip image overlays"),
+    images_only: bool = typer.Option(False, "--images-only", help="Images only (no YouTube bg)"),
+    images: str = typer.Option("web", "--images", help="Image source: 'web' (DDGS search) or 'ai' (Pollinations)"),
 ):
     if no_images and images_only:
         raise typer.BadParameter("--no-images and --images-only are mutually exclusive")
@@ -26,6 +27,8 @@ def explainer_command(
         raise typer.BadParameter("--youtube-url cannot be used with --images-only")
     if not subject and not youtube_url and not batch:
         raise typer.BadParameter("subject, --youtube-url, or --batch is required")
+    if images not in ("web", "ai"):
+        raise typer.BadParameter("--images must be 'web' or 'ai'")
 
     subjects: list[str | None] = []
     if batch:
@@ -68,6 +71,7 @@ def explainer_command(
                 web_search=not no_web_search,
                 no_images=no_images or images_only,
                 images_only=images_only,
+                image_source=images,
             )
             success = asyncio.run(gen.generate())
             if success:

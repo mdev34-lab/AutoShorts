@@ -24,7 +24,7 @@ class ScriptEngine:
 class AssetManager:
     def __init__(self, temp_dir):
         self.temp_dir = temp_dir
-        self.gen = ExplainerGenerator(subject="test", images_only=True, web_search=False)
+        self.gen = ExplainerGenerator(subject="test", images_only=True, web_search=False, image_source="ai")
 
     def generate_ai_images(self, prompts):
         import shutil
@@ -40,7 +40,7 @@ class AssetManager:
 
 class VideoEngine:
     def __init__(self):
-        self.gen = ExplainerGenerator(subject="test", images_only=True, web_search=False)
+        self.gen = ExplainerGenerator(subject="test", images_only=True, web_search=False, image_source="ai")
 
     def create_video(self, img_paths, audio_path, paragraphs, output_path):
         self.gen._create_flux_video(img_paths, audio_path, paragraphs, output_path)

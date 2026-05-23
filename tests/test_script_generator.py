@@ -683,13 +683,13 @@ class TestScriptGenerator:
 
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_image_prompts_success(self, mock_post):
-        """Test generate_image_prompts_from_script returns prompts"""
+        """Test generate_image_prompts_from_script returns paired prompts"""
         mock_response = Mock()
         mock_response.json.return_value = {
             "choices": [{"message": {"content": json.dumps({
-                "image_prompts": [
-                    "A dramatic scene",
-                    "A close up shot",
+                "images": [
+                    {"web_query": "dramatic scene", "ai_prompt": "A dramatic cinematic scene with dramatic lighting, ultra detailed 4k"},
+                    {"web_query": "close up shot", "ai_prompt": "A close up shot with dramatic lighting, ultra detailed 4k"},
                 ]
             })}}]
         }
@@ -702,7 +702,9 @@ class TestScriptGenerator:
         )
         assert isinstance(result, list)
         assert len(result) == 2
-        assert "dramatic" in result[0]
+        assert "web_query" in result[0]
+        assert "ai_prompt" in result[0]
+        assert result[0]["web_query"] == "dramatic scene"
 
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_image_prompts_api_error(self, mock_post):

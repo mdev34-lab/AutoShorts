@@ -2,6 +2,7 @@
 Test FluxImages module functionality
 """
 
+import hashlib
 import tempfile
 import warnings
 from pathlib import Path
@@ -10,6 +11,8 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from autoshorts.generators.explainer import ExplainerGenerator
+from autoshorts.modules import IMAGE_CACHE_DIR
+from autoshorts.modules.image_searcher import ImageSearcher
 from autoshorts.modules.utils import shutdown_computer
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -18,7 +21,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 # Backward-compatible wrappers for existing test structure
 class ScriptEngine:
     def __init__(self):
-        self.gen = ExplainerGenerator(subject="test", images_only=True)
+        self.gen = ExplainerGenerator(subject="test", images_only=True, image_source="ai")
         self.script_generator = self.gen.script_generator
 
     def generate(self, subject):
@@ -28,7 +31,7 @@ class ScriptEngine:
 class AssetManager:
     def __init__(self, temp_dir):
         self.temp_dir = temp_dir
-        self.gen = ExplainerGenerator(subject="test", images_only=True)
+        self.gen = ExplainerGenerator(subject="test", images_only=True, image_source="ai")
         self.tts_system = self.gen.tts_system
 
     def generate_ai_images(self, prompts):
@@ -163,7 +166,7 @@ class TestAssetManager:
 
 class VideoEngine:
     def __init__(self):
-        self.gen = ExplainerGenerator(subject="test", images_only=True)
+        self.gen = ExplainerGenerator(subject="test", images_only=True, image_source="ai")
 
     def _u_curve_zoom(self, *a, **kw):
         return self.gen._u_curve_zoom(*a, **kw)
@@ -353,7 +356,7 @@ class TestExplainerGenerator:
     async def test_generate_normal_mode(
         self, mock_compositor_class, mock_bg_class, mock_script_class
     ):
-        gen = ExplainerGenerator(subject="test")
+        gen = ExplainerGenerator(subject="test", image_source="ai")
         mock_script = Mock()
         mock_script.generate_script.return_value = ["Para 1", "Para 2"]
         mock_script.generate_script_from_metadata.return_value = ["Para 1", "Para 2"]
@@ -378,7 +381,7 @@ class TestExplainerGenerator:
     async def test_generate_images_only_mode(
         self, mock_subtitle_class, mock_audio_clip
     ):
-        gen = ExplainerGenerator(subject="test", images_only=True)
+        gen = ExplainerGenerator(subject="test", images_only=True, image_source="ai")
         mock_script = Mock()
         mock_script.generate_script_with_prompts.return_value = (
             ["Para 1", "Para 2"],
@@ -479,7 +482,7 @@ class TestOverlayAnimation:
     """Test cases for overlay animation helper methods."""
 
     def setup_method(self):
-        self.gen = ExplainerGenerator(subject="test", images_only=True)
+        self.gen = ExplainerGenerator(subject="test", images_only=True, image_source="ai")
 
     def test_ease_in_out_cubic_boundaries(self):
         assert self.gen._ease_in_out_cubic(0.0) == 0.0
@@ -526,6 +529,202 @@ class TestOverlayAnimation:
         result = self.gen._apply_overlay_animation(mock_clip, 0.0)
 
         assert result is mock_clip
+
+
+class TestImageSearcher:
+    """Test cases for ImageSearcher class"""
+
+    def setup_method(self):
+        self.temp_dir = Path(tempfile.mkdtemp())
+        self.searcher = ImageSearcher()
+
+    def teardown_method(self):
+        import shutil
+        if self.temp_dir.exists():
+            shutil.rmtree(self.temp_dir)
+
+    @patch("ddgs.DDGS")
+    def test_search_images_returns_all_results(self, mock_ddgs_class):
+        mock_ddgs = Mock()
+        mock_ddgs.images.return_value = [
+            {"image": "http://example.com/big.jpg", "width": "1920", "height": "1080"},
+            {"image": "http://example.com/small.jpg", "width": "100", "height": "100"},
+            {"image": "http://example.com/tall.jpg", "width": "800", "height": "1200"},
+        ]
+        mock_ddgs_class.return_value = mock_ddgs
+
+        results = self.searcher.search_images("test query")
+
+        assert len(results) == 3  # metadata dimensions not filtered — resizer handles upscale
+
+    @patch("ddgs.DDGS")
+    def test_search_images_empty_results(self, mock_ddgs_class):
+        mock_ddgs = Mock()
+        mock_ddgs.images.return_value = []
+        mock_ddgs_class.return_value = mock_ddgs
+
+        results = self.searcher.search_images("test query")
+        assert results == []
+
+    @patch("ddgs.DDGS")
+    def test_search_images_handles_missing_dims(self, mock_ddgs_class):
+        mock_ddgs = Mock()
+        mock_ddgs.images.return_value = [
+            {"image": "http://example.com/no_dims.jpg"},
+            {"image": "http://example.com/partial.jpg", "width": "800"},
+        ]
+        mock_ddgs_class.return_value = mock_ddgs
+
+        results = self.searcher.search_images("test query")
+        assert len(results) == 2  # metadata not filtered — real PIL check happens after download
+
+    def test_download_image_success(self):
+        cache_path = self.temp_dir / "test.jpg"
+        with patch("autoshorts.modules.image_searcher.requests.get") as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.iter_content.return_value = [b"data_chunk"]
+            mock_get.return_value = mock_response
+
+            result = self.searcher.download_image("http://example.com/img.jpg", cache_path)
+
+            assert result is True
+            assert cache_path.exists()
+            assert cache_path.read_bytes() == b"data_chunk"
+
+    def test_download_image_failure(self):
+        cache_path = self.temp_dir / "test.jpg"
+        with patch("autoshorts.modules.image_searcher.requests.get") as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 404
+            mock_get.return_value = mock_response
+
+            result = self.searcher.download_image("http://example.com/img.jpg", cache_path)
+            assert result is False
+            assert not cache_path.exists()
+
+    def test_resize_to_fill_landscape(self):
+        source = self.temp_dir / "source.jpg"
+        output = self.temp_dir / "output.jpg"
+        from PIL import Image as PILImage
+        img = PILImage.new("RGB", (1920, 1080), color="red")
+        img.save(source)
+
+        self.searcher.resize_to_fill(source, output)
+
+        assert output.exists()
+        result_img = PILImage.open(output)
+        assert result_img.size == (1080, 1920)
+        result_img.close()
+
+    def test_resize_to_fill_portrait(self):
+        source = self.temp_dir / "source.jpg"
+        output = self.temp_dir / "output.jpg"
+        from PIL import Image as PILImage
+        img = PILImage.new("RGB", (1080, 1920), color="blue")
+        img.save(source)
+
+        self.searcher.resize_to_fill(source, output)
+
+        assert output.exists()
+        result_img = PILImage.open(output)
+        assert result_img.size == (1080, 1920)
+        result_img.close()
+
+    def test_resize_to_fill_square(self):
+        source = self.temp_dir / "source.jpg"
+        output = self.temp_dir / "output.jpg"
+        from PIL import Image as PILImage
+        img = PILImage.new("RGB", (1000, 1000), color="green")
+        img.save(source)
+
+        self.searcher.resize_to_fill(source, output)
+
+        assert output.exists()
+        result_img = PILImage.open(output)
+        assert result_img.size == (1080, 1920)
+        result_img.close()
+
+    @patch("autoshorts.modules.image_searcher.ImageSearcher.search_images")
+    @patch("autoshorts.modules.image_searcher.ImageSearcher.download_image")
+    def test_get_images_all_from_web(self, mock_download, mock_search):
+        import time
+        uid = str(time.time())
+        mock_search.return_value = [
+            {"image": "http://example.com/img1.jpg"},
+        ]
+        mock_download.return_value = True
+
+        with (
+            patch("autoshorts.modules.image_searcher.Image.open") as mock_open,
+            patch.object(self.searcher, "resize_to_fill"),
+        ):
+            mock_open.return_value.__enter__.return_value.size = (800, 600)
+            paths = self.searcher.get_images([f"prompt A {uid}", f"prompt B {uid}", f"prompt C {uid}"])
+
+        assert len(paths) == 3
+        assert mock_search.call_count == 3
+        assert mock_download.call_count == 3
+
+    @patch("autoshorts.modules.image_searcher.ImageSearcher.search_images")
+    @patch("autoshorts.modules.image_searcher.ImageSearcher.download_image")
+    def test_get_images_uses_cache(self, mock_download, mock_search):
+        mock_search.return_value = [
+            {"image": "http://example.com/img.jpg"},
+        ]
+        mock_download.return_value = True
+
+        prompt = "cached prompt"
+        cache_key = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+        cached_path = IMAGE_CACHE_DIR / f"{cache_key}.jpg"
+        cached_path.parent.mkdir(parents=True, exist_ok=True)
+        cached_path.write_bytes(b"cached_data")
+
+        with (
+            patch("autoshorts.modules.image_searcher.Image.open") as mock_open,
+            patch.object(self.searcher, "resize_to_fill"),
+        ):
+            mock_open.return_value.__enter__.return_value.size = (800, 600)
+            paths = self.searcher.get_images(["uncached A", prompt, "uncached B"])
+
+        assert len(paths) == 3
+        assert str(cached_path) in paths
+        mock_search.call_count == 2  # cached prompt doesn't search
+
+        cached_path.unlink(missing_ok=True)
+
+    @patch("autoshorts.modules.image_searcher.ImageSearcher.search_images")
+    def test_get_images_fallback_to_ai(self, mock_search):
+        mock_search.return_value = []
+
+        with patch("autoshorts.modules.image_searcher.requests.get") as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.content = b"ai_fake_image"
+            mock_get.return_value = mock_response
+
+            paths = self.searcher.get_images(["prompt A", "prompt B", "prompt C"])
+
+        assert len(paths) == 3  # 3 AI fallbacks
+
+    def test_explainer_branches_to_web(self):
+        gen = ExplainerGenerator(subject="test", image_source="web")
+        paired = [{"web_query": "test query", "ai_prompt": "test prompt"}]
+        with patch.object(gen.script_generator, "generate_image_prompts_from_script", return_value=paired):
+            with patch("autoshorts.generators.explainer.ImageSearcher") as mock_searcher:
+                mock_searcher.return_value.get_images.return_value = ["img.jpg"]
+                result = gen._generate_ai_images("test", [], 1)
+                mock_searcher.return_value.get_images.assert_called_once_with(["test query"])
+                assert result == ["img.jpg"]
+
+    def test_explainer_branches_to_ai(self):
+        gen = ExplainerGenerator(subject="test", image_source="ai")
+        paired = [{"web_query": "test query", "ai_prompt": "test prompt"}]
+        with patch.object(gen.script_generator, "generate_image_prompts_from_script", return_value=paired):
+            with patch.object(gen, "_call_pollinations_api", return_value=["img.jpg"]) as mock_ai:
+                result = gen._generate_ai_images("test", [], 1)
+                mock_ai.assert_called_once_with(["test prompt"])
+                assert result == ["img.jpg"]
 
 
 if __name__ == "__main__":

@@ -29,7 +29,11 @@ from .config import (
     IMAGE_CACHE_DIR,
     IMAGE_FADE_IN_TIME,
     IMAGE_FADE_OUT_TIME,
+    IMAGE_MIN_HEIGHT,
+    IMAGE_MIN_WIDTH,
     IMAGE_OVERLAY_DURATION,
+    IMAGE_SEARCH_PER_QUERY,
+    IMAGE_SEARCH_SAFE,
     IMG_URL,
     JUMPCUT_SEG_DUR,
     LINE_SPACING,
@@ -48,6 +52,8 @@ from .config import (
     STROKE_WIDTH,
     SUBTITLE_MODE,
     SUBTITLE_START_Y_RATIO,
+    TARGET_IMAGE_HEIGHT,
+    TARGET_IMAGE_WIDTH,
     TEMP_DIR_PREFIX,
     TTS_RATE,
     VIDEO_CODEC,
@@ -74,6 +80,7 @@ from .utils import (
     setup_directories,
     shutdown_computer,
 )
+from .image_searcher import ImageSearcher
 from .video_background import VideoBackgroundManager
 from .video_compositor import VideoCompositor
 from .web_search import WebSearcher
@@ -103,8 +110,12 @@ __all__ = [
     "IMAGE_CACHE_DIR",
     "IMAGE_FADE_IN_TIME",
     "IMAGE_FADE_OUT_TIME",
+    "IMAGE_MIN_HEIGHT",
+    "IMAGE_MIN_WIDTH",
     "IMAGE_OVERLAY_DURATION",
     "IMAGE_BOUNCE_INTERVAL",
+    "IMAGE_SEARCH_PER_QUERY",
+    "IMAGE_SEARCH_SAFE",
     "JUMPCUT_SEG_DUR",
     "LINE_SPACING",
     "MAX_CHARS_PER_LINE",
@@ -121,6 +132,8 @@ __all__ = [
     "START_WITH_IMAGE",
     "STROKE_WIDTH",
     "SUBTITLE_MODE",
+    "TARGET_IMAGE_HEIGHT",
+    "TARGET_IMAGE_WIDTH",
     "SUBTITLE_START_Y_RATIO",
     "TEMP_DIR_PREFIX",
     "TTS_RATE",
@@ -142,6 +155,7 @@ __all__ = [
     "VideoBackgroundManager",
     "VideoCompositor",
     "WebSearcher",
+    "ImageSearcher",
     "setup_directories",
     "create_temp_dir",
     "clean_temp_files",

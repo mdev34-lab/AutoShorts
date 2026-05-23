@@ -129,20 +129,26 @@ class ScriptGenerator:
 
     def generate_image_prompts_from_script(
         self, paragraphs: list, num_images: int
-    ) -> list:
-        """Generate image prompts based on script paragraphs."""
-        log(f"Generating {num_images} image prompts based on script...")
+    ) -> list[dict]:
+        """Generate paired image prompts (web query + AI prompt) based on script.
+
+        Returns list of dicts: [{"web_query": "...", "ai_prompt": "..."}, ...]
+        """
+        log(f"Generating {num_images} paired image prompts based on script...")
         script_text = " ".join(paragraphs)
         system_prompt = f"""
-        Output ONLY a JSON object with:
-        1.'image_prompts': Array of {num_images} DETAILED English prompts for an image generator.
-           Prompts should be cinematic, realistic, 4k, and describe specific scenes
-           matching the story.Each prompt should represent a scene that can be
-           displayed for approximately 3 seconds.
+        Output ONLY a JSON object with one key:
+        'images': Array of {num_images} objects, each with:
+          - 'web_query': short (3-6 word) search query for finding REAL photos on the web.
+            Use simple keywords like "subject crowd", "subject stadium", "subject close up".
+            NO descriptive adjectives, just concrete nouns and the subject.
+          - 'ai_prompt': detailed English prompt for an AI image generator.
+            Cinematic, dramatic lighting, ultra detailed, 4k photography style.
+            Describe a specific scene matching the story.
         """
-        user_prompt = f"Create {num_images} detailed image prompts for this story: {script_text}"
+        user_prompt = f"Create {num_images} image pairs (web query + AI prompt) for this story: {script_text}"
         data = self._make_json_api_call(system_prompt, user_prompt)
-        return data.get("image_prompts", [])
+        return data.get("images", [])
 
     # ── Two-pass helpers ─────────────────────────────────────────────────
 

@@ -38,6 +38,12 @@ __all__ = [
     "TEMP_DIR_PREFIX",
     "OUTPUT_DIR",
     "IMAGE_CACHE_DIR",
+    "IMAGE_SEARCH_SAFE",
+    "IMAGE_SEARCH_PER_QUERY",
+    "IMAGE_MIN_WIDTH",
+    "IMAGE_MIN_HEIGHT",
+    "TARGET_IMAGE_WIDTH",
+    "TARGET_IMAGE_HEIGHT",
     "YOUTUBE_MAX_HEIGHT",
     "YOUTUBE_FORMAT",
     "VIDEO_WIDTH",
@@ -134,6 +140,14 @@ BG_SKIP_INTRO = _get_env_float(
 TEMP_DIR_PREFIX = os.getenv("TEMP_DIR_PREFIX", "autoshorts_")
 OUTPUT_DIR = _get_env_path("OUTPUT_DIR", "output")
 IMAGE_CACHE_DIR = Path(tempfile.gettempdir()) / f"{TEMP_DIR_PREFIX}image_cache"
+
+# Image Search Configuration
+IMAGE_SEARCH_SAFE = os.getenv("IMAGE_SEARCH_SAFE", "on")
+IMAGE_SEARCH_PER_QUERY = _get_env_int("IMAGE_SEARCH_PER_QUERY", 5)
+IMAGE_MIN_WIDTH = _get_env_int("IMAGE_MIN_WIDTH", 720)
+IMAGE_MIN_HEIGHT = _get_env_int("IMAGE_MIN_HEIGHT", 720)
+TARGET_IMAGE_WIDTH = _get_env_int("TARGET_IMAGE_WIDTH", 1080)
+TARGET_IMAGE_HEIGHT = _get_env_int("TARGET_IMAGE_HEIGHT", 1920)
 
 # YouTube Configuration
 YOUTUBE_MAX_HEIGHT = _get_env_int("YOUTUBE_MAX_HEIGHT", 360)

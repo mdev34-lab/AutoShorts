@@ -37,6 +37,7 @@ from ..modules import (
     VIDEO_FPS,
     VIDEO_HEIGHT,
     VIDEO_WIDTH,
+    ImageSearcher,
     ScriptGenerator,
     SubtitleSystem,
     TTSSystem,
@@ -58,6 +59,7 @@ class ExplainerGenerator:
         web_search: bool = True,
         no_images: bool = False,
         images_only: bool = False,
+        image_source: str = "web",
     ):
         self.subject = subject
         self.output = output
@@ -65,6 +67,7 @@ class ExplainerGenerator:
         self.web_search = web_search
         self.no_images = no_images
         self.images_only = images_only
+        self.image_source = image_source
 
         self.script_generator = ScriptGenerator(web_search=web_search)
         self.tts_system = TTSSystem()
@@ -113,7 +116,7 @@ class ExplainerGenerator:
                 log("Skipping AI image generation (--no-images)")
             else:
                 num_images = max(3, int(duration / IMAGE_BOUNCE_INTERVAL) + 1)
-                log(f"Step 4: Generating {num_images} AI images...")
+                log(f"Step 4: Generating {num_images} images...")
                 image_paths = self._generate_ai_images(subject, script, num_images)
                 if len(image_paths) < 3:
                     log("Failed to generate enough images", "ERROR")
@@ -147,28 +150,25 @@ class ExplainerGenerator:
             return False
 
     def _generate_ai_images(self, subject: str, script_paragraphs: list, num_images: int = 0, prompts: list = None) -> list:
-        if prompts is not None:
-            prompts = [f"{p}, cinematic lighting, highly detailed, vertical composition" for p in prompts]
+        if prompts is not None and prompts:
+            if isinstance(prompts[0], dict):
+                paired = prompts
+            else:
+                return self._call_pollinations_api(prompts)
         else:
-            scene_templates = [
-                "wide shot showing the scene of {subject}, realistic photography",
-                "close up of {subject}, detailed view, professional photo",
-                "action shot of {subject}, dynamic moment, high quality photo",
-                "aerial view of {subject}, landscape, panoramic photo",
-                "detailed close up of {subject} event, texture, realistic photo",
-                "crowd and atmosphere of {subject}, event photography",
-                "key moment from {subject}, dramatic scene, photo quality",
-                "behind the scenes of {subject}, documentary photography",
-                "wide angle capturing {subject} in its environment, real photo",
-                "portrait style shot related to {subject}, professional photography",
-                "the aftermath scene of {subject}, still moment, documentary",
-                "Preparations for {subject}, behind the scenes, candid photo",
-            ]
-            prompts = []
-            for i in range(num_images):
-                template = scene_templates[i % len(scene_templates)]
-                prompts.append(template.format(subject=subject))
+            paired = self.script_generator.generate_image_prompts_from_script(
+                script_paragraphs or [subject], num_images
+            )
 
+        if self.image_source == "web":
+            queries = [p["web_query"] for p in paired]
+            searcher = ImageSearcher()
+            return searcher.get_images(queries)
+
+        ai_prompts = [p["ai_prompt"] for p in paired]
+        return self._call_pollinations_api(ai_prompts)
+
+    def _call_pollinations_api(self, prompts: list[str]) -> list:
         img_paths = []
         headers = {"Authorization": f"Bearer {API_KEY}"}
         IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -226,7 +226,7 @@ class ExplainerGenerator:
                 paragraphs, num_images
             )
 
-            log("Step 5: Generating AI images...")
+            log("Step 5: Generating images...")
             img_paths = self._generate_ai_images(self.subject, paragraphs, prompts=image_prompts)
             if len(img_paths) < 3:
                 log(f"Only {len(img_paths)} images, need >= 3", "ERROR")
