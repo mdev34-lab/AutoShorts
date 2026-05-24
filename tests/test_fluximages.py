@@ -365,8 +365,8 @@ class TestExplainerGenerator:
     ):
         gen = ExplainerGenerator(subject="test", image_source="ai")
         mock_script = Mock()
-        mock_script.generate_script.return_value = ["Para 1", "Para 2"]
-        mock_script.generate_script_from_metadata.return_value = ["Para 1", "Para 2"]
+        mock_script.generate_script.return_value = ["Para 1", "Para 2", "Para 3"]
+        mock_script.generate_script_from_metadata.return_value = ["Para 1", "Para 2", "Para 3"]
         gen.script_generator = mock_script
 
         mock_bg = Mock()
@@ -395,8 +395,8 @@ class TestExplainerGenerator:
         gen = ExplainerGenerator(subject="test", images_only=True, image_source="ai")
         mock_script = Mock()
         mock_script.generate_script_with_prompts.return_value = (
-            ["Para 1", "Para 2"],
-            ["Prompt 1", "Prompt 2"],
+            ["Para 1", "Para 2", "Para 3"],
+            ["Prompt 1", "Prompt 2", "Prompt 3"],
         )
         gen.script_generator = mock_script
 

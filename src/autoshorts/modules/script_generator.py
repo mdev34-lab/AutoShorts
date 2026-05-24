@@ -11,13 +11,7 @@ from .config import (
 from .logging_system import log
 from .web_search import WebSearcher
 
-FALLBACK_PARAGRAPHS = [
-    "Esta hist\u00f3ria come\u00e7a com um fato que marcou \u00e9poca.",
-    "Os detalhes revelam como tudo aconteceu ao longo do tempo.",
-    "Cada etapa trouxe consequ\u00eancias que mudaram o rumo dos acontecimentos.",
-    "O desfecho mostra por que este tema continua relevante at\u00e9 hoje.",
-    "No final, fica uma li\u00e7\u00e3o que vale a pena conhecer.",
-]
+FALLBACK_PARAGRAPHS: list[str] = []
 
 
 class ScriptGenerator:
@@ -71,15 +65,24 @@ class ScriptGenerator:
                 _SYSTEM_PROMPT_SINGLE,
                 _user_prompt_single(subject, context),
             )
+            script = self._validate_paragraphs(script)
+            script = self._ensure_paragraph_count(script, 5)
             if script:
                 log("Script generated with web sources", "SUCCESS")
-                return self._ensure_paragraph_count(script, 5)
-            log("Script generation with context failed", "WARNING")
+                return script
+            log("Script generation with context failed or produced filler", "WARNING")
         else:
-            log("No search results, returning draft as-is", "WARNING")
+            log("No search results for grounding", "WARNING")
 
+        log("Falling back to draft script (ungrounded)", "WARNING")
         draft = draft_data.get("draft") or []
-        return self._ensure_paragraph_count(draft, 5)
+        draft = self._validate_paragraphs(draft)
+        draft = self._ensure_paragraph_count(draft, 5)
+        if draft:
+            return draft
+
+        log("All script generation paths failed", "ERROR")
+        return []
 
     def generate_script_from_metadata(self, title: str, description: str) -> list:
         """Generate script from YouTube video title and description."""
@@ -118,14 +121,24 @@ class ScriptGenerator:
             log("Step 2: generating script with search context...")
             paragraphs = self._generate_script_with_context(subject, context)
             if paragraphs:
-                log("Script generated with web sources", "SUCCESS")
-                return self._ensure_paragraph_count(paragraphs, 7), []
-            log("Script generation with context failed", "WARNING")
+                paragraphs = self._validate_paragraphs(paragraphs)
+                paragraphs = self._ensure_paragraph_count(paragraphs, 7)
+                if paragraphs:
+                    log("Script generated with web sources", "SUCCESS")
+                    return paragraphs, []
+            log("Script generation with context failed or produced filler", "WARNING")
         else:
-            log("No search results, returning draft as-is", "WARNING")
+            log("No search results for grounding", "WARNING")
 
+        log("Falling back to draft script (ungrounded)", "WARNING")
         draft = draft_data.get("draft") or []
-        return self._ensure_paragraph_count(draft, 7), []
+        draft = self._validate_paragraphs(draft)
+        draft = self._ensure_paragraph_count(draft, 7)
+        if draft:
+            return draft, []
+
+        log("All script generation paths failed", "ERROR")
+        return [], []
 
     def generate_image_prompts_from_script(
         self, paragraphs: list, num_images: int
@@ -157,11 +170,13 @@ class ScriptGenerator:
         system_prompt = (
             f"You are a YouTube Shorts scriptwriter. Output ONLY valid JSON with these exact keys:\n"
             f'1. "draft": Array of {num_paragraphs} strings (PT-BR), each 2-3 sentences '
-            f'\u2014 a first-draft script about "{subject}".\n'
+            f"\u2014 a first-draft script about \"{subject}\".\n"
             f"   - First paragraph MUST start with a specific concrete fact (date, name, number, place).\n"
-            f"   - Include specific names, dates, statistics, locations.\n"
+            f"   - Every paragraph MUST contain a verifiable fact \u2014 no generalities, no filler.\n"
+            f"   - CRITICAL: Do the math yourself. If you mention a date range, calculate the years correctly.\n"
+            f"   - Include specific names, dates, statistics, locations \u2014 and VERIFY them in your head.\n"
             f"   - Tell an origin story: how it started, why it matters.\n"
-            f"   - This is a DRAFT \u2014 it may contain errors. Do NOT fact-check yourself.\n"
+            f"   - End with a factual conclusion, NOT 'fica uma li\u00e7\u00e3o' or similar generic phrases.\n"
             f'2. "queries": Array of 7-9 Portuguese web search queries to VERIFY '
             f"the factual claims in your draft.\n"
             f"   - At least 3 queries must be BROADER independent searches about the subject "
@@ -287,20 +302,61 @@ class ScriptGenerator:
                     lines.append(current_para)
 
             if len(lines) < 4:
-                lines.extend(FALLBACK_PARAGRAPHS[len(lines) :])
+                log(
+                    f"Only {len(lines)} paragraphs generated, expected at least 4",
+                    "WARNING",
+                )
 
             return lines[:5]
 
         except Exception as e:
             log(f"Script generation failed: {e}", "ERROR")
-            return list(FALLBACK_PARAGRAPHS)
+            return []
+
+    @staticmethod
+    def _is_filler(paragraph: str) -> bool:
+        """Check if a paragraph is generic filler that should be rejected."""
+        filler_patterns = [
+            "fica uma li\u00e7\u00e3o",
+            "vale a pena conhecer",
+            "li\u00e7\u00e3o que vale",
+            "ningu\u00e9m sabia",
+            "o segredo",
+            "a verdade escondida",
+            "voc\u00ea n\u00e3o vai acreditar",
+            "poucos conhecem",
+            "pouca gente sabe",
+            "muita gente n\u00e3o sabe",
+            "o que poucos sabem",
+        ]
+        lower = paragraph.lower()
+        return any(p in lower for p in filler_patterns)
+
+    @staticmethod
+    def _validate_paragraphs(paragraphs: list) -> list:
+        """Remove filler paragraphs and validate quality. Returns cleaned list or empty."""
+        if not paragraphs:
+            return []
+        cleaned = [p for p in paragraphs if not ScriptGenerator._is_filler(p)]
+        if len(cleaned) < 3:
+            log(
+                f"Validation: {len(paragraphs)} input, {len(cleaned)} after removing filler",
+                "WARNING",
+            )
+        return cleaned
 
     @staticmethod
     def _ensure_paragraph_count(paragraphs: list, target: int) -> list:
-        """Pad or trim paragraphs to target count."""
+        """Trim or validate paragraph count. Never pads with filler."""
         if len(paragraphs) >= target:
             return paragraphs[:target]
-        return paragraphs + FALLBACK_PARAGRAPHS[len(paragraphs) : target]
+        if len(paragraphs) < 3:
+            log(
+                f"Only {len(paragraphs)} paragraphs, need at least 3 \u2014 returning empty",
+                "ERROR",
+            )
+            return []
+        return paragraphs
 
     # ── Single-pass path for images-only without web search ──────────────
 
@@ -315,14 +371,17 @@ class ScriptGenerator:
             "CRITICAL: First paragraph MUST start with a SPECIFIC FACT (date, name, number, place).\n"
             'NEVER use "ningu\u00e9m sabia", "o segredo", or "a verdade" \u2014 these are vague.\n'
             "Always lead with concrete details: dates, names, places, statistics.\n"
+            "Every paragraph MUST contain a verifiable fact \u2014 no generalities, no filler.\n"
             "Include origin stories: explain how it started and why it matters.\n"
             "Keep each paragraph 2-3 sentences (~3 seconds audio each).\n"
-            "Use the provided web sources as your primary source of facts."
+            "End with a factual conclusion, NOT 'fica uma li\u00e7\u00e3o' or similar.\n"
+            "Use the provided web sources as your primary source of facts. Verify every number against them."
         )
         user_prompt = (
             f"Tell a story about: {subject}. "
             f"Start with a specific concrete fact (date, name, number). "
-            f"Include origin and specific details.\n\n"
+            f"Include origin and specific details. "
+            f"Double-check every date and number \u2014 calculate ranges correctly.\n\n"
             f"WEB SOURCES:\n{search_context}"
         )
         try:
@@ -340,14 +399,18 @@ class ScriptGenerator:
             "1.'paragraphs': Array of 7 strings (PT-BR).\n"
             "CRITICAL: First paragraph MUST start with a SPECIFIC FACT (date, name, number, place).\n"
             'NEVER use "ningu\u00e9m sabia", "o segredo", or "a verdade" \u2014 these are vague.\n'
+            "Every paragraph MUST contain a verifiable fact \u2014 no generalities, no filler.\n"
             "Always lead with concrete details: dates, names, places, statistics.\n"
             "Include origin stories: explain how it started and why it matters.\n"
-            "Keep each paragraph 2-3 sentences (~3 seconds audio each)."
+            "Keep each paragraph 2-3 sentences (~3 seconds audio each).\n"
+            'End with a factual conclusion, NOT "fica uma li\u00e7\u00e3o" or similar.\n'
+            "Do the math yourself. If you mention a date range, calculate the years correctly."
         )
         user_prompt = (
             f"Tell a story about: {subject}. "
             f"Start with a specific concrete fact (date, name, number). "
-            f"Include origin and specific details."
+            f"Include origin and specific details. "
+            f"Double-check every date and number \u2014 calculate ranges correctly."
         )
         try:
             data = self._make_json_api_call(system_prompt, user_prompt)
@@ -376,7 +439,10 @@ _SYSTEM_PROMPT_SINGLE = (
     "8.NO markdown formatting, NO JSON, just plain text paragraphs.\n"
     "9.Every paragraph must advance the story with a new specific fact \u2014 no filler.\n"
     "10.USE the provided web sources as your primary source of facts. "
-    "Cite specific data from them."
+    "Cite specific data from them.\n"
+    '11.End with a factual conclusion, NOT "fica uma li\u00e7\u00e3o" or similar generic phrases.\n'
+    '12.NEVER use "no final fica uma li\u00e7\u00e3o" or "vale a pena conhecer" \u2014 these are filler.\n'
+    "13.Do the math yourself. If you mention a date range or time period, calculate the years correctly."
 )
 
 
@@ -391,8 +457,10 @@ def _user_prompt_single(subject: str, search_context: str) -> str:
         f'"a verdade escondida" \u2014 isso \u00e9 vago e fraco\n'
         f"- Inclua nomes, datas, lugares e n\u00fameros espec\u00edficos sempre que poss\u00edvel\n"
         f"- Conte a ORIGEM: como tudo come\u00e7ou, por que existe\n"
-        f"- Cada par\u00e1grafo deve avan\u00e7ar a hist\u00f3ria com um novo fato concreto\n"
+        f"- Cada par\u00e1grafo DEVE conter um FATO VERIFIC\u00c1VEL \u2014 nada de generaliza\u00e7\u00f5es\n"
         f"- NADA de frases de enchimento\n"
+        f"- TERMINE com uma conclus\u00e3o factual, N\u00c3O com 'fica uma li\u00e7\u00e3o'\n"
+        f"- Fa\u00e7a a conta voc\u00ea mesmo: se mencionar um per\u00edodo, calcule os anos corretamente\n"
         f"- Use as FONTES DA WEB fornecidas como base para sua hist\u00f3ria\n\n"
         f"Escreva cada par\u00e1grafo em uma linha separada."
     )
@@ -414,7 +482,9 @@ _SYSTEM_PROMPT_METADATA = (
     "7.Write exactly 4-5 paragraphs.\n"
     "8.NO markdown formatting, NO JSON, just plain text paragraphs.\n"
     "9.Base your story entirely on the video's content, "
-    "adding only well-known historical context."
+    "adding only well-known historical context.\n"
+    '10.End with a factual conclusion, NOT "fica uma li\u00e7\u00e3o" or similar.\n'
+    "11.Every paragraph must contain a verifiable fact \u2014 no generalities."
 )
 
 
@@ -430,8 +500,10 @@ def _user_prompt_metadata(combined_content: str) -> str:
         "- Extraia detalhes espec\u00edficos do t\u00edtulo e descri\u00e7\u00e3o: "
         "datas, nomes, locais, estat\u00edsticas\n"
         "- Conte a ORIGEM: como tudo come\u00e7ou, por que \u00e9 importante\n"
-        "- Cada par\u00e1grafo deve avan\u00e7ar a hist\u00f3ria com um novo fato\n"
-        "- NADA de ganchos gen\u00e9ricos ou frases de enchimento\n\n"
+        "- Cada par\u00e1grafo DEVE conter um FATO VERIFIC\u00c1VEL \u2014 nada de generaliza\u00e7\u00f5es\n"
+        "- NADA de ganchos gen\u00e9ricos ou frases de enchimento\n"
+        "- TERMINE com uma conclus\u00e3o factual, N\u00c3O com 'fica uma li\u00e7\u00e3o'\n"
+        "- Fa\u00e7a a conta voc\u00ea mesmo: se mencionar um per\u00edodo, calcule os anos corretamente\n\n"
         f"V\u00eddeo:\n{combined_content}\n\n"
         "Escreva cada par\u00e1grafo em uma linha separada."
     )

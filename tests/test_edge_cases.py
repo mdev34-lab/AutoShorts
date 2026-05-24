@@ -52,22 +52,22 @@ class TestEdgeCasesScriptGenerator:
         assert isinstance(result, list)
 
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_api_timeout(self, mock_post):
+    def test_api_timeout_returns_empty(self, mock_post):
         mock_post.side_effect = TimeoutError("Connection timeout")
 
         result = self.generator.generate_script("test subject")
         assert isinstance(result, list)
-        assert len(result) == 5
+        assert len(result) == 0
 
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_malformed_api_response(self, mock_post):
+    def test_malformed_api_response_returns_empty(self, mock_post):
         mock_response = Mock()
         mock_response.json.return_value = {}
         mock_post.return_value = mock_response
 
         result = self.generator.generate_script("test subject")
         assert isinstance(result, list)
-        assert len(result) == 5
+        assert len(result) == 0
 
 
 class TestEdgeCasesTTSSystem:
@@ -264,7 +264,7 @@ class TestIntegrationEdgeCases:
             if temp_dir.exists():
                 shutil.rmtree(temp_dir)
 
-    def test_error_propagation(self):
+    def test_error_propagation_returns_empty(self):
         with patch("autoshorts.modules.script_generator.requests.post") as mock_post:
             mock_post.side_effect = ConnectionError("Network error")
 
@@ -272,4 +272,4 @@ class TestIntegrationEdgeCases:
 
             result = script_gen.generate_script("test")
             assert isinstance(result, list)
-            assert len(result) == 5
+            assert len(result) == 0

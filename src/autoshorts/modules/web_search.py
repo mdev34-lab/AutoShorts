@@ -10,9 +10,9 @@ class WebSearcher:
         s = subject.strip().strip('"').strip("'")
         return [
             s,
-            f"{s} hist\u00f3ria origem",
-            f"{s} fatos importantes",
-            f"{s} contexto hist\u00f3rico",
+            f"{s} hist\u00f3ria origem funda\u00e7\u00e3o",
+            f"{s} fatos hist\u00f3ricos dados estat\u00edsticas",
+            f"{s} contexto hist\u00f3rico data local",
         ]
 
     def search(self, subject: str) -> list[dict] | None:
