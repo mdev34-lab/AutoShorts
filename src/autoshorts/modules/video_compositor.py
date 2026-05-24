@@ -157,7 +157,8 @@ class VideoCompositor:
             return np.minimum(255, frame * opacity).astype("uint8")
 
         clip = clip.with_effects([Resize(scale_anim)])
-        return clip.transform(apply_opacity)
+        clip = clip.transform(apply_opacity)
+        return clip.with_position(("center", "center"))
 
     def _ensure_duration(
         self, clip: VideoFileClip, min_duration: float

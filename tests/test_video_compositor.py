@@ -55,18 +55,21 @@ class TestApplyOverlayAnimation:
         mock_clip.size = (1080, 1920)
         mock_clip.with_effects.return_value = mock_clip
         mock_clip.transform.return_value = mock_clip
+        mock_clip.with_position.return_value = mock_clip
 
         result = self.compositor._apply_overlay_animation(mock_clip, 3.0)
 
         assert result is mock_clip
         mock_clip.with_effects.assert_called_once()
         mock_clip.transform.assert_called_once()
+        mock_clip.with_position.assert_called_once_with(("center", "center"))
 
     def test_zero_duration(self):
         mock_clip = MagicMock()
         mock_clip.size = (1080, 1920)
         mock_clip.with_effects.return_value = mock_clip
         mock_clip.transform.return_value = mock_clip
+        mock_clip.with_position.return_value = mock_clip
 
         result = self.compositor._apply_overlay_animation(mock_clip, 0.0)
         assert result is mock_clip
@@ -102,6 +105,7 @@ class TestOverlayAnimationFrameTransform:
         mock_clip.size = (100, 100)
         mock_clip.with_effects = Mock(return_value=mock_clip)
         mock_clip.transform = Mock(return_value=mock_clip)
+        mock_clip.with_position = Mock(return_value=mock_clip)
 
         self.compositor._apply_overlay_animation(mock_clip, 1.0)
 

@@ -315,7 +315,8 @@ class ExplainerGenerator:
             return np.minimum(255, frame * opacity).astype("uint8")
 
         clip = clip.with_effects([vfx.Resize(scale_anim)])
-        return clip.transform(apply_opacity)
+        clip = clip.transform(apply_opacity)
+        return clip.with_position(("center", "center"))
 
     def _create_flux_video(
         self, img_paths: list, audio_path: str, paragraphs: list, output_path: str
