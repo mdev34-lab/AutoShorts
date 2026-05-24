@@ -161,7 +161,7 @@ class ExplainerGenerator:
         num_images: int = 0,
         prompts: list | None = None,
     ) -> list:
-        if prompts is not None and prompts:
+        if prompts is not None and len(prompts) > 0:
             if isinstance(prompts[0], dict):
                 paired = prompts
             else:
