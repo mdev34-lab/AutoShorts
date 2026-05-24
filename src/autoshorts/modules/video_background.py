@@ -53,19 +53,18 @@ class VideoBackgroundManager:
         """Generate an AI-optimized YouTube search query."""
         log("Generating AI-optimized search query...")
 
-        system_prompt = """You are an expert at crafting YouTube search queries to find high-quality, family-friendly content.
+        system_prompt = """You are an expert at crafting YouTube search queries. Output ONLY the query, nothing else.
 CRITICAL RULES:
 1. Use the SAME language as the subject (do NOT translate)
 2. Use NATURAL language with spaces, NOT dashes
-3. Include terms like "explicado", "hist\u00f3ria", "document\u00e1rio", "reportagem"
-4. Add "-shorts" to exclude YouTube Shorts
-5. Make it specific and searchable
-6. NO quotes, NO special formatting, NO excessive dashes
-7. DO NOT just append the original text to template words
-8. Example: "flash drive encontrado na rua hist\u00f3ria completa document\u00e1rio"
+3. Add "-shorts" at the end to exclude YouTube Shorts
+4. Be specific to the subject — use concrete names, events, places
+5. NO generic template words like "explicado", "document\u00e1rio", "reportagem", "hist\u00f3ria"
+6. NO quotes, NO special formatting
+7. DO NOT just repeat the subject — add specific qualifiers
 """
 
-        user_prompt = f"Subject: {subject}\n\nCreate a YouTube search query in the SAME language as the subject that will find family-friendly, educational videos about this subject. Focus on documentary-style content, news reports, or educational explanations. Avoid anything that might be age-restricted."
+        user_prompt = f"Subject: {subject}\n\nCreate a YouTube search query that returns videos directly about this subject. Be specific."
 
         headers = {
             "Authorization": f"Bearer {API_KEY}",
