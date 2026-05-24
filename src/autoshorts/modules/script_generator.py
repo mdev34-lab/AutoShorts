@@ -167,14 +167,18 @@ class ScriptGenerator:
         """Pass 1: generate draft script + verification queries + title."""
         system_prompt = (
             f"You are a YouTube Shorts scriptwriter. Output ONLY valid JSON with these exact keys:\n"
-            f'1. "draft": Array of {num_paragraphs} strings (PT-BR), each 2-3 sentences '
+            f'1. "draft": Array of {num_paragraphs} strings (PT-BR), each 1-2 punchy sentences '
             f"\u2014 a first-draft script about \"{subject}\".\n"
-            f"   - First paragraph MUST start with a specific concrete fact (date, name, number, place).\n"
+            f"   - TONE: Dramatic, scandalous, like telling gossip to a friend. "
+            f"NEVER sound like a Wikipedia article or corporate press release.\n"
+            f"   - FIRST SENTENCE: A dramatic hook that grabs attention \u2014 "
+            f"a bold claim, a shocking stat, a mystery. NOT a dry date.\n"
+            f"   - STRUCTURE: Hook \u2192 Context \u2192 The Drama \u2192 Punchy ending\n"
             f"   - Every paragraph MUST contain a verifiable fact \u2014 no generalities, no filler.\n"
             f"   - CRITICAL: Do the math yourself. If you mention a date range, calculate the years correctly.\n"
-            f"   - Include specific names, dates, statistics, locations \u2014 and VERIFY them in your head.\n"
-            f"   - Tell an origin story: how it started, why it matters.\n"
-            f"   - End with a factual conclusion, NOT 'fica uma li\u00e7\u00e3o' or similar generic phrases.\n"
+            f"   - FORBIDDEN: Legal names (Ltda, S.A.), addresses, city/state abbreviations. "
+            f"NO corporate language \u2014 write like a human, not a registrar.\n"
+            f"   - End with a punchy conclusion, NOT 'fica uma li\u00e7\u00e3o' or similar generic phrases.\n"
             f'2. "queries": Array of 7-9 Portuguese web search queries to VERIFY '
             f"the factual claims in your draft.\n"
             f"   - At least 3 queries must be BROADER independent searches about the subject "
@@ -187,7 +191,8 @@ class ScriptGenerator:
         user_prompt = (
             f"Write a first-draft script about {subject} in {num_paragraphs} paragraphs "
             f"(PT-BR), generate 4-6 Portuguese search queries to verify its facts, "
-            f"and suggest a catchy title."
+            f"and suggest a catchy title. "
+            f"Remember: dramatic tone, NO corporate language, grab attention in the first sentence."
         )
         try:
             data = self._make_json_api_call(system_prompt, user_prompt)
@@ -421,7 +426,7 @@ class ScriptGenerator:
 
     @staticmethod
     def _is_filler(paragraph: str) -> bool:
-        """Check if a paragraph is generic filler that should be rejected."""
+        """Check if a paragraph is generic filler or corporate language that should be rejected."""
         filler_patterns = [
             "fica uma li\u00e7\u00e3o",
             "vale a pena conhecer",
@@ -434,6 +439,10 @@ class ScriptGenerator:
             "pouca gente sabe",
             "muita gente n\u00e3o sabe",
             "o que poucos sabem",
+            "ltda",
+            "s.a.",
+            "institui\u00e7\u00e3o de pagamento",
+            "pessoa jur\u00eddica",
         ]
         lower = paragraph.lower()
         return any(p in lower for p in filler_patterns)
@@ -473,21 +482,25 @@ class ScriptGenerator:
         system_prompt = (
             "You are a master storyteller for viral YouTube Shorts.\n"
             "Output ONLY a JSON object with:\n"
-            "1.'paragraphs': Array of 7 strings (PT-BR).\n"
-            "CRITICAL: First paragraph MUST start with a SPECIFIC FACT (date, name, number, place).\n"
+            "1.'paragraphs': Array of 7 strings (PT-BR), each 1-2 punchy sentences.\n"
+            "TONE: Dramatic, scandalous, like telling gossip to a friend. "
+            "NEVER sound like Wikipedia or a press release.\n"
+            "FIRST SENTENCE: A dramatic hook that grabs attention \u2014 "
+            "a bold claim, a shocking stat, a mystery.\n"
+            "STRUCTURE: Hook \u2192 Context \u2192 The Drama \u2192 Punchy ending\n"
             'NEVER use "ningu\u00e9m sabia", "o segredo", or "a verdade" \u2014 these are vague.\n'
-            "Always lead with concrete details: dates, names, places, statistics.\n"
             "Every paragraph MUST contain a verifiable fact \u2014 no generalities, no filler.\n"
-            "Include origin stories: explain how it started and why it matters.\n"
-            "Keep each paragraph 2-3 sentences (~3 seconds audio each).\n"
-            "End with a factual conclusion, NOT 'fica uma li\u00e7\u00e3o' or similar.\n"
+            "FORBIDDEN: Legal names (Ltda, S.A.), addresses, city/state abbreviations. "
+            "NO corporate language.\n"
+            "Keep each paragraph 1-2 punchy sentences (~2-3 seconds audio each).\n"
+            "End with a punchy conclusion, NOT 'fica uma li\u00e7\u00e3o' or similar.\n"
             "Use the provided web sources as your primary source of facts. Verify every number against them."
         )
         user_prompt = (
-            f"Tell a story about: {subject}. "
-            f"Start with a specific concrete fact (date, name, number). "
-            f"Include origin and specific details. "
-            f"Double-check every date and number \u2014 calculate ranges correctly.\n\n"
+            f"Tell a dramatic story about: {subject}. "
+            f"Start with a hook that grabs attention. "
+            f"Include origin, the drama, and specific details. "
+            f"NO corporate language. Double-check every date and number \u2014 calculate ranges correctly.\n\n"
             f"WEB SOURCES:\n{search_context}"
         )
         try:
@@ -502,21 +515,25 @@ class ScriptGenerator:
         system_prompt = (
             "You are a master storyteller for viral YouTube Shorts.\n"
             "Output ONLY a JSON object with:\n"
-            "1.'paragraphs': Array of 7 strings (PT-BR).\n"
-            "CRITICAL: First paragraph MUST start with a SPECIFIC FACT (date, name, number, place).\n"
+            "1.'paragraphs': Array of 7 strings (PT-BR), each 1-2 punchy sentences.\n"
+            "TONE: Dramatic, scandalous, like telling gossip to a friend. "
+            "NEVER sound like Wikipedia or a press release.\n"
+            "FIRST SENTENCE: A dramatic hook that grabs attention \u2014 "
+            "a bold claim, a shocking stat, a mystery.\n"
+            "STRUCTURE: Hook \u2192 Context \u2192 The Drama \u2192 Punchy ending\n"
             'NEVER use "ningu\u00e9m sabia", "o segredo", or "a verdade" \u2014 these are vague.\n'
             "Every paragraph MUST contain a verifiable fact \u2014 no generalities, no filler.\n"
-            "Always lead with concrete details: dates, names, places, statistics.\n"
-            "Include origin stories: explain how it started and why it matters.\n"
-            "Keep each paragraph 2-3 sentences (~3 seconds audio each).\n"
-            'End with a factual conclusion, NOT "fica uma li\u00e7\u00e3o" or similar.\n'
+            "FORBIDDEN: Legal names (Ltda, S.A.), addresses, city/state abbreviations. "
+            "NO corporate language.\n"
+            "Keep each paragraph 1-2 punchy sentences (~2-3 seconds audio each).\n"
+            'End with a punchy conclusion, NOT "fica uma li\u00e7\u00e3o" or similar.\n'
             "Do the math yourself. If you mention a date range, calculate the years correctly."
         )
         user_prompt = (
-            f"Tell a story about: {subject}. "
-            f"Start with a specific concrete fact (date, name, number). "
-            f"Include origin and specific details. "
-            f"Double-check every date and number \u2014 calculate ranges correctly."
+            f"Tell a dramatic story about: {subject}. "
+            f"Start with a hook that grabs attention. "
+            f"Include origin, the drama, and specific details. "
+            f"NO corporate language. Double-check every date and number."
         )
         try:
             data = self._make_json_api_call(system_prompt, user_prompt)
@@ -532,23 +549,24 @@ _SYSTEM_PROMPT_SINGLE = (
     "You are a master storyteller for viral YouTube Shorts.\n"
     "CRITICAL RETENTION RULES:\n"
     "1.Write in Brazilian Portuguese (PT-BR).\n"
-    "2.First paragraph MUST start with a SPECIFIC FACT (date, number, name, place) "
-    "\u2014 not a generic teaser.\n"
-    '3.NEVER start with "ningu\u00e9m sabia", "o segredo", "a verdade escondida" '
-    'or "voc\u00ea n\u00e3o vai acreditar" \u2014 these are vague and weak.\n'
-    '4.Always lead with concrete, specific details: "Em 1914...", '
-    '"Tudo come\u00e7ou quando...", "O placar foi 8 a 0..."\n'
-    "5.Include origin stories \u2014 explain HOW something started or WHY it matters, "
-    "not just THAT it exists.\n"
-    "6.Each paragraph 2-3 sentences for pacing (each ~3 seconds of audio).\n"
-    "7.Write exactly 4-5 paragraphs.\n"
-    "8.NO markdown formatting, NO JSON, just plain text paragraphs.\n"
-    "9.Every paragraph must advance the story with a new specific fact \u2014 no filler.\n"
-    "10.USE the provided web sources as your primary source of facts. "
+    "2.TONE: Dramatic, scandalous, like telling gossip to a friend. "
+    "NEVER sound like Wikipedia or a corporate press release.\n"
+    "3.FIRST SENTENCE: A dramatic hook that grabs attention \u2014 "
+    "a bold claim, a shocking stat, a mystery. NOT a dry date.\n"
+    "4.STRUCTURE: Hook \u2192 Context \u2192 The Drama \u2192 Punchy ending\n"
+    '5.NEVER start with "ningu\u00e9m sabia", "o segredo", "a verdade escondida" '
+    'or "voc\u00ea n\u00e3o vai acreditar" \u2014 these are weak.\n'
+    "6.FORBIDDEN: Legal names (Ltda, S.A.), addresses, city/state abbreviations. "
+    "NO corporate language.\n"
+    "7.Each paragraph 1-2 punchy sentences (~2-3 seconds audio each).\n"
+    "8.Write exactly 4-5 paragraphs.\n"
+    "9.NO markdown formatting, NO JSON, just plain text paragraphs.\n"
+    "10.Every paragraph must advance the story with a new specific fact \u2014 no filler.\n"
+    "11.USE the provided web sources as your primary source of facts. "
     "Cite specific data from them.\n"
-    '11.End with a factual conclusion, NOT "fica uma li\u00e7\u00e3o" or similar generic phrases.\n'
-    '12.NEVER use "no final fica uma li\u00e7\u00e3o" or "vale a pena conhecer" \u2014 these are filler.\n'
-    "13.Do the math yourself. If you mention a date range or time period, calculate the years correctly."
+    '12.End with a punchy conclusion, NOT "fica uma li\u00e7\u00e3o" or similar generic phrases.\n'
+    '13.NEVER use "no final fica uma li\u00e7\u00e3o" or "vale a pena conhecer" \u2014 these are filler.\n'
+    "14.Do the math yourself. If you mention a date range or time period, calculate the years correctly."
 )
 
 
@@ -557,15 +575,20 @@ def _user_prompt_single(subject: str, search_context: str) -> str:
         f'Crie uma hist\u00f3ria envolvente em 4-5 par\u00e1grafos sobre "{subject}".\n\n'
         f"{search_context}\n\n"
         f"REGRAS CR\u00cdTICAS:\n"
-        f"- Primeiro par\u00e1grafo DEVE come\u00e7ar com um FATO CONCRETO "
-        f"(data, n\u00famero, nome, lugar) \u2014 N\u00c3O use ganchos gen\u00e9ricos\n"
+        f"- TOM: Dram\u00e1tico, como contando uma fofoca para um amigo. "
+        f"NUNCA pare uma Wikipedia ou release corporativo.\n"
+        f"- PRIMEIRA FRASE: Um gancho que prende aten\u00e7\u00e3o \u2014 "
+        f"uma afirma\u00e7\u00e3o ousada, um fato chocante, um mist\u00e9rio. N\u00c3O uma data seca.\n"
+        f"- ESTRUTURA: Gancho \u2192 Contexto \u2192 A Treta \u2192 Final impactante\n"
         f'- NUNCA comece com "ningu\u00e9m sabia", "o segredo", '
         f'"a verdade escondida" \u2014 isso \u00e9 vago e fraco\n'
+        f"- PROIBIDO: Nomes jur\u00eddicos (Ltda, S.A.), endere\u00e7os, siglas de estado/cidade. "
+        f"NADA de linguagem corporativa.\n"
         f"- Inclua nomes, datas, lugares e n\u00fameros espec\u00edficos sempre que poss\u00edvel\n"
         f"- Conte a ORIGEM: como tudo come\u00e7ou, por que existe\n"
         f"- Cada par\u00e1grafo DEVE conter um FATO VERIFIC\u00c1VEL \u2014 nada de generaliza\u00e7\u00f5es\n"
         f"- NADA de frases de enchimento\n"
-        f"- TERMINE com uma conclus\u00e3o factual, N\u00c3O com 'fica uma li\u00e7\u00e3o'\n"
+        f"- TERMINE com uma conclus\u00e3o impactante, N\u00c3O com 'fica uma li\u00e7\u00e3o'\n"
         f"- Fa\u00e7a a conta voc\u00ea mesmo: se mencionar um per\u00edodo, calcule os anos corretamente\n"
         f"- Use as FONTES DA WEB fornecidas como base para sua hist\u00f3ria\n\n"
         f"Escreva cada par\u00e1grafo em uma linha separada."
@@ -576,21 +599,26 @@ _SYSTEM_PROMPT_METADATA = (
     "You are a master storyteller for viral YouTube Shorts.\n"
     "CRITICAL RETENTION RULES:\n"
     "1.Write in Brazilian Portuguese (PT-BR).\n"
-    "2.First paragraph MUST start with a SPECIFIC FACT from the video "
-    "(date, number, name, place).\n"
-    '3.NEVER start with "ningu\u00e9m sabia", "o segredo", '
+    "2.TONE: Dramatic, scandalous, like telling gossip to a friend. "
+    "NEVER sound like Wikipedia or a corporate press release.\n"
+    "3.FIRST SENTENCE: A dramatic hook that grabs attention \u2014 "
+    "a bold claim, a shocking stat, a mystery. NOT a dry fact.\n"
+    "4.STRUCTURE: Hook \u2192 Context \u2192 The Drama \u2192 Punchy ending\n"
+    '5.NEVER start with "ningu\u00e9m sabia", "o segredo", '
     'or "a verdade escondida" \u2014 these are vague and weak.\n'
-    "4.Extract concrete details from the video metadata: "
+    "6.FORBIDDEN: Legal names (Ltda, S.A.), addresses, city/state abbreviations. "
+    "NO corporate language.\n"
+    "7.Extract concrete details from the video metadata: "
     "dates, names, places, statistics, historical context.\n"
-    "5.Include origin stories \u2014 explain HOW something started, "
+    "8.Include origin stories \u2014 explain HOW something started, "
     "not just THAT it happened.\n"
-    "6.Each paragraph 2-3 sentences for pacing (each ~3 seconds of audio).\n"
-    "7.Write exactly 4-5 paragraphs.\n"
-    "8.NO markdown formatting, NO JSON, just plain text paragraphs.\n"
-    "9.Base your story entirely on the video's content, "
+    "9.Each paragraph 1-2 punchy sentences (~2-3 seconds audio each).\n"
+    "10.Write exactly 4-5 paragraphs.\n"
+    "11.NO markdown formatting, NO JSON, just plain text paragraphs.\n"
+    "12.Base your story entirely on the video's content, "
     "adding only well-known historical context.\n"
-    '10.End with a factual conclusion, NOT "fica uma li\u00e7\u00e3o" or similar.\n'
-    "11.Every paragraph must contain a verifiable fact \u2014 no generalities."
+    '13.End with a punchy conclusion, NOT "fica uma li\u00e7\u00e3o" or similar.\n'
+    "14.Every paragraph must contain a verifiable fact \u2014 no generalities."
 )
 
 
@@ -599,16 +627,21 @@ def _user_prompt_metadata(combined_content: str) -> str:
         "Crie uma hist\u00f3ria envolvente em 4-5 par\u00e1grafos baseada "
         "neste v\u00eddeo do YouTube.\n\n"
         "REGRAS CR\u00cdTICAS:\n"
-        "- Primeiro par\u00e1grafo DEVE come\u00e7ar com um FATO CONCRETO "
-        "extra\u00eddo do v\u00eddeo (data, nome, lugar, n\u00famero)\n"
+        "- TOM: Dram\u00e1tico, como contando uma fofoca para um amigo. "
+        "NUNCA pare uma Wikipedia ou release corporativo.\n"
+        "- PRIMEIRA FRASE: Um gancho que prende aten\u00e7\u00e3o \u2014 "
+        "uma afirma\u00e7\u00e3o ousada, um fato chocante. N\u00c3O uma data seca.\n"
+        "- ESTRUTURA: Gancho \u2192 Contexto \u2192 A Treta \u2192 Final impactante\n"
         '- NUNCA comece com "ningu\u00e9m sabia", "o segredo" '
         'ou "a verdade escondida"\n'
+        "- PROIBIDO: Nomes jur\u00eddicos (Ltda, S.A.), endere\u00e7os, siglas. "
+        "NADA de linguagem corporativa.\n"
         "- Extraia detalhes espec\u00edficos do t\u00edtulo e descri\u00e7\u00e3o: "
         "datas, nomes, locais, estat\u00edsticas\n"
         "- Conte a ORIGEM: como tudo come\u00e7ou, por que \u00e9 importante\n"
         "- Cada par\u00e1grafo DEVE conter um FATO VERIFIC\u00c1VEL \u2014 nada de generaliza\u00e7\u00f5es\n"
         "- NADA de ganchos gen\u00e9ricos ou frases de enchimento\n"
-        "- TERMINE com uma conclus\u00e3o factual, N\u00c3O com 'fica uma li\u00e7\u00e3o'\n"
+        "- TERMINE com uma conclus\u00e3o impactante, N\u00c3O com 'fica uma li\u00e7\u00e3o'\n"
         "- Fa\u00e7a a conta voc\u00ea mesmo: se mencionar um per\u00edodo, calcule os anos corretamente\n\n"
         f"V\u00eddeo:\n{combined_content}\n\n"
         "Escreva cada par\u00e1grafo em uma linha separada."
