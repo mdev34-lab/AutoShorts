@@ -33,7 +33,7 @@ class ScriptGenerator:
     # ── Public API ──────────────────────────────────────────────────────
 
     def generate_script(self, subject: str) -> list:
-        """Generate script from subject. Two-step when web_search is enabled."""
+        """Generate script from subject. Searches web first, then generates grounded script."""
         log("Generating script...")
 
         if not self.web_search or not self.searcher or not subject:
@@ -42,22 +42,14 @@ class ScriptGenerator:
                 _user_prompt_single(subject, ""),
             )
 
-        # Step 1: generate search queries + title
-        log("Step 1: generating search queries...")
-        draft_data = self._generate_draft(subject, num_paragraphs=5)
-        self.generated_title = draft_data.get("title") or None
-        queries = draft_data.get("queries") or []
+        # Step 1: generate independent search queries (NOT from draft — avoids circular hallucination)
+        log("Step 1: generating independent search queries...")
+        queries = self._generate_search_queries(subject)
 
-        # Search using LLM-generated queries
-        results = None
-        if queries:
-            log(f"Searching {len(queries)} LLM-generated queries...")
-            results = self.searcher.search_with_queries(queries)
-        else:
-            log("No queries generated, falling back to subject-based search")
-            results = self.searcher.search(subject)
+        # Step 2: search the web with neutral queries
+        results = self.searcher.search_with_queries(queries)
 
-        # Step 2: generate final script grounded in search results
+        # Step 3: generate script grounded in search results
         if results:
             context = self.searcher.format_context(results[:15])
             log("Step 2: generating script with search context...")
@@ -69,12 +61,19 @@ class ScriptGenerator:
             script = self._ensure_paragraph_count(script, 5)
             if script:
                 log("Script generated with web sources", "SUCCESS")
+                # Step 4: post-generation fact verification
+                script = self._verify_factual_claims(script, subject)
+                self.generated_title = self._generate_title_from_script(script, subject)
+                log("Script verified", "SUCCESS")
                 return script
             log("Script generation with context failed or produced filler", "WARNING")
         else:
             log("No search results for grounding", "WARNING")
 
-        log("Falling back to draft script (ungrounded)", "WARNING")
+        # Fallback: generate draft for title + fallback content
+        log("Generating draft as fallback...")
+        draft_data = self._generate_draft(subject, num_paragraphs=5)
+        self.generated_title = draft_data.get("title") or None
         draft = draft_data.get("draft") or []
         draft = self._validate_paragraphs(draft)
         draft = self._ensure_paragraph_count(draft, 5)
@@ -95,27 +94,20 @@ class ScriptGenerator:
         )
 
     def generate_script_with_prompts(self, subject: str) -> tuple:
-        """Generate script paragraphs. Two-step when web_search is enabled."""
+        """Generate script paragraphs. Searches web first, then generates grounded script."""
         log(f"Generating script paragraphs for: {subject}...")
 
         if not self.web_search or not self.searcher or not subject:
             return self._generate_script_with_prompts_single(subject)
 
-        # Step 1: generate search queries + title
-        log("Step 1: generating search queries...")
-        draft_data = self._generate_draft(subject, num_paragraphs=7)
-        self.generated_title = draft_data.get("title") or None
-        queries = draft_data.get("queries") or []
+        # Step 1: generate independent search queries (NOT from draft)
+        log("Step 1: generating independent search queries...")
+        queries = self._generate_search_queries(subject)
 
-        # Search using LLM-generated queries
-        results = None
-        if queries:
-            log(f"Searching {len(queries)} LLM-generated queries...")
-            results = self.searcher.search_with_queries(queries)
-        else:
-            results = self.searcher.search(subject)
+        # Step 2: search the web with neutral queries
+        results = self.searcher.search_with_queries(queries)
 
-        # Step 2: generate final script grounded in search results
+        # Step 3: generate script grounded in search results
         if results:
             context = self.searcher.format_context(results[:15])
             log("Step 2: generating script with search context...")
@@ -125,12 +117,18 @@ class ScriptGenerator:
                 paragraphs = self._ensure_paragraph_count(paragraphs, 7)
                 if paragraphs:
                     log("Script generated with web sources", "SUCCESS")
+                    paragraphs = self._verify_factual_claims(paragraphs, subject)
+                    self.generated_title = self._generate_title_from_script(paragraphs, subject)
+                    log("Script verified", "SUCCESS")
                     return paragraphs, []
             log("Script generation with context failed or produced filler", "WARNING")
         else:
             log("No search results for grounding", "WARNING")
 
-        log("Falling back to draft script (ungrounded)", "WARNING")
+        # Fallback to draft
+        log("Generating draft as fallback...")
+        draft_data = self._generate_draft(subject, num_paragraphs=7)
+        self.generated_title = draft_data.get("title") or None
         draft = draft_data.get("draft") or []
         draft = self._validate_paragraphs(draft)
         draft = self._ensure_paragraph_count(draft, 7)
@@ -205,6 +203,114 @@ class ScriptGenerator:
         except Exception as e:
             log(f"Draft generation failed: {e}", "ERROR")
             return {"draft": [], "queries": [subject], "title": ""}
+
+    # ── Independent query generation (breaks circular hallucination) ─────
+
+    def _generate_search_queries(self, subject: str) -> list[str]:
+        """Generate neutral, independent search queries — NOT derived from draft content."""
+        system_prompt = (
+            "You are a research assistant. Output ONLY valid JSON with one key:\n"
+            "'queries': Array of 6-8 specific web search queries in Portuguese.\n"
+            "Your goal: find ACCURATE factual data about a topic.\n"
+            "Each query must target a different angle: origins, dates, key events, statistics, people.\n"
+            "Be specific: include names, years, locations.\n"
+            "These queries will be used to fact-check, so prioritize queries that return concrete data.\n"
+            "NEVER include the topic name alone as a query \u2014 always add qualifiers like year, event, or location."
+        )
+        user_prompt = (
+            f"Generate search queries to find accurate factual information about: {subject}"
+        )
+        try:
+            data = self._make_json_api_call(system_prompt, user_prompt)
+            queries = data.get("queries") or []
+            log(f"Generated {len(queries)} independent search queries", "SUCCESS")
+            return queries
+        except Exception as e:
+            log(f"Search query generation failed: {e}", "WARNING")
+            return [subject]
+
+    # ── Post-generation fact verification ────────────────────────────────
+
+    def _verify_factual_claims(self, paragraphs: list, subject: str) -> list:
+        """Cross-check dates and numbers in script against web search results."""
+        import re
+
+        script_text = " ".join(paragraphs)
+        years = set(re.findall(r"\b(1[4-9]\d{2}|20[0-2]\d)\b", script_text))
+
+        if not years:
+            return paragraphs
+
+        log(
+            f"Verifying factual claims for years: {', '.join(sorted(years))}",
+            "INFO",
+        )
+
+        verification_queries = [f"{subject} {year}" for year in years]
+        verification_queries.append(f"{subject} data hist\u00f3rico funda\u00e7\u00e3o")
+        results = self.searcher.search_with_queries(verification_queries)
+        if not results:
+            return paragraphs
+
+        context = self.searcher.format_context(results[:10])
+        system_prompt = (
+            "You are a strict fact-checker. Output ONLY valid JSON with exactly these keys:\n"
+            '1. "verified": boolean \u2014 true if ALL claims match the web sources\n'
+            '2. "corrections": array of objects with "claim" and "correction" strings '
+            "\u2014 empty if verified is true\n"
+            '3. "paragraphs": array of strings (PT-BR) \u2014 corrected script paragraphs, '
+            "or the original if no changes needed\n\n"
+            "CRITICAL: Compare EVERY date, number, name, and place against the web sources. "
+            "If a source contradicts a script claim, the SOURCE wins. "
+            "NEVER leave a hallucination uncorrected."
+        )
+        user_prompt = (
+            f"Subject: {subject}\n\n"
+            f"SCRIPT:\n{script_text}\n\n"
+            f"WEB SOURCES:\n{context}\n\n"
+            "Cross-check every date, number, and factual claim. Output corrected paragraphs."
+        )
+        try:
+            data = self._make_json_api_call(system_prompt, user_prompt)
+            corrected = data.get("paragraphs") or []
+            corrections = data.get("corrections") or []
+            is_verified = data.get("verified", False)
+            if corrections:
+                log(
+                    f"Fact verification: {len(corrections)} corrections applied",
+                    "WARNING",
+                )
+                for c in corrections:
+                    log(
+                        f"  '{c.get('claim', '?')}' -> '{c.get('correction', '?')}'",
+                        "INFO",
+                    )
+                corrected = self._validate_paragraphs(corrected)
+                corrected = self._ensure_paragraph_count(corrected, len(paragraphs))
+            elif is_verified:
+                log("Fact verification: all claims match sources", "SUCCESS")
+            return corrected if corrected else paragraphs
+        except Exception as e:
+            log(f"Fact verification failed: {e}", "WARNING")
+            return paragraphs
+
+    # ── Title generation ─────────────────────────────────────────────────
+
+    def _generate_title_from_script(
+        self, paragraphs: list, subject: str
+    ) -> str | None:
+        """Generate a YouTube Shorts title from the final script."""
+        script_text = " ".join(paragraphs)[:500]
+        system_prompt = (
+            "Output ONLY a JSON object with one key: 'title'.\n"
+            "Max 60 characters, PT-BR, catchy YouTube Shorts title."
+        )
+        user_prompt = f"Generate a title for this script about {subject}: {script_text}"
+        try:
+            data = self._make_json_api_call(system_prompt, user_prompt)
+            return data.get("title")
+        except Exception:
+            return None
 
     # ── API helpers ──────────────────────────────────────────────────────
 

@@ -523,18 +523,19 @@ class TestScriptGenerator:
         mock_searcher.format_context.return_value = "FONTES DA WEB:\n..."
         mock_searcher_class.return_value = mock_searcher
 
-        draft_json = json.dumps(
-            {
-                "draft": ["P1", "P2", "P3", "P4", "P5"],
-                "queries": ["flamengo hist\u00f3ria", "fluminense origem"],
-                "title": "Cl\u00e1ssico",
-            }
-        )
-        draft_response = Mock()
-        draft_response.json.return_value = {
-            "choices": [{"message": {"content": draft_json}}]
+        query_response = Mock()
+        query_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {"queries": ["flamengo hist\u00f3ria", "fluminense origem"]}
+                        )
+                    }
+                }
+            ]
         }
-        draft_response.raise_for_status.return_value = None
+        query_response.raise_for_status.return_value = None
 
         text_response = Mock()
         text_response.json.return_value = {
@@ -554,7 +555,19 @@ class TestScriptGenerator:
         }
         text_response.raise_for_status.return_value = None
 
-        mock_post.side_effect = [draft_response, text_response]
+        title_response = Mock()
+        title_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps({"title": "Cl\u00e1ssico"})
+                    }
+                }
+            ]
+        }
+        title_response.raise_for_status.return_value = None
+
+        mock_post.side_effect = [query_response, text_response, title_response]
 
         generator = ScriptGenerator(web_search=True)
         result = generator.generate_script("Flamengo x Fluminense")
@@ -564,8 +577,7 @@ class TestScriptGenerator:
         assert "primeiro" in result[0].lower()
         mock_searcher.search_with_queries.assert_called_once()
         mock_searcher.format_context.assert_called_once()
-        # Verify _make_text_api_call received the context
-        assert mock_post.call_count == 2
+        assert mock_post.call_count == 3
 
     @patch("autoshorts.modules.script_generator.WebSearcher")
     @patch("autoshorts.modules.script_generator.requests.post")
@@ -581,18 +593,17 @@ class TestScriptGenerator:
         mock_searcher.format_context.return_value = "FONTES DA WEB:\n..."
         mock_searcher_class.return_value = mock_searcher
 
-        draft_json = json.dumps(
-            {
-                "draft": ["P1", "P2", "P3", "P4", "P5", "P6", "P7"],
-                "queries": ["query1", "query2"],
-                "title": "Test Title",
-            }
-        )
-        draft_response = Mock()
-        draft_response.json.return_value = {
-            "choices": [{"message": {"content": draft_json}}]
+        query_response = Mock()
+        query_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps({"queries": ["query1", "query2"]})
+                    }
+                }
+            ]
         }
-        draft_response.raise_for_status.return_value = None
+        query_response.raise_for_status.return_value = None
 
         final_json = json.dumps({"paragraphs": [f"P{i}" for i in range(1, 8)]})
         final_response = Mock()
@@ -601,7 +612,19 @@ class TestScriptGenerator:
         }
         final_response.raise_for_status.return_value = None
 
-        mock_post.side_effect = [draft_response, final_response]
+        title_response = Mock()
+        title_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps({"title": "Test Title"})
+                    }
+                }
+            ]
+        }
+        title_response.raise_for_status.return_value = None
+
+        mock_post.side_effect = [query_response, final_response, title_response]
 
         generator = ScriptGenerator(web_search=True)
         paragraphs, prompts = generator.generate_script_with_prompts("test")
@@ -609,7 +632,7 @@ class TestScriptGenerator:
         assert len(paragraphs) == 7
         assert prompts == []
         mock_searcher.format_context.assert_called_once()
-        assert mock_post.call_count == 2
+        assert mock_post.call_count == 3
 
     @patch("autoshorts.modules.script_generator.WebSearcher")
     @patch("autoshorts.modules.script_generator.requests.post")
