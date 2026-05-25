@@ -90,7 +90,7 @@ class ScriptGenerator:
 
             # Try to repair instead of full regeneration
             repair = self._repair_paragraphs(cleaned, subject, 5)
-            if repair:
+            if repair and len(repair) >= 3:
                 log("Script repaired after validation", "SUCCESS")
                 script = repair
                 script = self._verify_factual_claims(script, subject)
@@ -157,7 +157,7 @@ class ScriptGenerator:
 
                 # Try to repair instead of full regeneration
                 repair = self._repair_paragraphs(cleaned, subject, 7)
-                if repair:
+                if repair and len(repair) >= 3:
                     log("Script repaired after validation", "SUCCESS")
                     paragraphs = self._verify_factual_claims(repair, subject)
                     self.generated_title = self._generate_title_from_script(paragraphs, subject)
@@ -443,10 +443,11 @@ class ScriptGenerator:
             if combined:
                 log(f"Repaired script: {len(good)} -> {len(combined)} paragraphs", "SUCCESS")
                 return combined
-            return good
+            log("Script repair: not enough good paragraphs, discarding", "WARNING")
+            return []
         except Exception as e:
             log(f"Script repair failed: {e}", "WARNING")
-            return good
+            return []
 
     # ── API helpers ──────────────────────────────────────────────────────
 
