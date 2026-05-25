@@ -392,9 +392,21 @@ class ScriptGenerator:
         script_text = " ".join(paragraphs)[:500]
         system_prompt = (
             "Output ONLY a JSON object with one key: 'title'.\n"
-            "Title must be in PT-BR, max 60 characters, catchy YouTube Shorts title."
+            "Title must be in PT-BR, max 60 characters, YouTube Shorts title.\n"
+            "UPPERCASE RULES:\n"
+            "- Use UPPERCASE for key words or short sections of the title text itself.\n"
+            "- Example: 'A VERDADE sobre o Caso Girabank' (title before tags).\n"
+            "- Do NOT put tags in uppercase.\n\n"
+            "TAGS RULES:\n"
+            "- Append 1-3 lowercase tags at the end, no spaces between words.\n"
+            "- Tags MUST be SPECIFIC to the video subject, not generic categories.\n"
+            "- Example tags for a Mario game: '#supermario #nintendo #galaxy'\n"
+            "- Example tags for Carlinhos Maia: '#carlinhosmaia #girabank'\n"
+            "- NEVER tag unrelated topics like #futebol for a movie or #cinema for a bank story.\n\n"
+            "FULL EXAMPLE:\n"
+            "'A VERDADE sobre o Caso Girabank #carlinhosmaia #girabank'"
         )
-        user_prompt = f"Crie um t\u00edtulo em PT-BR para este roteiro sobre {subject}: {script_text}"
+        user_prompt = f"Crie um t\u00edtulo PT-BR para este roteiro sobre {subject}, com se\u00e7\u00f5es em UPPERCASE e tags SPECIFICAS em lowercase: {script_text}"
         try:
             data = self._make_json_api_call(system_prompt, user_prompt)
             return data.get("title")
