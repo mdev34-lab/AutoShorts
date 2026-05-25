@@ -34,6 +34,11 @@ def explainer_command(
         "--images",
         help="Image source: 'web' (DDGS search) or 'ai' (Pollinations)",
     ),
+    tone: str = typer.Option(
+        "opinionated",
+        "--tone",
+        help="Script tone: 'corporate' (neutral, factual) or 'opinionated' (dramatic, viral)",
+    ),
 ):
     if no_images and images_only:
         raise typer.BadParameter("--no-images and --images-only are mutually exclusive")
@@ -43,6 +48,8 @@ def explainer_command(
         raise typer.BadParameter("subject, --youtube-url, or --batch is required")
     if images not in ("web", "ai"):
         raise typer.BadParameter("--images must be 'web' or 'ai'")
+    if tone not in ("corporate", "opinionated"):
+        raise typer.BadParameter("--tone must be 'corporate' or 'opinionated'")
 
     subjects: list[str | None] = []
     if batch:
@@ -86,6 +93,7 @@ def explainer_command(
                 no_images=no_images or images_only,
                 images_only=images_only,
                 image_source=images,
+                tone=tone,
             )
             success = asyncio.run(gen.generate())
             if success:

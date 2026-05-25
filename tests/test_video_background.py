@@ -215,7 +215,7 @@ class TestSearchAndDownload:
 
         result = self.manager.search_and_download("test")
         assert result == "/path/to/video.mp4"
-        mock_ddg.assert_called_once_with("test query")
+        mock_ddg.assert_called_once_with("test query", "test")
 
     @patch.object(VideoBackgroundManager, "_search_with_ddg")
     @patch.object(VideoBackgroundManager, "_search_with_ytdlp")
@@ -229,4 +229,4 @@ class TestSearchAndDownload:
 
         result = self.manager.search_and_download("test")
         assert result == "/path/to/video.mp4"
-        mock_ytdlp.assert_called_once_with("test query")
+        mock_ytdlp.assert_called_once_with("test query", "test")

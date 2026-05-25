@@ -555,6 +555,22 @@ class TestScriptGenerator:
         }
         text_response.raise_for_status.return_value = None
 
+        verification_response = Mock()
+        verification_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps({
+                            "verified": True,
+                            "corrections": [],
+                            "paragraphs": [],
+                        })
+                    }
+                }
+            ]
+        }
+        verification_response.raise_for_status.return_value = None
+
         title_response = Mock()
         title_response.json.return_value = {
             "choices": [
@@ -567,7 +583,7 @@ class TestScriptGenerator:
         }
         title_response.raise_for_status.return_value = None
 
-        mock_post.side_effect = [query_response, text_response, title_response]
+        mock_post.side_effect = [query_response, text_response, verification_response, title_response]
 
         generator = ScriptGenerator(web_search=True)
         result = generator.generate_script("Flamengo x Fluminense")
@@ -575,9 +591,9 @@ class TestScriptGenerator:
         assert isinstance(result, list)
         assert len(result) == 5
         assert "primeiro" in result[0].lower()
-        mock_searcher.search_with_queries.assert_called_once()
-        mock_searcher.format_context.assert_called_once()
-        assert mock_post.call_count == 3
+        assert mock_searcher.search_with_queries.call_count == 2
+        assert mock_searcher.format_context.call_count == 2
+        assert mock_post.call_count == 4
 
     @patch("autoshorts.modules.script_generator.WebSearcher")
     @patch("autoshorts.modules.script_generator.requests.post")
@@ -612,6 +628,22 @@ class TestScriptGenerator:
         }
         final_response.raise_for_status.return_value = None
 
+        verification_response = Mock()
+        verification_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps({
+                            "verified": True,
+                            "corrections": [],
+                            "paragraphs": [],
+                        })
+                    }
+                }
+            ]
+        }
+        verification_response.raise_for_status.return_value = None
+
         title_response = Mock()
         title_response.json.return_value = {
             "choices": [
@@ -624,15 +656,15 @@ class TestScriptGenerator:
         }
         title_response.raise_for_status.return_value = None
 
-        mock_post.side_effect = [query_response, final_response, title_response]
+        mock_post.side_effect = [query_response, final_response, verification_response, title_response]
 
         generator = ScriptGenerator(web_search=True)
         paragraphs, prompts = generator.generate_script_with_prompts("test")
 
         assert len(paragraphs) == 7
         assert prompts == []
-        mock_searcher.format_context.assert_called_once()
-        assert mock_post.call_count == 3
+        assert mock_searcher.format_context.call_count == 2
+        assert mock_post.call_count == 4
 
     @patch("autoshorts.modules.script_generator.WebSearcher")
     @patch("autoshorts.modules.script_generator.requests.post")

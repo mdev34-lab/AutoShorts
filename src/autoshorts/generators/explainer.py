@@ -60,6 +60,7 @@ class ExplainerGenerator:
         no_images: bool = False,
         images_only: bool = False,
         image_source: str = "web",
+        tone: str = "opinionated",
     ):
         self.subject = subject
         self.output = output
@@ -68,8 +69,9 @@ class ExplainerGenerator:
         self.no_images = no_images
         self.images_only = images_only
         self.image_source = image_source
+        self.tone = tone
 
-        self.script_generator = ScriptGenerator(web_search=web_search)
+        self.script_generator = ScriptGenerator(web_search=web_search, tone=tone)
         self.tts_system = TTSSystem()
         self.temp_dir = create_temp_dir()
 

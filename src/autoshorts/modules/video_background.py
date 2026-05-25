@@ -113,8 +113,9 @@ CRITICAL RULES:
         video_info: dict,
         min_duration: int = MIN_VIDEO_DURATION,
         max_duration: int = MAX_VIDEO_DURATION,
+        subject: str | None = None,
     ) -> bool:
-        """Filter videos based on duration and availability."""
+        """Filter videos based on duration, availability, and title relevance."""
         duration = video_info.get("duration", 0)
         title = video_info.get("title", "").lower()
 
@@ -135,6 +136,17 @@ CRITICAL RULES:
         elif duration > max_duration:
             log(f"FILTERED: '{title[:30]}...' - Too long: {duration}s", "WARNING")
             return False
+
+        if subject:
+            subject_lower = subject.lower()
+            subject_words = [w for w in subject_lower.split() if len(w) > 3]
+            if subject_words and not any(w in title for w in subject_words):
+                log(
+                    f"FILTERED: '{title[:40]}...' - No subject keywords in title",
+                    "WARNING",
+                )
+                return False
+
         return True
 
     def _extract_error_message(self, exc: Exception) -> str:
@@ -159,14 +171,14 @@ CRITICAL RULES:
         """Search and download video using DDG first, then yt-dlp search as fallback."""
         search_query = self.generate_search_query(subject)
 
-        video_path = self._search_with_ddg(search_query)
+        video_path = self._search_with_ddg(search_query, subject)
         if video_path:
             return video_path
 
         log("DDG search failed, falling back to yt-dlp search...", "WARNING")
-        return self._search_with_ytdlp(search_query)
+        return self._search_with_ytdlp(search_query, subject)
 
-    def _search_with_ddg(self, search_query: str) -> str | None:
+    def _search_with_ddg(self, search_query: str, subject: str | None = None) -> str | None:
         """Search YouTube via DuckDuckGo and download with yt-dlp."""
         try:
             from ddgs import DDGS
@@ -182,12 +194,12 @@ CRITICAL RULES:
                 log("No YouTube URLs found via DDG", "WARNING")
                 return None
             log(f"Found {len(urls)} YouTube videos, extracting metadata...", "INFO")
-            return self._download_first_suitable(urls)
+            return self._download_first_suitable(urls, subject)
         except Exception as e:
             log(f"DDG search failed: {e}", "WARNING")
             return None
 
-    def _search_with_ytdlp(self, search_query: str) -> str:
+    def _search_with_ytdlp(self, search_query: str, subject: str | None = None) -> str:
         """Fallback search using yt-dlp built-in search."""
         yt_query = f"ytsearch20:{search_query}"
 
@@ -205,7 +217,7 @@ CRITICAL RULES:
                 if not all_videos:
                     raise ValueError("No videos found in search results")
 
-                suitable_videos = [v for v in all_videos if self._is_suitable_video(v)]
+                suitable_videos = [v for v in all_videos if self._is_suitable_video(v, subject=subject)]
 
                 if not suitable_videos:
                     for v in info["entries"]:
@@ -225,7 +237,7 @@ CRITICAL RULES:
                     for v in suitable_videos[:10]
                     if v.get("webpage_url")
                 ]
-                path = self._download_first_suitable(urls)
+                path = self._download_first_suitable(urls, subject)
                 if path:
                     return path
                 raise ValueError("No available videos could be downloaded")
@@ -233,7 +245,7 @@ CRITICAL RULES:
                 log(f"yt-dlp search failed: {e}", "ERROR")
                 raise
 
-    def _download_first_suitable(self, urls: list[str]) -> str | None:
+    def _download_first_suitable(self, urls: list[str], subject: str | None = None) -> str | None:
         """Try URLs one by one, return path of first successful download."""
         download_temp_dir = create_temp_dir()
         ydl_opts_with_dir = self.ydl_opts.copy()
@@ -248,7 +260,7 @@ CRITICAL RULES:
             try:
                 with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True}) as ydl:
                     info = ydl.extract_info(video_url, download=False)
-                    if not self._is_suitable_video(info):
+                    if not self._is_suitable_video(info, subject=subject):
                         log(f"Skipping unsuitable video {attempt + 1}", "WARNING")
                         continue
                     title = info.get("title", "Unknown")
