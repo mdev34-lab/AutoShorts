@@ -188,7 +188,8 @@ CRITICAL RULES:
                 DDGS().text(f"site:youtube.com {search_query}", max_results=10)
             )
             urls = [
-                r.get("href") for r in results if "youtube.com/watch" in r.get("href", "")
+                u for r in results
+                if (u := r.get("href")) and "youtube.com/watch" in u
             ]
             if not urls:
                 log("No YouTube URLs found via DDG", "WARNING")

@@ -330,6 +330,9 @@ class ScriptGenerator:
             "INFO",
         )
 
+        if not self.searcher:
+            log("Fact verification skipped: searcher not available", "WARNING")
+            return paragraphs
         results = self.searcher.search_with_queries(list(dict.fromkeys(verification_queries)))
         if not results:
             log("Fact verification: no web sources found", "WARNING")
