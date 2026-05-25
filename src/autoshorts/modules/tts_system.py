@@ -51,11 +51,15 @@ class TTSSystem:
             "default=noprint_wrappers=1:nokey=1",
             str(audio_file),
         ]
-        duration = float(
-            subprocess.run(
-                cmd, capture_output=True, text=True, timeout=FFPROBE_TIMEOUT
-            ).stdout.strip()
-        )
+        try:
+            duration = float(
+                subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=FFPROBE_TIMEOUT
+                ).stdout.strip()
+            )
+        except (ValueError, subprocess.TimeoutExpired, OSError) as e:
+            log(f"Failed to get audio duration from ffprobe: {e}", "WARNING")
+            duration = 0.0
 
         # Generate subtitles using subtitle system
         vtt_file = self.subtitle_system.generate_subtitles(

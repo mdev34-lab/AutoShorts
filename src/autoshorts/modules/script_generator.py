@@ -496,7 +496,14 @@ class ScriptGenerator:
                 response.raise_for_status()
                 content = response.json()["choices"][0]["message"]["content"]
                 if content and content.strip():
-                    return json.loads(content)
+                    result = json.loads(content)
+                    if not isinstance(result, dict):
+                        log(
+                            f"API returned {type(result).__name__} instead of dict",
+                            "WARNING",
+                        )
+                        return {}
+                    return result
                 log(f"API returned empty content (attempt {attempt + 1})", "WARNING")
             except (json.JSONDecodeError, KeyError, requests.RequestException) as e:
                 log(
@@ -601,7 +608,7 @@ class ScriptGenerator:
         """Remove filler paragraphs and validate quality. Returns cleaned list or empty."""
         if not paragraphs:
             return []
-        cleaned = [p for p in paragraphs if not ScriptGenerator._is_filler(p)]
+        cleaned = [p for p in paragraphs if isinstance(p, str) and not ScriptGenerator._is_filler(p)]
         if len(cleaned) < 3:
             log(
                 f"Validation: {len(paragraphs)} input, {len(cleaned)} after removing filler",

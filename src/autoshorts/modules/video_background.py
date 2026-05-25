@@ -117,7 +117,7 @@ CRITICAL RULES:
     ) -> bool:
         """Filter videos based on duration, availability, and title relevance."""
         duration = video_info.get("duration", 0)
-        title = video_info.get("title", "").lower()
+        title = (video_info.get("title") or "").lower()
 
         if (
             video_info.get("availability") == "private"
@@ -188,7 +188,7 @@ CRITICAL RULES:
                 DDGS().text(f"site:youtube.com {search_query}", max_results=10)
             )
             urls = [
-                r["href"] for r in results if "youtube.com/watch" in r.get("href", "")
+                r.get("href") for r in results if "youtube.com/watch" in r.get("href", "")
             ]
             if not urls:
                 log("No YouTube URLs found via DDG", "WARNING")

@@ -93,8 +93,8 @@ class WebSearcher:
             "\u2500" * 60,
         ]
         for i, r in enumerate(results, 1):
-            snippet = r["snippet"][:200]
-            lines.append(f"[{i}] {r['title']}")
+            snippet = (r.get("snippet") or "")[:200]
+            lines.append(f"[{i}] {r.get('title', '')}")
             lines.append(f"    Fonte: {r['url']}")
             lines.append(f"    {snippet}")
             lines.append("")
