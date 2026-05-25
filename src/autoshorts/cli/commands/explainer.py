@@ -21,7 +21,7 @@ def explainer_command(
     goodnight: bool = typer.Option(
         False, "--goodnight", help="Shutdown after processing"
     ),
-    batch: list[str] = typer.Option(None, "--batch", help="Batch: multiple subjects"),
+    batch: str = typer.Option(None, "--batch", help="Batch: semicolon-separated subjects (e.g. 'topic1; topic2')"),
     no_web_search: bool = typer.Option(
         False, "--no-web-search", help="Disable web search (use model knowledge only)"
     ),
@@ -53,7 +53,7 @@ def explainer_command(
 
     subjects: list[str | None] = []
     if batch:
-        subjects = [s for s in batch]
+        subjects = [s.strip() for s in batch.split(";") if s.strip()]
     elif subject:
         subjects = [subject]
     elif youtube_url:
