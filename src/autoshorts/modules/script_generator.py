@@ -437,16 +437,33 @@ class ScriptGenerator:
         try:
             data = self._make_json_api_call(system_prompt, user_prompt)
             new_p = data.get("paragraphs") or []
+            log(
+                f"Repair attempt: API returned {len(new_p)} paragraphs, "
+                f"had {len(good)} good",
+                "INFO",
+            )
             combined = good + new_p
+            before = len(combined)
             combined = self._validate_paragraphs(combined)
+            after_validation = len(combined)
+            if before != after_validation:
+                log(
+                    f"Repair validation: {before} -> {after_validation} "
+                    f"({before - after_validation} removed as filler)",
+                    "INFO",
+                )
             combined = self._ensure_paragraph_count(combined, target)
             if combined:
-                log(f"Repaired script: {len(good)} -> {len(combined)} paragraphs", "SUCCESS")
+                log(f"Repair success: {len(good)} -> {len(combined)} paragraphs", "SUCCESS")
                 return combined
-            log("Script repair: not enough good paragraphs, discarding", "WARNING")
+            log(
+                f"Repair failed: only {after_validation} good paragraphs "
+                f"after validation, needed {target}",
+                "WARNING",
+            )
             return []
         except Exception as e:
-            log(f"Script repair failed: {e}", "WARNING")
+            log(f"Repair LLM call failed: {e}", "WARNING")
             return []
 
     # ── API helpers ──────────────────────────────────────────────────────
