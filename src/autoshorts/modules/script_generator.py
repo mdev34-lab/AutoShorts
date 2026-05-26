@@ -429,7 +429,7 @@ class ScriptGenerator:
 
     @staticmethod
     def _fix_hashtags_case(title: str) -> str:
-        return re.sub(r"#([A-Z][A-Za-z0-9]*)", lambda m: f"#{m.group(1).lower()}", title)
+        return re.sub(r"#(\w+)", lambda m: f"#{m.group(1).lower()}", title)
 
     def _generate_title_from_script(
         self, paragraphs: list, subject: str
