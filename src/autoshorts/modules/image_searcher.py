@@ -1,5 +1,6 @@
 import hashlib
 import random
+import re
 from pathlib import Path
 from urllib.parse import quote
 
@@ -21,16 +22,16 @@ from .config import (
 )
 from .logging_system import log
 
-BLOCKED_DOMAINS = {
-    "crossdresser", "cd", "sissy", "femboy", "hentai", "rule34",
-    "porn", "xvideos", "xnxx", "xhamster", "pornhub", "onlyfans",
-    "redtube", "youporn", "adult", "sex", "erotic", "nsfw",
+BLOCKED_DOMAINS: set[str] = {
+    "crossdresser", "sissy", "femboy", "hentai", "rule34",
+    "xvideos", "xnxx", "xhamster", "pornhub", "onlyfans",
+    "redtube", "youporn", "erotic", "nsfw",
 }
 
-BLOCKED_KEYWORDS = {
+BLOCKED_KEYWORDS: set[str] = {
     "crossdresser", "sissy", "femboy", "hentai", "rule34",
-    "porn", "nsfw", "xxx", "18+", "adult", "sex", "erotic",
-    "nude", "naked", "lingerie", "bikini", "seductive",
+    "nsfw", "xxx", "18+", "erotic",
+    "nude", "naked", "seductive",
 }
 
 
@@ -54,14 +55,17 @@ class ImageSearcher:
 
     @staticmethod
     def _is_nsfw(result: dict) -> bool:
-        url = (result.get("image") or "").lower()
-        source = (result.get("url") or result.get("source") or "").lower()
-        title = (result.get("title") or "").lower()
-        combined = f"{url} {source} {title}"
-        if any(d in combined for d in BLOCKED_DOMAINS):
-            return True
-        if any(kw in combined for kw in BLOCKED_KEYWORDS):
-            return True
+        text = (
+            f"{result.get('image') or ''} "
+            f"{result.get('url') or result.get('source') or ''} "
+            f"{result.get('title') or ''}"
+        )
+        for d in BLOCKED_DOMAINS:
+            if re.search(rf"(?:^|[\W_]){re.escape(d)}(?:$|[\W_])", text, re.IGNORECASE):
+                return True
+        for kw in BLOCKED_KEYWORDS:
+            if re.search(rf"(?:^|[\W_]){re.escape(kw)}(?:$|[\W_])", text, re.IGNORECASE):
+                return True
         return False
 
     def search_images(self, query: str) -> list[dict]:
