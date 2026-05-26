@@ -24,23 +24,29 @@ class ScriptGenerator:
       Step 2 — search the web, then generate the final script grounded in results
     """
 
-    def __init__(self, web_search: bool = True, tone: str = "opinionated"):
+    def __init__(self, web_search: bool = True):
         self.api_url = API_URL
         self.api_key = API_KEY
         self.model = MODEL_TEXT
         self.web_search = web_search
-        self.tone = tone
         self.searcher = WebSearcher() if web_search else None
         self.generated_title: str | None = None
 
     def _tone_instructions(self) -> str:
-        if self.tone == "corporate":
-            return (
-                "TONE: Neutral, informative, journalistic. Present facts clearly.\n"
-                "STRUCTURE: Start with a specific fact (date, number), then explain context, "
-                "then details, then conclusion.\n"
-                "FORBIDDEN: Clickbait, dramatic language, opinions, rhetorical questions.\n"
-            )
+        return (
+            "TONE: Curiosity-driven, narrative, engaging. "
+            "Write like a storyteller uncovering a fascinating truth \u2014 "
+            "never like Wikipedia or a corporate press release.\n"
+            "FIRST SENTENCE: Drop the viewer right into the action \u2014 "
+            "the goal, the controversy, the fact itself. "
+            "NO: 'Prepare-se', 'Voc\u00ea sabia', rhetorical questions. "
+            "Never waste the first 2 seconds on setup.\n"
+            "STRUCTURE: Hook (the fact itself) \u2192 Context \u2192 Revelation \u2192 Strong conclusion\n"
+            "FORBIDDEN: Legal names (Ltda, S.A.), addresses, city/state abbreviations. "
+            "NO corporate language.\n"
+            "FORBIDDEN: Hyperboles, exaggerated claims, 'designed by a god', "
+            "'you won't believe', 'shocking truth' \u2014 these sound fake.\n"
+        )
         return (
             "TONE: Curiosity-driven, narrative, engaging. "
             "Write like a storyteller uncovering a fascinating truth \u2014 "
@@ -67,7 +73,7 @@ class ScriptGenerator:
         if not self.web_search or not self.searcher or not subject:
             return self._make_text_api_call(
                 tone_block + _SYSTEM_PROMPT_SINGLE,
-                _user_prompt_single(subject, "", self.tone),
+                _user_prompt_single(subject, ""),
             )
 
         # Step 1: generate independent search queries (NOT from draft — avoids circular hallucination)
@@ -83,7 +89,7 @@ class ScriptGenerator:
             log("Step 2: generating script with search context...")
             script = self._make_text_api_call(
                 tone_block + _SYSTEM_PROMPT_SINGLE,
-                _user_prompt_single(subject, context, self.tone),
+                _user_prompt_single(subject, context),
             )
             cleaned = self._validate_paragraphs(script)
             script = self._ensure_paragraph_count(cleaned, 5)
@@ -130,7 +136,7 @@ class ScriptGenerator:
         tone_block = self._tone_instructions()
         return self._make_text_api_call(
             tone_block + _SYSTEM_PROMPT_METADATA,
-            _user_prompt_metadata(combined_content, self.tone),
+            _user_prompt_metadata(combined_content),
         )
 
     def generate_script_with_prompts(self, subject: str) -> tuple:
@@ -778,14 +784,8 @@ _SYSTEM_PROMPT_SINGLE = (
  )
 
 
-def _user_prompt_single(subject: str, search_context: str, tone: str = "opinionated") -> str:
-    tone_rules = {
-        "corporate": (
-            "- TOM: Neutro, informativo, jornal\u00edstico. Apresente fatos com clareza.\n"
-            "- ESTRUTURA: Comece com um fato espec\u00edfico (data, n\u00famero), depois contexto, detalhes, conclus\u00e3o.\n"
-            "- PROIBIDO: Linguagem dram\u00e1tica, opini\u00f5es, perguntas ret\u00f3ricas, clickbait.\n"
-        ),
-    }.get(tone, (
+def _user_prompt_single(subject: str, search_context: str) -> str:
+    tone_rules = (
         "- TOM: Curiosidade, narrativa envolvente. "
         "Conte como quem revela um fato fascinante \u2014 "
         "NUNCA como Wikipedia ou release corporativo.\n"
@@ -798,7 +798,7 @@ def _user_prompt_single(subject: str, search_context: str, tone: str = "opiniona
         "NADA de linguagem corporativa.\n"
         "- PROIBIDO: Hip\u00e9rboles, exageros, 'desenhada por um deus', "
         "'voc\u00ea n\u00e3o vai acreditar', 'a verdade chocante' \u2014 soa falso.\n"
-    ))
+    )
     return (
         f'Crie uma hist\u00f3ria envolvente em 4-5 par\u00e1grafos sobre "{subject}".\n\n'
         f"{search_context}\n\n"
@@ -849,14 +849,8 @@ _SYSTEM_PROMPT_METADATA = (
  )
 
 
-def _user_prompt_metadata(combined_content: str, tone: str = "opinionated") -> str:
-    tone_rules = {
-        "corporate": (
-            "- TOM: Neutro, informativo, jornal\u00edstico. Apresente fatos com clareza.\n"
-            "- ESTRUTURA: Comece com um fato espec\u00edfico, depois contexto, detalhes, conclus\u00e3o.\n"
-            "- PROIBIDO: Linguagem dram\u00e1tica, opini\u00f5es, clickbait.\n"
-        ),
-    }.get(tone, (
+def _user_prompt_metadata(combined_content: str) -> str:
+    tone_rules = (
         "- TOM: Curiosidade, narrativa envolvente. "
         "Conte como quem revela um fato fascinante \u2014 "
         "NUNCA como Wikipedia ou release corporativo.\n"
@@ -869,7 +863,7 @@ def _user_prompt_metadata(combined_content: str, tone: str = "opinionated") -> s
         "NADA de linguagem corporativa.\n"
         "- PROIBIDO: Hip\u00e9rboles, exageros, 'desenhada por um deus', "
         "'voc\u00ea n\u00e3o vai acreditar' \u2014 soa falso.\n"
-    ))
+    )
     return (
         "Crie uma hist\u00f3ria envolvente em 4-5 par\u00e1grafos baseada "
         "neste v\u00eddeo do YouTube.\n\n"
