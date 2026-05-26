@@ -367,33 +367,51 @@ class ScriptGenerator:
             "Cross-check every date, number, score, name, and factual claim. "
             "Output corrected paragraphs."
         )
-        try:
-            data = self._make_json_api_call(system_prompt, user_prompt)
-            corrected = data.get("paragraphs") or []
-            corrections = data.get("corrections") or []
-            is_verified = data.get("verified", False)
-            if corrections:
+        target_count = len(paragraphs)
+        prev_count = 0
+        for attempt in range(2):
+            try:
+                prompt = user_prompt
+                if attempt == 1 and prev_count != target_count:
+                    prompt += (
+                        f"\n\nCORREÇÃO: Na tentativa anterior você retornou "
+                        f"{prev_count} parágrafos, "
+                        f"mas o script original tem {target_count}. "
+                        f"Retorne EXATAMENTE {target_count} parágrafos. "
+                        f"Não mescle, não remova, não junte parágrafos. "
+                        f"Apenas corrija erros factuais mantendo a estrutura original."
+                    )
+                data = self._make_json_api_call(system_prompt, prompt)
+                corrected = data.get("paragraphs") or []
+                prev_count = len(corrected)
+                corrections = data.get("corrections") or []
+                is_verified = data.get("verified", False)
+                if corrections:
+                    log(
+                        f"Fact verification: {len(corrections)} corrections applied",
+                        "WARNING",
+                    )
+                    for c in corrections:
+                        log(
+                            f"  '{c.get('claim', '?')}' -> '{c.get('correction', '?')}'",
+                            "INFO",
+                        )
+                    corrected = self._validate_paragraphs(corrected)
+                    corrected = self._ensure_paragraph_count(corrected, target_count)
+                elif is_verified:
+                    log("Fact verification: all claims match sources", "SUCCESS")
+                if corrected and len(corrected) >= 3:
+                    return corrected
                 log(
-                    f"Fact verification: {len(corrections)} corrections applied",
+                    f"Verification returned {len(corrected)} paragraphs, need >= 3, retrying...",
                     "WARNING",
                 )
-                for c in corrections:
-                    log(
-                        f"  '{c.get('claim', '?')}' -> '{c.get('correction', '?')}'",
-                        "INFO",
-                    )
-                corrected = self._validate_paragraphs(corrected)
-                corrected = self._ensure_paragraph_count(corrected, len(paragraphs))
-            elif is_verified:
-                log("Fact verification: all claims match sources", "SUCCESS")
-            if corrected and len(corrected) >= 3:
-                return corrected
-            if paragraphs and len(paragraphs) >= 3:
-                return paragraphs
-            return corrected or paragraphs
-        except Exception as e:
-            log(f"Fact verification failed: {e}", "WARNING")
+            except Exception as e:
+                log(f"Fact verification attempt {attempt + 1} failed: {e}", "WARNING")
+                corrected = []
+        if paragraphs and len(paragraphs) >= 3:
             return paragraphs
+        return paragraphs
 
     # ── Title generation ─────────────────────────────────────────────────
 

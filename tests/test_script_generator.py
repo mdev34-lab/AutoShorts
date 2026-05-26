@@ -593,7 +593,7 @@ class TestScriptGenerator:
         assert "primeiro" in result[0].lower()
         assert mock_searcher.search_with_queries.call_count == 2
         assert mock_searcher.format_context.call_count == 2
-        assert mock_post.call_count == 4
+        assert mock_post.call_count == 5
 
     @patch("autoshorts.modules.script_generator.WebSearcher")
     @patch("autoshorts.modules.script_generator.requests.post")
@@ -664,7 +664,7 @@ class TestScriptGenerator:
         assert len(paragraphs) == 7
         assert prompts == []
         assert mock_searcher.format_context.call_count == 2
-        assert mock_post.call_count == 4
+        assert mock_post.call_count == 5
 
     @patch("autoshorts.modules.script_generator.WebSearcher")
     @patch("autoshorts.modules.script_generator.requests.post")
