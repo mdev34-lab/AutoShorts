@@ -157,7 +157,16 @@ class VideoCompositor:
             return np.minimum(255, frame * opacity).astype("uint8")
 
         clip = clip.with_effects([Resize(scale_anim)])
-        return clip.transform(apply_opacity)
+        clip = clip.transform(apply_opacity)
+        return clip.with_position(("center", "center"))
+
+    def _ensure_duration(
+        self, clip: VideoFileClip, min_duration: float
+    ) -> VideoFileClip:
+        if clip.duration <= 0 or clip.duration >= min_duration:
+            return clip
+        loops = int(min_duration / clip.duration) + 1
+        return concatenate_videoclips([clip] * loops).subclipped(0, min_duration)
 
     def _jumpcut_background(self, clip, target_duration: float) -> VideoFileClip:
         """Create background by randomly sampling segments instead of speed scaling."""
@@ -453,10 +462,11 @@ class VideoCompositor:
         Uses flattened structure to avoid MoviePy timing bugs with nested composites.
         """
         blurred = self._create_blurred_background_from_clip(video)
+        blurred = self._ensure_duration(blurred, target_duration)
 
         content_h = int(VIDEO_HEIGHT * 0.45)
-        # Use full video for fg so jumpcut segments never land past its end
         fg = video.resized((VIDEO_WIDTH, content_h)).with_position(("center", "center"))
+        fg = self._ensure_duration(fg, target_duration)
 
         base_composite = CompositeVideoClip(
             [blurred, fg], size=(VIDEO_WIDTH, VIDEO_HEIGHT)
@@ -582,6 +592,7 @@ class VideoCompositor:
         target_duration: float,
     ) -> CompositeVideoClip:
         """Simple video without blur."""
+        video = self._ensure_duration(video, target_duration)
         if BG_MODE == "jumpcut":
             # _jumpcut_background already handles duration trimming
             final_video = self._jumpcut_background(video, target_duration)

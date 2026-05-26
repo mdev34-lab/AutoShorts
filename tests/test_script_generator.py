@@ -112,20 +112,18 @@ class TestScriptGenerator:
         assert payload.get("response_format") == {"type": "json_object"}
 
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_generate_script_api_error_fallback(self, mock_post):
-        """Test script generation with API error returns fallback"""
+    def test_generate_script_api_error_returns_empty(self, mock_post):
+        """Test script generation with API error returns empty list"""
         mock_post.side_effect = Exception("API Error")
 
-        # Should return fallback script instead of raising
         result = self.script_generator.generate_script("test subject")
 
         assert isinstance(result, list)
-        assert len(result) == 5
-        assert "história" in result[0].lower()
+        assert len(result) == 0
 
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_generate_script_empty_response(self, mock_post):
-        """Test script generation with empty response"""
+    def test_generate_script_empty_response_returns_empty(self, mock_post):
+        """Test script generation with empty response returns empty list"""
         mock_response = Mock()
         mock_response.json.return_value = {"choices": [{"message": {"content": ""}}]}
         mock_response.raise_for_status.return_value = None
@@ -134,7 +132,7 @@ class TestScriptGenerator:
         result = self.script_generator.generate_script("test subject")
 
         assert isinstance(result, list)
-        assert len(result) == 5  # Should return fallback
+        assert len(result) == 0
 
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_with_prompts_success(self, mock_post):
@@ -233,8 +231,8 @@ class TestScriptGenerator:
         assert len(result) > 0
 
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_generate_script_from_metadata_error(self, mock_post):
-        """Test script generation from metadata with error returns fallback"""
+    def test_generate_script_from_metadata_error_returns_empty(self, mock_post):
+        """Test script generation from metadata with error returns empty list"""
         mock_post.side_effect = Exception("API Error")
 
         result = self.script_generator.generate_script_from_metadata(
@@ -242,7 +240,7 @@ class TestScriptGenerator:
         )
 
         assert isinstance(result, list)
-        assert len(result) == 5
+        assert len(result) == 0
 
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_api_request_headers(self, mock_post):
@@ -379,7 +377,7 @@ class TestScriptGenerator:
 
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_insufficient_paragraphs(self, mock_post):
-        """Test script generation pads insufficient paragraphs"""
+        """Test script generation returns what it gets, no padding"""
         mock_response = Mock()
         mock_response.json.return_value = {
             "choices": [{"message": {"content": "Only one paragraph."}}]
@@ -390,7 +388,7 @@ class TestScriptGenerator:
         result = self.script_generator.generate_script("test")
 
         assert isinstance(result, list)
-        assert len(result) == 5  # Should be padded to 5
+        assert len(result) == 1
 
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_with_context_success(self, mock_post):
@@ -525,18 +523,19 @@ class TestScriptGenerator:
         mock_searcher.format_context.return_value = "FONTES DA WEB:\n..."
         mock_searcher_class.return_value = mock_searcher
 
-        draft_json = json.dumps(
-            {
-                "draft": ["P1", "P2", "P3", "P4", "P5"],
-                "queries": ["flamengo hist\u00f3ria", "fluminense origem"],
-                "title": "Cl\u00e1ssico",
-            }
-        )
-        draft_response = Mock()
-        draft_response.json.return_value = {
-            "choices": [{"message": {"content": draft_json}}]
+        query_response = Mock()
+        query_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {"queries": ["flamengo hist\u00f3ria", "fluminense origem"]}
+                        )
+                    }
+                }
+            ]
         }
-        draft_response.raise_for_status.return_value = None
+        query_response.raise_for_status.return_value = None
 
         text_response = Mock()
         text_response.json.return_value = {
@@ -556,7 +555,35 @@ class TestScriptGenerator:
         }
         text_response.raise_for_status.return_value = None
 
-        mock_post.side_effect = [draft_response, text_response]
+        verification_response = Mock()
+        verification_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps({
+                            "verified": True,
+                            "corrections": [],
+                            "paragraphs": [],
+                        })
+                    }
+                }
+            ]
+        }
+        verification_response.raise_for_status.return_value = None
+
+        title_response = Mock()
+        title_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps({"title": "Cl\u00e1ssico"})
+                    }
+                }
+            ]
+        }
+        title_response.raise_for_status.return_value = None
+
+        mock_post.side_effect = [query_response, text_response, verification_response, title_response]
 
         generator = ScriptGenerator(web_search=True)
         result = generator.generate_script("Flamengo x Fluminense")
@@ -564,10 +591,9 @@ class TestScriptGenerator:
         assert isinstance(result, list)
         assert len(result) == 5
         assert "primeiro" in result[0].lower()
-        mock_searcher.search_with_queries.assert_called_once()
-        mock_searcher.format_context.assert_called_once()
-        # Verify _make_text_api_call received the context
-        assert mock_post.call_count == 2
+        assert mock_searcher.search_with_queries.call_count == 2
+        assert mock_searcher.format_context.call_count == 2
+        assert mock_post.call_count == 5
 
     @patch("autoshorts.modules.script_generator.WebSearcher")
     @patch("autoshorts.modules.script_generator.requests.post")
@@ -583,18 +609,17 @@ class TestScriptGenerator:
         mock_searcher.format_context.return_value = "FONTES DA WEB:\n..."
         mock_searcher_class.return_value = mock_searcher
 
-        draft_json = json.dumps(
-            {
-                "draft": ["P1", "P2", "P3", "P4", "P5", "P6", "P7"],
-                "queries": ["query1", "query2"],
-                "title": "Test Title",
-            }
-        )
-        draft_response = Mock()
-        draft_response.json.return_value = {
-            "choices": [{"message": {"content": draft_json}}]
+        query_response = Mock()
+        query_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps({"queries": ["query1", "query2"]})
+                    }
+                }
+            ]
         }
-        draft_response.raise_for_status.return_value = None
+        query_response.raise_for_status.return_value = None
 
         final_json = json.dumps({"paragraphs": [f"P{i}" for i in range(1, 8)]})
         final_response = Mock()
@@ -603,15 +628,43 @@ class TestScriptGenerator:
         }
         final_response.raise_for_status.return_value = None
 
-        mock_post.side_effect = [draft_response, final_response]
+        verification_response = Mock()
+        verification_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps({
+                            "verified": True,
+                            "corrections": [],
+                            "paragraphs": [],
+                        })
+                    }
+                }
+            ]
+        }
+        verification_response.raise_for_status.return_value = None
+
+        title_response = Mock()
+        title_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps({"title": "Test Title"})
+                    }
+                }
+            ]
+        }
+        title_response.raise_for_status.return_value = None
+
+        mock_post.side_effect = [query_response, final_response, verification_response, title_response]
 
         generator = ScriptGenerator(web_search=True)
         paragraphs, prompts = generator.generate_script_with_prompts("test")
 
         assert len(paragraphs) == 7
         assert prompts == []
-        mock_searcher.format_context.assert_called_once()
-        assert mock_post.call_count == 2
+        assert mock_searcher.format_context.call_count == 2
+        assert mock_post.call_count == 5
 
     @patch("autoshorts.modules.script_generator.WebSearcher")
     @patch("autoshorts.modules.script_generator.requests.post")
@@ -645,9 +698,7 @@ class TestScriptGenerator:
 
         generator = ScriptGenerator(web_search=True)
         paragraphs, prompts = generator.generate_script_with_prompts("test")
-        assert (
-            len(paragraphs) == 5
-        )  # _ensure_paragraph_count([], 7) pads from 5 fallback entries
+        assert len(paragraphs) == 0  # No fallback filler, returns empty
         assert isinstance(paragraphs, list)
         assert prompts == []
 
@@ -681,7 +732,7 @@ class TestScriptGenerator:
         generator = ScriptGenerator(web_search=True)
         result = generator.generate_script("test")
         assert isinstance(result, list)
-        assert len(result) == 5
+        assert len(result) == 0
 
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_draft_api_error_returns_fallback(self, mock_post):
@@ -787,8 +838,8 @@ class TestScriptGeneratorEdgeCases:
         self.script_generator = ScriptGenerator(web_search=False)
 
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_generate_script_timeout(self, mock_post):
-        """Test script generation with timeout returns fallback"""
+    def test_generate_script_timeout_returns_empty(self, mock_post):
+        """Test script generation with timeout returns empty list"""
         import requests
 
         mock_post.side_effect = requests.Timeout("Request timed out")
@@ -796,11 +847,11 @@ class TestScriptGeneratorEdgeCases:
         result = self.script_generator.generate_script("test")
 
         assert isinstance(result, list)
-        assert len(result) == 5
+        assert len(result) == 0
 
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_generate_script_connection_error(self, mock_post):
-        """Test script generation with connection error returns fallback"""
+    def test_generate_script_connection_error_returns_empty(self, mock_post):
+        """Test script generation with connection error returns empty list"""
         import requests
 
         mock_post.side_effect = requests.ConnectionError("No connection")
@@ -808,11 +859,11 @@ class TestScriptGeneratorEdgeCases:
         result = self.script_generator.generate_script("test")
 
         assert isinstance(result, list)
-        assert len(result) == 5
+        assert len(result) == 0
 
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_generate_script_http_error(self, mock_post):
-        """Test script generation with HTTP error returns fallback"""
+    def test_generate_script_http_error_returns_empty(self, mock_post):
+        """Test script generation with HTTP error returns empty list"""
         mock_response = Mock()
         mock_response.raise_for_status.side_effect = Exception("HTTP 500")
         mock_post.return_value = mock_response
@@ -820,7 +871,7 @@ class TestScriptGeneratorEdgeCases:
         result = self.script_generator.generate_script("test")
 
         assert isinstance(result, list)
-        assert len(result) == 5
+        assert len(result) == 0
 
 
 if __name__ == "__main__":

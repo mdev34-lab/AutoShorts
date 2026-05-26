@@ -1,5 +1,6 @@
 import hashlib
 import random
+import re
 from pathlib import Path
 from urllib.parse import quote
 
@@ -21,6 +22,18 @@ from .config import (
 )
 from .logging_system import log
 
+BLOCKED_DOMAINS: set[str] = {
+    "crossdresser", "sissy", "femboy", "hentai", "rule34",
+    "xvideos", "xnxx", "xhamster", "pornhub", "onlyfans",
+    "redtube", "youporn", "erotic", "nsfw",
+}
+
+BLOCKED_KEYWORDS: set[str] = {
+    "crossdresser", "sissy", "femboy", "hentai", "rule34",
+    "nsfw", "xxx", "18+", "erotic",
+    "nude", "naked", "seductive",
+}
+
 
 class ImageSearcher:
     def __init__(
@@ -39,6 +52,21 @@ class ImageSearcher:
         self.min_height = min_height
         self.max_per_query = max_per_query
         IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _is_nsfw(result: dict) -> bool:
+        text = (
+            f"{result.get('image') or ''} "
+            f"{result.get('url') or result.get('source') or ''} "
+            f"{result.get('title') or ''}"
+        )
+        for d in BLOCKED_DOMAINS:
+            if re.search(rf"(?:^|[\W_]){re.escape(d)}(?:$|[\W_])", text, re.IGNORECASE):
+                return True
+        for kw in BLOCKED_KEYWORDS:
+            if re.search(rf"(?:^|[\W_]){re.escape(kw)}(?:$|[\W_])", text, re.IGNORECASE):
+                return True
+        return False
 
     def search_images(self, query: str) -> list[dict]:
         try:
@@ -115,6 +143,7 @@ class ImageSearcher:
                 continue
 
             results = self.search_images(prompt)
+            results = [r for r in results if not self._is_nsfw(r)]
             downloaded = False
             for r in results:
                 url = r.get("image", "")

@@ -1,4 +1,5 @@
 import asyncio
+import re
 import time
 from pathlib import Path
 
@@ -21,7 +22,7 @@ def explainer_command(
     goodnight: bool = typer.Option(
         False, "--goodnight", help="Shutdown after processing"
     ),
-    batch: list[str] = typer.Option(None, "--batch", help="Batch: multiple subjects"),
+    batch: str = typer.Option(None, "--batch", help="Batch: semicolon-separated subjects (e.g. 'topic1; topic2')"),
     no_web_search: bool = typer.Option(
         False, "--no-web-search", help="Disable web search (use model knowledge only)"
     ),
@@ -46,7 +47,7 @@ def explainer_command(
 
     subjects: list[str | None] = []
     if batch:
-        subjects = [s for s in batch]
+        subjects = [s.strip() for s in batch.split(";") if s.strip()]
     elif subject:
         subjects = [subject]
     elif youtube_url:
@@ -56,6 +57,7 @@ def explainer_command(
     output_path = Path(output)
     success_count = 0
     total_count = len(subjects)
+    def _sanitize(s): return re.sub(r'[\\/*?:"<>|]', "", s).replace(" ", "_")[:20]
 
     for i, subj in enumerate(subjects, 1):
         log(f"Processing {i}/{total_count}: {subj or 'youtube-url'}")
@@ -64,14 +66,14 @@ def explainer_command(
                 out_dir = output_path.parent
                 if is_batch:
                     prefix = "explainer_" if images_only else "as_"
-                    name = f"{prefix}{subj.replace(' ', '_')[:20] if subj else 'video'}_{int(time.time())}.mp4"
+                    name = f"{prefix}{_sanitize(subj) if subj else 'video'}_{int(time.time())}.mp4"
                 else:
                     name = output_path.name
             else:
                 out_dir = output_path
                 if is_batch:
                     prefix = "explainer_" if images_only else "as_"
-                    name = f"{prefix}{subj.replace(' ', '_')[:20] if subj else 'video'}_{int(time.time())}.mp4"
+                    name = f"{prefix}{_sanitize(subj) if subj else 'video'}_{int(time.time())}.mp4"
                 else:
                     prefix = "explainer_" if images_only else "autoshorts_"
                     name = f"{prefix}{int(time.time())}.mp4"

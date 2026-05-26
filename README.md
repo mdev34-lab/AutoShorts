@@ -4,14 +4,17 @@ AI-powered tool for generating YouTube Shorts / TikTok videos with script genera
 
 ## Features
 
-- **AI Script Generation** — viral-optimized scripts in Brazilian Portuguese via Pollinations AI
-- **AI Image Generation** — background images via Pollinations AI (images-only mode)
+- **AI Script Generation** — curiosity-driven scripts in Brazilian Portuguese via Pollinations AI with fact verification and hallucination guards
+- **Web-Grounded Scripts** — automatic web search generates independent queries, grounds the script in real sources, then cross-checks every claim
+- **Title Validation** — auto-validates hashtag count (3+), length (≤ 100 chars), and lowercases tags
+- **AI Image Generation** — background images via Pollinations AI or **real web images** via DuckDuckGo search (default), with NSFW domain/keyword filter
 - **Text-to-Speech** — natural audio via Edge TTS
 - **Subtitle System** — VTT generation + word-level highlight rendering
-- **Video Composition** — blurred YouTube background or AI images with smooth overlay animation
+- **Video Composition** — blurred YouTube background or AI/web images with smooth overlay animation
 - **YouTube Integration** — download any video as background footage
-- **Two pipelines**: normal (YouTube bg + optional AI image overlays) and images-only (AI images + overlay animation, no YouTube bg)
+- **Two pipelines**: normal (YouTube bg + optional image overlays) and images-only (AI/web images + overlay animation, no YouTube bg)
 - **Typer CLI** — nested subcommands, auto-generated `--help`, shell completion
+- **Batch Processing** — semicolon-separated subjects for multi-video runs
 
 ## Installation
 
@@ -37,7 +40,7 @@ uv pip install -e ".[dev]"
 # See available commands
 autoshorts --help
 
-# Generate an explainer video from a topic
+# Generate an explainer video from a topic (web search + web images by default)
 autoshorts new explainer "artificial intelligence"
 
 # AI images only (no YouTube background)
@@ -46,14 +49,20 @@ autoshorts new explainer "space exploration" --images-only
 # Use a YouTube video as background footage
 autoshorts new explainer --youtube-url "https://youtube.com/watch?v=VIDEO_ID"
 
-# Skip AI image overlays (blurred bg only)
+# Skip image overlays (blurred bg only)
 autoshorts new explainer "climate change" --no-images
 
-# Batch mode
-autoshorts new explainer --batch "robotics" "quantum computing" "neural networks"
+# Batch mode with semicolon-separated subjects
+autoshorts new explainer --batch "robotics; quantum computing; neural networks"
 
-# Web search for richer script content
-autoshorts new explainer "oceanography" --web-search
+# Image source: 'ai' uses Pollinations (default is 'web' via DDGS)
+autoshorts new explainer "oceanography" --images ai
+
+# Script tone: 'corporate' (neutral, factual) or 'opinionated' (curiosity-driven, narrative)
+autoshorts new explainer "bitcoin" --tone corporate
+
+# Disable web search (uses model knowledge only)
+autoshorts new explainer "neural networks" --no-web-search
 
 # Auto-shutdown after completion
 autoshorts new explainer "future technology" --goodnight
@@ -102,23 +111,29 @@ AutoShorts/
 │       │   └── explainer.py        # ExplainerGenerator (both pipelines)
 │       └── modules/                # Core modules
 │           ├── config.py
+│           ├── image_searcher.py   # Web/AI image search + NSFW filter
 │           ├── logging_system.py
-│           ├── script_generator.py
+│           ├── script_generator.py # Script gen, fact verification, title validation
 │           ├── subtitle_system.py
 │           ├── tts_system.py
 │           ├── utils.py
-│           ├── video_background.py
-│           └── video_compositor.py
+│           ├── video_background.py # YouTube search & download
+│           ├── video_compositor.py
+│           └── web_search.py       # DuckDuckGo web search
 ├── tests/
-│   ├── test_cli.py                 # CLI layer (28 tests)
+│   ├── test_cli.py                 # CLI layer (32 tests)
+│   ├── test_config.py
+│   ├── test_edge_cases.py
 │   ├── test_fluximages.py          # Explainer generator tests
-│   ├── test_video_background.py    # Video background (24 tests)
-│   ├── test_video_compositor.py    # Video compositor (11 tests)
+│   ├── test_init.py
+│   ├── test_integration.py
 │   ├── test_script_generator.py
 │   ├── test_subtitle_system.py
-│   ├── test_utils.py
-│   ├── test_edge_cases.py
 │   ├── test_tts_system.py
+│   ├── test_utils.py
+│   ├── test_video_background.py    # Video background (24 tests)
+│   ├── test_video_compositor.py    # Video compositor (11 tests)
+│   ├── test_web_search.py
 │   └── conftest.py
 ├── fonts/                          # Bundled Bebas Neue font
 ├── .env.example
@@ -134,13 +149,15 @@ Core:
 - `edge-tts` — text-to-speech
 - `requests` — HTTP client
 - `yt-dlp` — YouTube downloading
+- `duckduckgo-search` — web search and image search (DDGS)
+- `Pillow` — image processing and resizing
 - `webvtt-py` — subtitle processing
 - `python-dotenv` — environment loading
 - `typer` — CLI framework
 
 Dev:
 - `pytest` + `pytest-asyncio` + `pytest-cov`
-- `black` + `ruff` + `mypy`
+- `ruff` + `mypy`
 
 ## Development
 

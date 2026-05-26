@@ -104,6 +104,12 @@ class ExplainerGenerator:
                 script = self.script_generator.generate_script(subject)
             else:
                 script = self.script_generator.generate_script_from_metadata(title, "")
+            if not script or len(script) < 3:
+                log(
+                    f"Script generation failed: got {len(script)} paragraphs, need >= 3",
+                    "ERROR",
+                )
+                return False
             log(f"Generated script with {len(script)} paragraphs")
 
             log("Step 3: Generating TTS audio...")
@@ -226,6 +232,12 @@ class ExplainerGenerator:
             paragraphs, _ = self.script_generator.generate_script_with_prompts(
                 self.subject
             )
+            if not paragraphs or len(paragraphs) < 3:
+                log(
+                    f"Script generation failed: got {len(paragraphs)} paragraphs, need >= 3",
+                    "ERROR",
+                )
+                return False
 
             log("Step 2: Generating TTS audio...")
             audio_path = await self.tts_system.generate_audio_only(
@@ -315,7 +327,8 @@ class ExplainerGenerator:
             return np.minimum(255, frame * opacity).astype("uint8")
 
         clip = clip.with_effects([vfx.Resize(scale_anim)])
-        return clip.transform(apply_opacity)
+        clip = clip.transform(apply_opacity)
+        return clip.with_position(("center", "center"))
 
     def _create_flux_video(
         self, img_paths: list, audio_path: str, paragraphs: list, output_path: str
