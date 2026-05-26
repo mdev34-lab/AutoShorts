@@ -386,7 +386,11 @@ class ScriptGenerator:
                 corrected = self._ensure_paragraph_count(corrected, len(paragraphs))
             elif is_verified:
                 log("Fact verification: all claims match sources", "SUCCESS")
-            return corrected if corrected else paragraphs
+            if corrected and len(corrected) >= 3:
+                return corrected
+            if paragraphs and len(paragraphs) >= 3:
+                return paragraphs
+            return corrected or paragraphs
         except Exception as e:
             log(f"Fact verification failed: {e}", "WARNING")
             return paragraphs
