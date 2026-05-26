@@ -40,13 +40,16 @@ class ScriptGenerator:
                 "FORBIDDEN: Clickbait, dramatic language, opinions, rhetorical questions.\n"
             )
         return (
-            "TONE: Dramatic, scandalous, like telling gossip to a friend. "
-            "NEVER sound like Wikipedia or a corporate press release.\n"
-            "FIRST SENTENCE: A dramatic hook that grabs attention \u2014 "
-            "a bold claim, a shocking stat, a mystery. NOT a dry date.\n"
-            "STRUCTURE: Hook \u2192 Context \u2192 The Drama \u2192 Punchy ending\n"
+            "TONE: Curiosity-driven, narrative, engaging. "
+            "Write like a storyteller uncovering a fascinating truth \u2014 "
+            "never like Wikipedia or a corporate press release.\n"
+            "FIRST SENTENCE: An intriguing question that sparks curiosity. "
+            "NOT a dry date or a shocking exaggeration.\n"
+            "STRUCTURE: Question \u2192 Context \u2192 Revelation \u2192 Strong conclusion\n"
             "FORBIDDEN: Legal names (Ltda, S.A.), addresses, city/state abbreviations. "
             "NO corporate language.\n"
+            "FORBIDDEN: Hyperboles, exaggerated claims, 'designed by a god', "
+            "'you won't believe', 'shocking truth' \u2014 these sound fake.\n"
         )
 
     # ── Public API ──────────────────────────────────────────────────────
@@ -696,15 +699,18 @@ _SYSTEM_PROMPT_SINGLE = (
     "You are a master storyteller for viral YouTube Shorts.\n"
     "CRITICAL RETENTION RULES:\n"
     "1.Write in Brazilian Portuguese (PT-BR).\n"
-    "2.TONE: Dramatic, scandalous, like telling gossip to a friend. "
-    "NEVER sound like Wikipedia or a corporate press release.\n"
-    "3.FIRST SENTENCE: A dramatic hook that grabs attention \u2014 "
-    "a bold claim, a shocking stat, a mystery. NOT a dry date.\n"
-    "4.STRUCTURE: Hook \u2192 Context \u2192 The Drama \u2192 Punchy ending\n"
+    "2.TONE: Curiosity-driven, narrative, engaging. "
+    "Write like a storyteller uncovering a fascinating truth \u2014 "
+    "never like Wikipedia or a corporate press release.\n"
+    "3.FIRST SENTENCE: An intriguing question that sparks curiosity. "
+    "NOT a dry date or a shocking exaggeration.\n"
+    "4.STRUCTURE: Question \u2192 Context \u2192 Revelation \u2192 Strong conclusion\n"
     '5.NEVER start with "ningu\u00e9m sabia", "o segredo", "a verdade escondida" '
     'or "voc\u00ea n\u00e3o vai acreditar" \u2014 these are weak.\n'
     "6.FORBIDDEN: Legal names (Ltda, S.A.), addresses, city/state abbreviations. "
     "NO corporate language.\n"
+    '6a.FORBIDDEN: Hyperboles, exaggerated claims, "designed by a god", '
+    '"you won\'t believe", "shocking truth" \u2014 these sound fake.\n'
     "7.Each paragraph 1-2 punchy sentences (~2-3 seconds audio each).\n"
     "8.Write exactly 4-5 paragraphs.\n"
     "9.NO markdown formatting, NO JSON, just plain text paragraphs.\n"
@@ -725,13 +731,16 @@ def _user_prompt_single(subject: str, search_context: str, tone: str = "opiniona
             "- PROIBIDO: Linguagem dram\u00e1tica, opini\u00f5es, perguntas ret\u00f3ricas, clickbait.\n"
         ),
     }.get(tone, (
-        "- TOM: Dram\u00e1tico, como contando uma fofoca para um amigo. "
-        "NUNCA pare uma Wikipedia ou release corporativo.\n"
-        "- PRIMEIRA FRASE: Um gancho que prende aten\u00e7\u00e3o \u2014 "
-        "uma afirma\u00e7\u00e3o ousada, um fato chocante, um mist\u00e9rio. N\u00c3O uma data seca.\n"
-        "- ESTRUTURA: Gancho \u2192 Contexto \u2192 A Treta \u2192 Final impactante\n"
+        "- TOM: Curiosidade, narrativa envolvente. "
+        "Conte como quem revela um fato fascinante \u2014 "
+        "NUNCA como Wikipedia ou release corporativo.\n"
+        "- PRIMEIRA FRASE: Uma pergunta instigante que desperta curiosidade. "
+        "N\u00c3O uma data seca nem um exagero chocante.\n"
+        "- ESTRUTURA: Pergunta \u2192 Contexto \u2192 Revela\u00e7\u00e3o \u2192 Conclus\u00e3o forte\n"
         "- PROIBIDO: Nomes jur\u00eddicos (Ltda, S.A.), endere\u00e7os, siglas. "
         "NADA de linguagem corporativa.\n"
+        "- PROIBIDO: Hip\u00e9rboles, exageros, 'desenhada por um deus', "
+        "'voc\u00ea n\u00e3o vai acreditar', 'a verdade chocante' \u2014 soa falso.\n"
     ))
     return (
         f'Crie uma hist\u00f3ria envolvente em 4-5 par\u00e1grafos sobre "{subject}".\n\n'
@@ -755,15 +764,18 @@ _SYSTEM_PROMPT_METADATA = (
     "You are a master storyteller for viral YouTube Shorts.\n"
     "CRITICAL RETENTION RULES:\n"
     "1.Write in Brazilian Portuguese (PT-BR).\n"
-    "2.TONE: Dramatic, scandalous, like telling gossip to a friend. "
-    "NEVER sound like Wikipedia or a corporate press release.\n"
-    "3.FIRST SENTENCE: A dramatic hook that grabs attention \u2014 "
-    "a bold claim, a shocking stat, a mystery. NOT a dry fact.\n"
-    "4.STRUCTURE: Hook \u2192 Context \u2192 The Drama \u2192 Punchy ending\n"
+    "2.TONE: Curiosity-driven, narrative, engaging. "
+    "Write like a storyteller uncovering a fascinating truth \u2014 "
+    "never like Wikipedia or a corporate press release.\n"
+    "3.FIRST SENTENCE: An intriguing question that sparks curiosity. "
+    "NOT a dry fact or a shocking exaggeration.\n"
+    "4.STRUCTURE: Question \u2192 Context \u2192 Revelation \u2192 Strong conclusion\n"
     '5.NEVER start with "ningu\u00e9m sabia", "o segredo", '
     'or "a verdade escondida" \u2014 these are vague and weak.\n'
     "6.FORBIDDEN: Legal names (Ltda, S.A.), addresses, city/state abbreviations. "
     "NO corporate language.\n"
+    '6a.FORBIDDEN: Hyperboles, exaggerated claims, "designed by a god", '
+    '"you won\'t believe", "shocking truth" \u2014 these sound fake.\n'
     "7.Extract concrete details from the video metadata: "
     "dates, names, places, statistics, historical context.\n"
     "8.Include origin stories \u2014 explain HOW something started, "
@@ -786,13 +798,16 @@ def _user_prompt_metadata(combined_content: str, tone: str = "opinionated") -> s
             "- PROIBIDO: Linguagem dram\u00e1tica, opini\u00f5es, clickbait.\n"
         ),
     }.get(tone, (
-        "- TOM: Dram\u00e1tico, como contando uma fofoca para um amigo. "
-        "NUNCA pare uma Wikipedia ou release corporativo.\n"
-        "- PRIMEIRA FRASE: Um gancho que prende aten\u00e7\u00e3o \u2014 "
-        "uma afirma\u00e7\u00e3o ousada, um fato chocante. N\u00c3O uma data seca.\n"
-        "- ESTRUTURA: Gancho \u2192 Contexto \u2192 A Treta \u2192 Final impactante\n"
+        "- TOM: Curiosidade, narrativa envolvente. "
+        "Conte como quem revela um fato fascinante \u2014 "
+        "NUNCA como Wikipedia ou release corporativo.\n"
+        "- PRIMEIRA FRASE: Uma pergunta instigante que desperta curiosidade. "
+        "N\u00c3O uma data seca nem um exagero chocante.\n"
+        "- ESTRUTURA: Pergunta \u2192 Contexto \u2192 Revela\u00e7\u00e3o \u2192 Conclus\u00e3o forte\n"
         "- PROIBIDO: Nomes jur\u00eddicos (Ltda, S.A.), endere\u00e7os, siglas. "
         "NADA de linguagem corporativa.\n"
+        "- PROIBIDO: Hip\u00e9rboles, exageros, 'desenhada por um deus', "
+        "'voc\u00ea n\u00e3o vai acreditar' \u2014 soa falso.\n"
     ))
     return (
         "Crie uma hist\u00f3ria envolvente em 4-5 par\u00e1grafos baseada "
