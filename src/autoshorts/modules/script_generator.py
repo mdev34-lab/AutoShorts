@@ -1,4 +1,6 @@
 import json
+import re
+import time
 
 import requests  # type: ignore[import-untyped]
 
@@ -282,8 +284,6 @@ class ScriptGenerator:
 
     def _verify_factual_claims(self, paragraphs: list, subject: str) -> list:
         """Cross-check dates, scores, tabus, and numbers in script against web search results."""
-        import re
-
         script_text = " ".join(paragraphs)
         verification_queries: list[str] = []
 
@@ -415,6 +415,22 @@ class ScriptGenerator:
 
     # ── Title generation ─────────────────────────────────────────────────
 
+    @staticmethod
+    def _validate_title(title: str) -> tuple[bool, list[str]]:
+        issues: list[str] = []
+        hashtags = re.findall(r"#\w+", title)
+        if not hashtags:
+            issues.append("n\u00e3o possui hashtags")
+        elif len(hashtags) < 3:
+            issues.append(f"tem apenas {len(hashtags)} hashtags (m\u00ednimo 3)")
+        if len(title) > 100:
+            issues.append(f"tem {len(title)} caracteres (m\u00e1ximo 100)")
+        return len(issues) == 0, issues
+
+    @staticmethod
+    def _fix_hashtags_case(title: str) -> str:
+        return re.sub(r"#([A-Z][A-Za-z0-9]*)", lambda m: f"#{m.group(1).lower()}", title)
+
     def _generate_title_from_script(
         self, paragraphs: list, subject: str
     ) -> str | None:
@@ -422,26 +438,40 @@ class ScriptGenerator:
         script_text = " ".join(paragraphs)[:500]
         system_prompt = (
             "Output ONLY a JSON object with one key: 'title'.\n"
-            "Title must be in PT-BR, max 60 characters, YouTube Shorts title.\n"
+            "Title must be in PT-BR, max 100 characters, YouTube Shorts title.\n"
             "UPPERCASE RULES:\n"
             "- Use UPPERCASE for key words or short sections of the title text itself.\n"
             "- Example: 'A VERDADE sobre o Caso Girabank' (title before tags).\n"
             "- Do NOT put tags in uppercase.\n\n"
             "TAGS RULES:\n"
-            "- Append 1-3 lowercase tags at the end, no spaces between words.\n"
+            "- Append EXACTLY 3-4 lowercase tags at the end, no spaces between words.\n"
             "- Tags MUST be SPECIFIC to the video subject, not generic categories.\n"
-            "- Example tags for a Mario game: '#supermario #nintendo #galaxy'\n"
+            "- Example tags for Mario: '#supermario #nintendo #galaxy'\n"
             "- Example tags for Carlinhos Maia: '#carlinhosmaia #girabank'\n"
-            "- NEVER tag unrelated topics like #futebol for a movie or #cinema for a bank story.\n\n"
+            "- NEVER tag unrelated topics like #futebol for a movie.\n\n"
             "FULL EXAMPLE:\n"
             "'A VERDADE sobre o Caso Girabank #carlinhosmaia #girabank'"
         )
         user_prompt = f"Crie um t\u00edtulo PT-BR para este roteiro sobre {subject}, com se\u00e7\u00f5es em UPPERCASE e tags SPECIFICAS em lowercase: {script_text}"
-        try:
-            data = self._make_json_api_call(system_prompt, user_prompt)
-            return data.get("title")
-        except Exception:
-            return None
+        for attempt in range(2):
+            try:
+                prompt = user_prompt
+                if attempt == 1:
+                    prompt += (
+                        "\n\nCORRE\u00c7\u00c3O: Na tentativa anterior o t\u00edtulo tinha problemas. "
+                        "Siga as regras: max 100 chars, 3-4 hashtags em lowercase, "
+                        "nada de hashtags gen\u00e9ricas."
+                    )
+                data = self._make_json_api_call(system_prompt, prompt)
+                title = data.get("title") or ""
+                title = self._fix_hashtags_case(title)
+                ok, issues = self._validate_title(title)
+                if ok:
+                    return title
+                log(f"Title validation: {', '.join(issues)}, retrying...", "WARNING")
+            except Exception:
+                return None
+        return None
 
     def _repair_paragraphs(self, good: list, subject: str, target: int) -> list:
         """Extend existing good paragraphs to reach target count instead of regenerating everything."""
@@ -500,7 +530,6 @@ class ScriptGenerator:
 
     def _make_json_api_call(self, system_prompt: str, user_prompt: str) -> dict:
         """Make API call expecting JSON response. Retries once on empty content."""
-        import time
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
