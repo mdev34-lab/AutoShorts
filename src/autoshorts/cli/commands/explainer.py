@@ -1,6 +1,6 @@
 import asyncio
 import re
-import time
+from datetime import datetime
 from pathlib import Path
 
 import typer
@@ -14,7 +14,7 @@ from ..new import new_app
 def explainer_command(
     subject: str = typer.Argument(None, help="Video subject"),
     output: str = typer.Option(
-        "output", "--output", "-o", help="Output directory or file path"
+        "output", "--output", "-o", help="Output directory"
     ),
     youtube_url: str = typer.Option(
         None, "--youtube-url", "-y", help="Direct YouTube URL"
@@ -53,32 +53,24 @@ def explainer_command(
     elif youtube_url:
         subjects = [None]
 
-    is_batch = batch is not None
     output_path = Path(output)
     success_count = 0
     total_count = len(subjects)
-    def _sanitize(s): return re.sub(r'[\\/*?:"<>|]', "", s).replace(" ", "_")[:20]
+    def _sanitize(s):
+        return re.sub(r'[\\/*?:"<>|]', "", s).replace(" ", "_").lower()[:20]
 
     for i, subj in enumerate(subjects, 1):
         log(f"Processing {i}/{total_count}: {subj or 'youtube-url'}")
         try:
-            if output_path.suffix:
-                out_dir = output_path.parent
-                if is_batch:
-                    prefix = "explainer_" if images_only else "as_"
-                    name = f"{prefix}{_sanitize(subj) if subj else 'video'}_{int(time.time())}.mp4"
-                else:
-                    name = output_path.name
-            else:
-                out_dir = output_path
-                if is_batch:
-                    prefix = "explainer_" if images_only else "as_"
-                    name = f"{prefix}{_sanitize(subj) if subj else 'video'}_{int(time.time())}.mp4"
-                else:
-                    prefix = "explainer_" if images_only else "autoshorts_"
-                    name = f"{prefix}{int(time.time())}.mp4"
-
-            out_file = out_dir / name
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            parts = ["autoshorts"]
+            if subj:
+                parts.append(_sanitize(subj))
+            if images_only:
+                parts.append("explainer")
+            parts.append(ts)
+            name = "_".join(parts) + ".mp4"
+            out_file = output_path / name
 
             gen = VIDEO_TYPES["explainer"](
                 subject=subj,
