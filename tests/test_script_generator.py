@@ -243,7 +243,8 @@ class TestScriptGenerator:
         assert len(result) == 0
 
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_api_request_headers(self, mock_post):
+    @patch.object(ScriptGenerator, "_generate_title_from_script", return_value=None)
+    def test_api_request_headers(self, mock_title, mock_post):
         """Test that API requests include proper headers"""
         mock_response = Mock()
         mock_response.json.return_value = {
@@ -265,7 +266,8 @@ class TestScriptGenerator:
         assert headers["Content-Type"] == "application/json"
 
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_api_request_payload(self, mock_post):
+    @patch.object(ScriptGenerator, "_generate_title_from_script", return_value=None)
+    def test_api_request_payload(self, mock_title, mock_post):
         """Test that API requests include proper payload structure"""
         mock_response = Mock()
         mock_response.json.return_value = {
@@ -479,8 +481,9 @@ class TestScriptGenerator:
         assert "tools" not in payload
 
     @patch("autoshorts.modules.script_generator.requests.post")
-    def test_generate_script_from_metadata_long_description(self, mock_post):
-        """Test script generation from metadata with long description"""
+    @patch.object(ScriptGenerator, "_generate_title_from_script", return_value=None)
+    def test_generate_script_from_metadata_long_description(self, mock_title, mock_post):
+        """Test script generation from metadata with very long description"""
         mock_response = Mock()
         mock_response.json.return_value = {
             "choices": [

@@ -65,6 +65,7 @@ from .config import (
     YOUTUBE_FORMAT,
     YOUTUBE_MAX_HEIGHT,
 )
+from .metadata import VideoMetadata
 from .image_searcher import ImageSearcher
 from .logging_system import Colors, log
 from .script_generator import ScriptGenerator
@@ -155,6 +156,7 @@ __all__ = [
     "VideoBackgroundManager",
     "VideoCompositor",
     "WebSearcher",
+    "VideoMetadata",
     "ImageSearcher",
     "setup_directories",
     "create_temp_dir",

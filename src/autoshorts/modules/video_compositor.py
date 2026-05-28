@@ -30,22 +30,41 @@ from moviepy.video.io.ffmpeg_reader import FFMPEG_VideoReader
 
 from .config import (
     AUDIO_CODEC,
-    BG_MODE,
-    BG_SKIP_INTRO,
     BLUR_RADIUS,
+    BOTTOM_MARGIN,
+    COLOR_HIGHLIGHT,
+    COLOR_STROKE,
+    COLOR_TEXT,
+    CROSSFADE_TIME,
+    DEFAULT_FONT,
     ENCODING_CRF,
     ENCODING_PRESET,
     ENCODING_THREADS,
+    FALLBACK_FONTS,
+    FONT_SIZE,
     IMAGE_BOUNCE_INTERVAL,
+    IMAGE_FADE_IN_TIME,
+    IMAGE_FADE_OUT_TIME,
+    IMAGE_MIN_HEIGHT,
+    IMAGE_MIN_WIDTH,
     IMAGE_OVERLAY_DURATION,
     JUMPCUT_SEG_DUR,
+    LINE_SPACING,
+    MAX_CHARS_PER_LINE,
     MAX_ZOOM_FACTOR,
-    START_WITH_IMAGE,
+    MAX_ZOOM_VALUE,
+    START_FADE,
+    STROKE_WIDTH,
+    SUBTITLE_MODE,
+    SUBTITLE_START_Y_RATIO,
+    TARGET_IMAGE_HEIGHT,
+    TARGET_IMAGE_WIDTH,
     VIDEO_CODEC,
     VIDEO_FPS,
     VIDEO_HEIGHT,
     VIDEO_WIDTH,
 )
+from .metadata import VideoMetadata
 from .subtitle_system import SubtitleSystem
 from .utils import create_temp_dir, get_video_duration, log
 
@@ -345,6 +364,7 @@ class VideoCompositor:
         target_duration: float,
         use_blurred_bg: bool = True,
         image_paths: list[Any] | None = None,
+        metadata: VideoMetadata | None = None,
     ) -> bool:
         """
         Create final output video with optional subtitle integration.
@@ -404,6 +424,8 @@ class VideoCompositor:
         encode_start = time.time()
         # Write video without audio to avoid MoviePy composite bugs
         temp_video = output_path.replace(".mp4", "_temp.mp4")
+        meta_args = metadata.to_ffmpeg_args() if metadata else []
+        ffmpeg_params = ["-crf", str(ENCODING_CRF)] + meta_args
         final_video.write_videofile(
             temp_video,
             codec=VIDEO_CODEC,
@@ -411,7 +433,7 @@ class VideoCompositor:
             fps=VIDEO_FPS,
             threads=ENCODING_THREADS,
             preset=ENCODING_PRESET,
-            ffmpeg_params=["-crf", str(ENCODING_CRF)],
+            ffmpeg_params=ffmpeg_params,
             logger="bar",
         )
 
@@ -431,8 +453,10 @@ class VideoCompositor:
                 "-c:a",
                 AUDIO_CODEC,
                 "-shortest",
-                output_path,
             ]
+            if metadata:
+                cmd.extend(metadata.to_ffmpeg_args())
+            cmd.append(output_path)
             subprocess.run(cmd, capture_output=True, check=True)
             Path(temp_video).unlink(missing_ok=True)
         else:

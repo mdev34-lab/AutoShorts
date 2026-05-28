@@ -1,4 +1,5 @@
 import asyncio
+import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -6,7 +7,7 @@ from pathlib import Path
 import typer
 
 from ...generators import VIDEO_TYPES
-from ...modules import log, shutdown_computer
+from ...modules import VideoMetadata, log, shutdown_computer
 from ..new import new_app
 
 
@@ -72,6 +73,19 @@ def explainer_command(
             name = "_".join(parts) + ".mp4"
             out_file = output_path / name
 
+            metadata = VideoMetadata(
+                title=subj,
+                comment=json.dumps({
+                    "subject": subj,
+                    "youtube_url": youtube_url,
+                    "no_images": no_images,
+                    "images_only": images_only,
+                    "image_source": images,
+                    "no_web_search": no_web_search,
+                    "batch": batch,
+                }, ensure_ascii=False),
+            )
+
             gen = VIDEO_TYPES["explainer"](
                 subject=subj,
                 output=str(out_file),
@@ -80,6 +94,7 @@ def explainer_command(
                 no_images=no_images or images_only,
                 images_only=images_only,
                 image_source=images,
+                metadata=metadata,
             )
             success = asyncio.run(gen.generate())
             if success:

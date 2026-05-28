@@ -43,6 +43,7 @@ from ..modules import (
     TTSSystem,
     VideoBackgroundManager,
     VideoCompositor,
+    VideoMetadata,
     create_temp_dir,
     log,
     setup_directories,
@@ -60,6 +61,7 @@ class ExplainerGenerator:
         no_images: bool = False,
         images_only: bool = False,
         image_source: str = "web",
+        metadata: VideoMetadata | None = None,
     ):
         self.subject = subject
         self.output = output
@@ -68,6 +70,7 @@ class ExplainerGenerator:
         self.no_images = no_images
         self.images_only = images_only
         self.image_source = image_source
+        self.metadata = metadata or VideoMetadata()
 
         self.script_generator = ScriptGenerator(web_search=web_search)
         self.tts_system = TTSSystem()
@@ -111,6 +114,7 @@ class ExplainerGenerator:
                 )
                 return False
             log(f"Generated script with {len(script)} paragraphs")
+            self.metadata.description = " ".join(script)
 
             log("Step 3: Generating TTS audio...")
             (
@@ -143,6 +147,7 @@ class ExplainerGenerator:
                 duration,
                 use_blurred_bg=True,
                 image_paths=image_paths,
+                metadata=self.metadata,
             ):
                 elapsed = time.time() - start_time
                 title = getattr(self.script_generator, "generated_title", None)
@@ -238,6 +243,7 @@ class ExplainerGenerator:
                     "ERROR",
                 )
                 return False
+            self.metadata.description = " ".join(paragraphs)
 
             log("Step 2: Generating TTS audio...")
             audio_path = await self.tts_system.generate_audio_only(
@@ -264,7 +270,7 @@ class ExplainerGenerator:
                 return False
 
             log("Step 6: Composing video...")
-            self._create_flux_video(img_paths, audio_path, paragraphs, self.output)
+            self._create_flux_video(img_paths, audio_path, paragraphs, self.output, self.metadata)
 
             elapsed = time.time() - start_time
             title = getattr(self.script_generator, "generated_title", None)
@@ -331,7 +337,8 @@ class ExplainerGenerator:
         return clip.with_position(("center", "center"))
 
     def _create_flux_video(
-        self, img_paths: list, audio_path: str, paragraphs: list, output_path: str
+        self, img_paths: list, audio_path: str, paragraphs: list, output_path: str,
+        metadata: VideoMetadata | None = None,
     ):
         log("Composing video with U-curve zoom...")
         audio = AudioFileClip(audio_path)
@@ -372,6 +379,7 @@ class ExplainerGenerator:
         subs = subtitle_system.render_subtitles(vtt_path, (VIDEO_WIDTH, VIDEO_HEIGHT))
 
         final = CompositeVideoClip([video] + subs, size=(VIDEO_WIDTH, VIDEO_HEIGHT))
+        meta_args = metadata.to_ffmpeg_args() if metadata else []
         final.write_videofile(
             output_path,
             fps=VIDEO_FPS,
@@ -379,7 +387,7 @@ class ExplainerGenerator:
             audio_codec=AUDIO_CODEC,
             threads=ENCODING_THREADS,
             preset=ENCODING_PRESET,
-            ffmpeg_params=["-crf", str(ENCODING_CRF)],
+            ffmpeg_params=["-crf", str(ENCODING_CRF)] + meta_args,
         )
 
         final.close()

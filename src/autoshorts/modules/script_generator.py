@@ -71,10 +71,12 @@ class ScriptGenerator:
         tone_block = self._tone_instructions()
 
         if not self.web_search or not self.searcher or not subject:
-            return self._make_text_api_call(
+            script = self._make_text_api_call(
                 tone_block + _SYSTEM_PROMPT_SINGLE,
                 _user_prompt_single(subject, ""),
             )
+            self.generated_title = self._generate_title_from_script(script, subject)
+            return script
 
         # Step 1: generate independent search queries (NOT from draft — avoids circular hallucination)
         log("Step 1: generating independent search queries...")
@@ -128,23 +130,27 @@ class ScriptGenerator:
         log("All script generation paths failed", "ERROR")
         return []
 
-    def generate_script_from_metadata(self, title: str, description: str) -> list:
+    def generate_script_from_metadata(self, meta_title: str, description: str) -> list:
         """Generate script from YouTube video title and description."""
         log("Generating script from video metadata...")
         desc = description[:1000] if description else ""
-        combined_content = f"Title: {title}\n\nDescription: {desc}"
+        combined_content = f"Title: {meta_title}\n\nDescription: {desc}"
         tone_block = self._tone_instructions()
-        return self._make_text_api_call(
+        script = self._make_text_api_call(
             tone_block + _SYSTEM_PROMPT_METADATA,
             _user_prompt_metadata(combined_content),
         )
+        self.generated_title = self._generate_title_from_script(script, meta_title)
+        return script
 
     def generate_script_with_prompts(self, subject: str) -> tuple:
         """Generate script paragraphs. Searches web first, then generates grounded script."""
         log(f"Generating script paragraphs for: {subject}...")
 
         if not self.web_search or not self.searcher or not subject:
-            return self._generate_script_with_prompts_single(subject)
+            paragraphs, prompts = self._generate_script_with_prompts_single(subject)
+            self.generated_title = self._generate_title_from_script(paragraphs, subject)
+            return paragraphs, prompts
 
         # Step 1: generate independent search queries (NOT from draft)
         log("Step 1: generating independent search queries...")
@@ -626,6 +632,8 @@ class ScriptGenerator:
                 lines = []
                 current_para = ""
                 for sentence in sentences[:15]:
+                    if current_para:
+                        current_para += " "
                     current_para += sentence
                     if len(current_para) > 100:
                         lines.append(current_para)
