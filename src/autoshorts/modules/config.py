@@ -86,6 +86,12 @@ __all__ = [
     "MAX_VIDEO_CUT_DURATION",
     "BLUR_RADIUS",
     "MAX_ZOOM_VALUE",
+    "OPENING_ANIMATION_ENABLED",
+    "OPENING_ANIMATION_DURATION",
+    "OPENING_ZOOM_START",
+    "OPENING_EASING_POWER",
+    "OPENING_BLUR_SAMPLES",
+    "OPENING_SHUTTER_FRACTION",
 ]
 
 
@@ -227,3 +233,12 @@ BLUR_RADIUS = _get_env_int("BLUR_RADIUS", 10)
 
 # Image Zoom Settings
 MAX_ZOOM_VALUE = _get_env_float("MAX_ZOOM_VALUE", 1.15)
+
+# Opening Animation (cold-open S-curve zoom-out with motion blur)
+# Applied once at the start of every video to grab attention.
+OPENING_ANIMATION_ENABLED = _get_env_bool("OPENING_ANIMATION_ENABLED", True)
+OPENING_ANIMATION_DURATION = _get_env_float("OPENING_ANIMATION_DURATION", 0.9)
+OPENING_ZOOM_START = _get_env_float("OPENING_ZOOM_START", 1.25)
+OPENING_EASING_POWER = _get_env_float("OPENING_EASING_POWER", 3.0)
+OPENING_BLUR_SAMPLES = _get_env_int("OPENING_BLUR_SAMPLES", 8)
+OPENING_SHUTTER_FRACTION = _get_env_float("OPENING_SHUTTER_FRACTION", 0.5)

@@ -53,6 +53,12 @@ from .config import (
     MAX_CHARS_PER_LINE,
     MAX_ZOOM_FACTOR,
     MAX_ZOOM_VALUE,
+    OPENING_ANIMATION_DURATION,
+    OPENING_ANIMATION_ENABLED,
+    OPENING_BLUR_SAMPLES,
+    OPENING_EASING_POWER,
+    OPENING_SHUTTER_FRACTION,
+    OPENING_ZOOM_START,
     START_FADE,
     STROKE_WIDTH,
     SUBTITLE_MODE,
@@ -132,6 +138,17 @@ class VideoCompositor:
             return 4 * t * t * t
         return 1 - pow(-2 * t + 2, 3) / 2
 
+    def _ease_out(self, t: float, power: float = OPENING_EASING_POWER) -> float:
+        """Ease-out (decelerating) curve: fast start, slow end.
+
+        Uses 1 - (1 - t) ** power. power=3 is cubic, power=5 is quintic.
+        """
+        if t <= 0:
+            return 0.0
+        if t >= 1:
+            return 1.0
+        return 1.0 - pow(1.0 - t, power)
+
     def _apply_overlay_animation(self, clip, duration: float):
         """Smooth zoom-in-then-zoom-out + opacity on overlay clips."""
 
@@ -178,6 +195,42 @@ class VideoCompositor:
         clip = clip.with_effects([Resize(scale_anim)])
         clip = clip.transform(apply_opacity)
         return clip.with_position(("center", "center"))
+
+    def _apply_opening_animation(self, clip, duration: float = OPENING_ANIMATION_DURATION):
+        """Cold-open: ease-out zoom-out + temporal motion blur.
+
+        Starts at OPENING_ZOOM_START (e.g. 1.25) and decelerates to 1.0
+        over ``duration`` seconds. Motion blur is simulated by averaging
+        ``OPENING_BLUR_SAMPLES`` sub-frames across a shutter window
+        (``OPENING_SHUTTER_FRACTION`` of one output frame). The blur is
+        ``None``/1 when sampling fewer than 2 points (no motion, no blur).
+        """
+        if duration <= 0:
+            return clip
+        zoom_start = OPENING_ZOOM_START
+
+        def scale_anim(t: float) -> float:
+            progress = max(0.0, min(1.0, t / duration))
+            eased = self._ease_out(progress)
+            return zoom_start - (zoom_start - 1.0) * eased
+
+        samples = max(1, int(OPENING_BLUR_SAMPLES))
+        shutter = float(OPENING_SHUTTER_FRACTION)
+        frame_dt = 1.0 / float(VIDEO_FPS) if VIDEO_FPS else 1.0 / 24.0
+
+        def apply_motion_blur(get_frame, t: float):
+            base_frame = get_frame(t)
+            if samples < 2 or shutter <= 0:
+                return base_frame
+            window = shutter * frame_dt
+            accum = base_frame.astype(np.float32)
+            for i in range(1, samples):
+                sample_t = max(0.0, t - window * (i / (samples - 1)))
+                accum += get_frame(sample_t).astype(np.float32)
+            return np.clip(accum / samples, 0, 255).astype(np.uint8)
+
+        animated = clip.with_effects([Resize(scale_anim)])
+        return animated.transform(apply_motion_blur).with_position(("center", "center"))
 
     def _ensure_duration(
         self, clip: VideoFileClip, min_duration: float
@@ -559,6 +612,23 @@ class VideoCompositor:
                     all_clips.append(subtitle_composite)
 
         final_result = CompositeVideoClip(all_clips, size=(VIDEO_WIDTH, VIDEO_HEIGHT))
+
+        if (
+            OPENING_ANIMATION_ENABLED
+            and OPENING_ANIMATION_DURATION > 0
+            and target_duration > OPENING_ANIMATION_DURATION
+        ):
+            opening_section = final_result.subclipped(0, OPENING_ANIMATION_DURATION)
+            rest_section = final_result.subclipped(
+                OPENING_ANIMATION_DURATION, target_duration
+            )
+            opening_section = self._apply_opening_animation(
+                opening_section, OPENING_ANIMATION_DURATION
+            )
+            final_result = concatenate_videoclips(
+                [opening_section, rest_section], method="compose"
+            )
+
         final_result.audio = audio
         return final_result
 

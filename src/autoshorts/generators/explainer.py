@@ -30,6 +30,8 @@ from ..modules import (
     IMG_URL,
     MAX_ZOOM_VALUE,
     MODEL_IMAGE,
+    OPENING_ANIMATION_DURATION,
+    OPENING_ANIMATION_ENABLED,
     OUTPUT_DIR,
     SCENE_DURATION_SECONDS,
     START_FADE,
@@ -348,13 +350,17 @@ class ExplainerGenerator:
         log(f"{num_imgs} scenes x {dur_per_img}s = {total_video_dur:.1f}s")
 
         clips = []
+        compositor = VideoCompositor()
         for i, path in enumerate(img_paths):
             clip = (
                 ImageClip(path)
                 .with_duration(dur_per_img)
                 .resized(new_size=(1080, 1920))
             )
-            clip = self._apply_overlay_animation(clip, dur_per_img)
+            if i == 0 and OPENING_ANIMATION_ENABLED:
+                clip = compositor._apply_opening_animation(clip, OPENING_ANIMATION_DURATION)
+            else:
+                clip = self._apply_overlay_animation(clip, dur_per_img)
             if i > 0:
                 clip = clip.with_effects([vfx.CrossFadeIn(CROSSFADE_TIME)])
             if i == 0:
