@@ -18,6 +18,8 @@ def isolate_image_cache():
     """Patch IMAGE_CACHE_DIR to a unique temp dir per test to prevent cross-test pollution."""
     from unittest.mock import patch
 
+    import autoshorts.generators.explainer  # noqa: F401  (must be loaded before patch)
+
     cache_dir = Path(tempfile.mkdtemp())
     with patch("autoshorts.generators.explainer.IMAGE_CACHE_DIR", cache_dir):
         yield

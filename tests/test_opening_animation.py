@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, Mock
 
 import numpy as np
 
-import autoshorts.generators.explainer  # noqa: F401  (forces module load for conftest patch)
 from autoshorts.modules.video_compositor import VideoCompositor
 
 

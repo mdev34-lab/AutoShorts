@@ -71,9 +71,9 @@ from .config import (
     YOUTUBE_FORMAT,
     YOUTUBE_MAX_HEIGHT,
 )
-from .metadata import VideoMetadata
 from .image_searcher import ImageSearcher
 from .logging_system import Colors, log
+from .metadata import VideoMetadata
 from .script_generator import ScriptGenerator
 from .subtitle_system import SubtitleGenerator, SubtitleRenderer, SubtitleSystem
 from .tts_system import TTSSystem
