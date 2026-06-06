@@ -100,40 +100,48 @@ class TestOpeningAnimationMotionBlur:
         self.compositor._apply_opening_animation(mock_clip, duration)
         return mock_clip.transform.call_args[0][0]
 
-    def test_constant_frame_passes_through(self):
+    def test_constant_frame_kept_near_constant(self):
+        """A flat frame stays flat after the velocity-driven Gaussian blur."""
         callback = self._capture_transform_callback()
 
         def constant_frame(t):
             return np.full((100, 100, 3), 128, dtype=np.uint8)
 
-        out = callback(constant_frame, 0.5)
+        out = callback(constant_frame, 0.0)
         assert out.shape == (100, 100, 3)
         assert np.all(out == 128)
 
-    def test_blur_averages_subframes(self):
-        """When get_frame varies inside the shutter window, output is the mean."""
-        callback = self._capture_transform_callback(duration=2.0)
-
-        sample_log = []
-
-        def get_frame(t):
-            sample_log.append(round(t, 6))
-            return np.full((100, 100, 3), int(t * 100) % 256, dtype=np.uint8)
-
-        callback(get_frame, 1.0)
-
-        assert len(sample_log) >= 2
-        assert sample_log[0] == 1.0
-        for s in sample_log[1:]:
-            assert s < 1.0
-            assert s >= 0.0
-
-    def test_blur_output_is_uint8(self):
-        callback = self._capture_transform_callback()
+    def test_at_end_of_zoom_blur_is_negligible(self):
+        """At t=duration, velocity is ~0 so sigma is tiny — output is the source."""
+        callback = self._capture_transform_callback(duration=1.0)
 
         def get_frame(t):
             return np.full((100, 100, 3), 200, dtype=np.uint8)
 
-        out = callback(get_frame, 0.5)
+        out = callback(get_frame, 1.0)
         assert out.dtype == np.uint8
         assert np.all(out == 200)
+
+    def test_single_get_frame_call(self):
+        """Per-frame blur calls get_frame exactly once (no sub-frame sampling)."""
+        callback = self._capture_transform_callback(duration=2.0)
+
+        calls = []
+
+        def get_frame(t):
+            calls.append(t)
+            return np.full((100, 100, 3), 100, dtype=np.uint8)
+
+        callback(get_frame, 0.5)
+        assert len(calls) == 1
+        assert calls[0] == 0.5
+
+    def test_output_shape_matches_input_shape(self):
+        """Output has the same shape as the input — no broadcast errors."""
+        callback = self._capture_transform_callback()
+
+        def get_frame(t):
+            return np.full((100, 100, 3), 64, dtype=np.uint8)
+
+        out = callback(get_frame, 0.3)
+        assert out.shape == (100, 100, 3)

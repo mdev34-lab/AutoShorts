@@ -179,37 +179,50 @@ class VideoCompositor:
         return clip.with_position(("center", "center"))
 
     def _apply_opening_animation(self, clip, duration: float = OPENING_ANIMATION_DURATION):
-        """Cold-open: ease-out zoom-out + temporal motion blur.
+        """Cold-open: ease-out zoom-out + per-frame motion-blur-style blur.
 
         Starts at OPENING_ZOOM_START (e.g. 1.25) and decelerates to 1.0
-        over ``duration`` seconds. Motion blur is simulated by averaging
-        ``OPENING_BLUR_SAMPLES`` sub-frames across a shutter window
-        (``OPENING_SHUTTER_FRACTION`` of one output frame). The blur is
-        ``None``/1 when sampling fewer than 2 points (no motion, no blur).
+        over ``duration`` seconds. Blur is a per-frame Gaussian whose sigma
+        tracks the zoom velocity (high at start, ~0 at the end) — it reads
+        as decelerating motion blur without needing sub-frame sampling
+        (which would clash with the animated Resize's variable frame size).
+
+        The legacy ``OPENING_BLUR_SAMPLES`` and ``OPENING_SHUTTER_FRACTION``
+        env vars are still honored as a strength multiplier so existing
+        configs keep working.
         """
         if duration <= 0:
             return clip
         zoom_start = OPENING_ZOOM_START
+        samples = max(1, int(OPENING_BLUR_SAMPLES))
+        shutter = float(OPENING_SHUTTER_FRACTION)
+        max_sigma = max(0.0, float(samples) * shutter)
+
+        try:
+            from PIL import Image, ImageFilter
+
+            _pil_available = True
+        except ImportError:
+            _pil_available = False
 
         def scale_anim(t: float) -> float:
             progress = max(0.0, min(1.0, t / duration))
             eased = self._ease_out(progress)
             return zoom_start - (zoom_start - 1.0) * eased
 
-        samples = max(1, int(OPENING_BLUR_SAMPLES))
-        shutter = float(OPENING_SHUTTER_FRACTION)
-        frame_dt = 1.0 / float(VIDEO_FPS) if VIDEO_FPS else 1.0 / 24.0
-
         def apply_motion_blur(get_frame, t: float):
-            base_frame = get_frame(t)
-            if samples < 2 or shutter <= 0:
-                return base_frame
-            window = shutter * frame_dt
-            accum = base_frame.astype(np.float32)
-            for i in range(1, samples):
-                sample_t = max(0.0, t - window * (i / (samples - 1)))
-                accum += get_frame(sample_t).astype(np.float32)
-            return np.clip(accum / samples, 0, 255).astype(np.uint8)
+            frame = get_frame(t)
+            if not _pil_available or max_sigma <= 0:
+                return frame
+            progress = max(0.0, min(1.0, t / duration))
+            eased = self._ease_out(progress)
+            velocity = 1.0 - eased
+            sigma = velocity * max_sigma
+            if sigma < 0.1:
+                return frame
+            pil_img = Image.fromarray(frame)
+            blurred = pil_img.filter(ImageFilter.GaussianBlur(radius=sigma))
+            return np.array(blurred)
 
         animated = clip.with_effects([Resize(scale_anim)])
         return animated.transform(apply_motion_blur).with_position(("center", "center"))
