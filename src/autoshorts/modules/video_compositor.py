@@ -598,11 +598,11 @@ class VideoCompositor:
         if (
             OPENING_ANIMATION_ENABLED
             and OPENING_ANIMATION_DURATION > 0
-            and target_duration > OPENING_ANIMATION_DURATION
+            and final_result.duration > OPENING_ANIMATION_DURATION
         ):
             opening_section = final_result.subclipped(0, OPENING_ANIMATION_DURATION)
             rest_section = final_result.subclipped(
-                OPENING_ANIMATION_DURATION, target_duration
+                OPENING_ANIMATION_DURATION, final_result.duration
             )
             opening_section = self._apply_opening_animation(
                 opening_section, OPENING_ANIMATION_DURATION
