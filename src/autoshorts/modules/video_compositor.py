@@ -25,7 +25,7 @@ from moviepy import (
     VideoFileClip,
     concatenate_videoclips,
 )
-from moviepy.video.fx import FadeIn, MultiplyColor, Resize
+from moviepy.video.fx import FadeIn, MultiplyColor
 from moviepy.video.io.ffmpeg_reader import FFMPEG_VideoReader
 
 from .config import (
@@ -132,7 +132,22 @@ class VideoCompositor:
         return 1.0 - pow(1.0 - t, power)
 
     def _apply_overlay_animation(self, clip, duration: float):
-        """Smooth zoom-in-then-zoom-out + opacity on overlay clips."""
+        """Smooth zoom-in-then-zoom-out + opacity + motion blur on overlay clips.
+
+        Zoom is center-crop+resize (constant frame size), blur is a per-frame
+        PIL Gaussian whose sigma tracks the ease curve's slope (velocity).
+        Opacity is applied as a multiply in the same pass.
+        """
+
+        def _ease_slope(p: float) -> float:
+            """Normalized derivative [0,1] of ease_in_out_cubic at progress p ∈ [0,1]."""
+            if p <= 0.0:
+                return 0.0
+            if p >= 1.0:
+                return 0.0
+            if p < 0.5:
+                return 4.0 * p * p
+            return 4.0 * (1.0 - p) * (1.0 - p)
 
         def scale_anim(t: float) -> float:
             if duration <= 0:
@@ -168,15 +183,61 @@ class VideoCompositor:
                 out_progress = (progress - fade_out_start) / (1.0 - fade_out_start)
                 return max(1.0 - self._ease_in_out_cubic(out_progress), 0.0)
 
-        # MultiplyColor doesn't accept functions in MoviePy 2.x, use transform instead
-        def apply_opacity(get_frame, t):
-            frame = get_frame(t)
-            opacity = opacity_anim(t)
-            return np.minimum(255, frame * opacity).astype("uint8")
+        try:
+            from PIL import Image, ImageFilter
 
-        clip = clip.with_effects([Resize(scale_anim)])
-        clip = clip.transform(apply_opacity)
-        return clip.with_position(("center", "center"))
+            _pil = True
+        except ImportError:
+            _pil = False
+
+        samples = max(1, int(OPENING_BLUR_SAMPLES))
+        shutter = float(OPENING_SHUTTER_FRACTION)
+        max_sigma = max(0.0, float(samples) * shutter)
+
+        def apply_overlay(get_frame, t):
+            frame = get_frame(t)
+            scale = scale_anim(t)
+            opacity = opacity_anim(t)
+
+            # Zoom: center-crop + resize (constant frame size)
+            if scale > 1.001 and _pil:
+                h, w = frame.shape[:2]
+                crop_w = max(1, int(round(w / scale)))
+                crop_h = max(1, int(round(h / scale)))
+                x1 = (w - crop_w) // 2
+                y1 = (h - crop_h) // 2
+                cropped = frame[y1 : y1 + crop_h, x1 : x1 + crop_w]
+                frame = np.array(
+                    Image.fromarray(cropped).resize((w, h), Image.LANCZOS)
+                )
+
+            # Motion blur: velocity-driven Gaussian
+            if _pil and max_sigma > 0:
+                progress = t / duration if duration > 0 else 0.0
+                fade_in_end = 0.15
+                fade_out_start = 0.85
+                if progress < fade_in_end:
+                    velocity = _ease_slope(progress / fade_in_end)
+                elif progress < fade_out_start:
+                    velocity = 0.0
+                else:
+                    out_p = (progress - fade_out_start) / (1.0 - fade_out_start)
+                    velocity = _ease_slope(out_p)
+                sigma = velocity * max_sigma
+                if sigma >= 0.1:
+                    frame = np.array(
+                        Image.fromarray(frame).filter(
+                            ImageFilter.GaussianBlur(radius=sigma)
+                        )
+                    )
+
+            # Opacity
+            if opacity < 1.0 and opacity >= 0.0:
+                frame = np.minimum(255, frame * opacity).astype("uint8")
+
+            return frame
+
+        return clip.transform(apply_overlay).with_position(("center", "center"))
 
     def _apply_opening_animation(self, clip, duration: float = OPENING_ANIMATION_DURATION):
         """Cold-open: ease-out zoom-out + per-frame motion-blur-style blur.
