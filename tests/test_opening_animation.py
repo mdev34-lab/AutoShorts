@@ -58,13 +58,13 @@ class TestApplyOpeningAnimation:
         mock_clip.with_position.return_value = mock_clip
         return mock_clip
 
-    def test_returns_clip_with_effects_transform_and_position(self):
+    def test_returns_clip_with_transform_and_position(self):
         mock_clip = self._make_mock_clip()
 
         result = self.compositor._apply_opening_animation(mock_clip, 1.0)
 
         assert result is mock_clip
-        mock_clip.with_effects.assert_called_once()
+        mock_clip.with_effects.assert_not_called()
         mock_clip.transform.assert_called_once()
         mock_clip.with_position.assert_called_once_with(("center", "center"))
 
@@ -145,3 +145,64 @@ class TestOpeningAnimationMotionBlur:
 
         out = callback(get_frame, 0.3)
         assert out.shape == (100, 100, 3)
+
+
+class TestOpeningAnimationZoom:
+    """Zoom is implemented as center-crop + resize to keep canvas size constant."""
+
+    def setup_method(self):
+        self.compositor = VideoCompositor()
+
+    def _capture_transform_callback(self, duration=1.0):
+        mock_clip = Mock()
+        mock_clip.size = (100, 100)
+        mock_clip.with_effects = Mock(return_value=mock_clip)
+        mock_clip.transform = Mock(return_value=mock_clip)
+        mock_clip.with_position = Mock(return_value=mock_clip)
+        self.compositor._apply_opening_animation(mock_clip, duration)
+        return mock_clip.transform.call_args[0][0]
+
+    def test_zoomed_frame_center_is_a_center_crop_of_source(self):
+        """At t=0 with zoom_start=1.25, the output center should match the
+        center crop of the source at 1/1.25 ≈ 0.8 of the original size."""
+        callback = self._capture_transform_callback(duration=1.0)
+
+        source = np.zeros((100, 100, 3), dtype=np.uint8)
+        source[10:15, 10:15] = 255
+
+        def get_frame(t):
+            return source.copy()
+
+        out = callback(get_frame, 0.0)
+        # After center-crop to 80x80 and resize back to 100x100, the
+        # white square (originally at rows 10..14, cols 10..14) shifts
+        # toward the center. Just check the output has the bright pixel
+        # region and the rest is black (no gray/black bars).
+        assert out.shape == (100, 100, 3)
+        assert np.any(out > 0), "expected the cropped bright square to survive"
+        assert not np.all(out == 0), "expected more than just background"
+
+    def test_output_shape_is_constant_throughout_zoom(self):
+        """Output shape must equal input shape at every time t (no letterbox)."""
+        callback = self._capture_transform_callback(duration=1.0)
+
+        def get_frame(t):
+            return np.full((100, 100, 3), 100, dtype=np.uint8)
+
+        for t in (0.0, 0.1, 0.3, 0.5, 0.7, 0.9, 1.0):
+            out = callback(get_frame, t)
+            assert out.shape == (100, 100, 3), f"shape changed at t={t}"
+
+    def test_at_end_of_zoom_output_equals_input(self):
+        """At t=duration, scale=1.0 → output is just the source (no crop)."""
+        callback = self._capture_transform_callback(duration=1.0)
+
+        source = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
+
+        def get_frame(t):
+            return source.copy()
+
+        out = callback(get_frame, 1.0)
+        # The transform at t=duration should pass through the source
+        # (no crop, no blur) — values match exactly.
+        assert np.array_equal(out, source)

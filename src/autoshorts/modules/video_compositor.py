@@ -182,14 +182,21 @@ class VideoCompositor:
         """Cold-open: ease-out zoom-out + per-frame motion-blur-style blur.
 
         Starts at OPENING_ZOOM_START (e.g. 1.25) and decelerates to 1.0
-        over ``duration`` seconds. Blur is a per-frame Gaussian whose sigma
-        tracks the zoom velocity (high at start, ~0 at the end) — it reads
-        as decelerating motion blur without needing sub-frame sampling
-        (which would clash with the animated Resize's variable frame size).
+        over ``duration`` seconds.
+
+        The zoom is implemented as a center-crop + upscale in a single
+        ``transform`` callback, NOT via ``Resize(scale_anim)``. Animated
+        Resize produces frames of variable size which the writer then
+        letterboxes back to canvas size — inverting the visual (you'd see
+        zoom-out from 100% to <100% with black bezels). Keeping the
+        transform's output at canvas size avoids that entirely.
+
+        Blur is a per-frame PIL Gaussian whose sigma tracks the zoom
+        velocity (high at start, ~0 at the end) so it reads as
+        decelerating motion blur.
 
         The legacy ``OPENING_BLUR_SAMPLES`` and ``OPENING_SHUTTER_FRACTION``
-        env vars are still honored as a strength multiplier so existing
-        configs keep working.
+        env vars are still honored as a combined strength multiplier.
         """
         if duration <= 0:
             return clip
@@ -205,27 +212,40 @@ class VideoCompositor:
         except ImportError:
             _pil_available = False
 
-        def scale_anim(t: float) -> float:
-            progress = max(0.0, min(1.0, t / duration))
-            eased = self._ease_out(progress)
-            return zoom_start - (zoom_start - 1.0) * eased
-
-        def apply_motion_blur(get_frame, t: float):
+        def apply_zoom_and_blur(get_frame, t: float):
             frame = get_frame(t)
-            if not _pil_available or max_sigma <= 0:
-                return frame
             progress = max(0.0, min(1.0, t / duration))
             eased = self._ease_out(progress)
-            velocity = 1.0 - eased
-            sigma = velocity * max_sigma
-            if sigma < 0.1:
-                return frame
-            pil_img = Image.fromarray(frame)
-            blurred = pil_img.filter(ImageFilter.GaussianBlur(radius=sigma))
-            return np.array(blurred)
+            scale = zoom_start - (zoom_start - 1.0) * eased
 
-        animated = clip.with_effects([Resize(scale_anim)])
-        return animated.transform(apply_motion_blur).with_position(("center", "center"))
+            # Zoom: center-crop a (1/scale) fraction, then resize back to
+            # canvas size. Output frame stays at canvas size, so the
+            # writer never letterboxes (the root cause of the bezels).
+            if scale > 1.001 and _pil_available:
+                h, w = frame.shape[:2]
+                crop_w = max(1, int(round(w / scale)))
+                crop_h = max(1, int(round(h / scale)))
+                x1 = (w - crop_w) // 2
+                y1 = (h - crop_h) // 2
+                cropped = frame[y1 : y1 + crop_h, x1 : x1 + crop_w]
+                frame = np.array(
+                    Image.fromarray(cropped).resize((w, h), Image.LANCZOS)
+                )
+
+            # Motion blur: velocity-driven Gaussian, decays to 0 at end.
+            if _pil_available and max_sigma > 0:
+                velocity = 1.0 - eased
+                sigma = velocity * max_sigma
+                if sigma >= 0.1:
+                    frame = np.array(
+                        Image.fromarray(frame).filter(
+                            ImageFilter.GaussianBlur(radius=sigma)
+                        )
+                    )
+
+            return frame
+
+        return clip.transform(apply_zoom_and_blur).with_position(("center", "center"))
 
     def _ensure_duration(
         self, clip: VideoFileClip, min_duration: float
@@ -591,6 +611,7 @@ class VideoCompositor:
                     log(f"Error creating overlay: {e}", "ERROR")
                     continue
 
+        subtitle_composite = None
         if vtt_path and Path(vtt_path).exists():
             subs = self.subtitle_system.render_subtitles(
                 vtt_path, (VIDEO_WIDTH, VIDEO_HEIGHT)
@@ -612,17 +633,37 @@ class VideoCompositor:
             OPENING_ANIMATION_ENABLED
             and OPENING_ANIMATION_DURATION > 0
             and final_result.duration > OPENING_ANIMATION_DURATION
+            and image_paths
         ):
-            opening_section = final_result.subclipped(0, OPENING_ANIMATION_DURATION)
-            rest_section = final_result.subclipped(
-                OPENING_ANIMATION_DURATION, final_result.duration
-            )
-            opening_section = self._apply_opening_animation(
-                opening_section, OPENING_ANIMATION_DURATION
-            )
-            final_result = concatenate_videoclips(
-                [opening_section, rest_section], method="compose"
-            )
+            try:
+                first_image_path = image_paths[0]
+                opening_img = (
+                    ImageClip(first_image_path)
+                    .resized((VIDEO_WIDTH, VIDEO_HEIGHT))
+                    .with_duration(OPENING_ANIMATION_DURATION)
+                )
+                # Include subtitles inside the opening animation so they
+                # get zoomed and blurred along with the image.
+                opening_layers = [opening_img]
+                if subtitle_composite is not None:
+                    opening_subs = subtitle_composite.subclipped(
+                        0, OPENING_ANIMATION_DURATION
+                    )
+                    opening_layers.append(opening_subs)
+                opening_clip = CompositeVideoClip(
+                    opening_layers, size=(VIDEO_WIDTH, VIDEO_HEIGHT)
+                )
+                opening_clip = self._apply_opening_animation(
+                    opening_clip, OPENING_ANIMATION_DURATION
+                )
+                rest_section = final_result.subclipped(
+                    OPENING_ANIMATION_DURATION, final_result.duration
+                )
+                final_result = concatenate_videoclips(
+                    [opening_clip, rest_section], method="compose"
+                )
+            except Exception as e:
+                log(f"Opening animation skipped: {e}", "WARNING")
 
         final_result.audio = audio
         return final_result
