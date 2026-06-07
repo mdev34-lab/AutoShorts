@@ -24,16 +24,17 @@ class ScriptGenerator:
       Step 2 — search the web, then generate the final script grounded in results
     """
 
-    def __init__(self, web_search: bool = True):
+    def __init__(self, web_search: bool = True, custom_instructions: str | None = None):
         self.api_url = API_URL
         self.api_key = API_KEY
         self.model = MODEL_TEXT
         self.web_search = web_search
+        self.custom_instructions = custom_instructions
         self.searcher = WebSearcher() if web_search else None
         self.generated_title: str | None = None
 
     def _tone_instructions(self) -> str:
-        return (
+        base = (
             "TONE: Curiosity-driven, narrative, engaging. "
             "Write like a storyteller uncovering a fascinating truth \u2014 "
             "never like Wikipedia or a corporate press release.\n"
@@ -47,20 +48,11 @@ class ScriptGenerator:
             "FORBIDDEN: Hyperboles, exaggerated claims, 'designed by a god', "
             "'you won't believe', 'shocking truth' \u2014 these sound fake.\n"
         )
-        return (
-            "TONE: Curiosity-driven, narrative, engaging. "
-            "Write like a storyteller uncovering a fascinating truth \u2014 "
-            "never like Wikipedia or a corporate press release.\n"
-            "FIRST SENTENCE: Drop the viewer right into the action \u2014 "
-            "the goal, the controversy, the fact itself. "
-            "NO: 'Prepare-se', 'Voc\u00ea sabia', 'Uma pergunta', rhetorical questions. "
-            "YES: 'O Corinthians tomou uma virada hist\u00f3rica...'\n"
-            "STRUCTURE: Hook (the fact itself) \u2192 Context \u2192 Revelation \u2192 Strong conclusion\n"
-            "FORBIDDEN: Legal names (Ltda, S.A.), addresses, city/state abbreviations. "
-            "NO corporate language.\n"
-            "FORBIDDEN: Hyperboles, exaggerated claims, 'designed by a god', "
-            "'you won't believe', 'shocking truth' \u2014 these sound fake.\n"
-        )
+        if self.custom_instructions:
+            base += (
+                f"\nADDITIONAL USER INSTRUCTIONS: {self.custom_instructions}\n"
+            )
+        return base
 
     # ── Public API ──────────────────────────────────────────────────────
 

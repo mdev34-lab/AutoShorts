@@ -63,6 +63,7 @@ class ExplainerGenerator:
         no_images: bool = False,
         images_only: bool = False,
         image_source: str = "web",
+        custom_instructions: str | None = None,
         metadata: VideoMetadata | None = None,
     ):
         self.subject = subject
@@ -72,9 +73,13 @@ class ExplainerGenerator:
         self.no_images = no_images
         self.images_only = images_only
         self.image_source = image_source
+        self.custom_instructions = custom_instructions
         self.metadata = metadata or VideoMetadata()
 
-        self.script_generator = ScriptGenerator(web_search=web_search)
+        self.script_generator = ScriptGenerator(
+            web_search=web_search,
+            custom_instructions=custom_instructions,
+        )
         self.tts_system = TTSSystem()
         self.temp_dir = create_temp_dir()
 

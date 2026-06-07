@@ -36,6 +36,12 @@ def explainer_command(
         "--images",
         help="Image source: 'web' (DDGS search) or 'ai' (Pollinations)",
     ),
+    custom_instructions: str = typer.Option(
+        None,
+        "--custom-instructions",
+        "-c",
+        help="Custom instructions for the AI on how to craft the video alongside the theme",
+    ),
 ):
     if no_images and images_only:
         raise typer.BadParameter("--no-images and --images-only are mutually exclusive")
@@ -83,6 +89,7 @@ def explainer_command(
                     "image_source": images,
                     "no_web_search": no_web_search,
                     "batch": batch,
+                    "custom_instructions": custom_instructions,
                 }, ensure_ascii=False),
             )
 
@@ -94,6 +101,7 @@ def explainer_command(
                 no_images=no_images or images_only,
                 images_only=images_only,
                 image_source=images,
+                custom_instructions=custom_instructions,
                 metadata=metadata,
             )
             success = asyncio.run(gen.generate())
