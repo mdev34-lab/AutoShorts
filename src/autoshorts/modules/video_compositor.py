@@ -102,7 +102,7 @@ class VideoCompositor:
             "-c:v",
             "libx264",
             "-crf",
-            "23",
+            str(ENCODING_CRF),
             "-c:a",
             "copy",
             output_path,
@@ -208,7 +208,7 @@ class VideoCompositor:
                 y1 = (h - crop_h) // 2
                 cropped = frame[y1 : y1 + crop_h, x1 : x1 + crop_w]
                 frame = np.array(
-                    Image.fromarray(cropped).resize((w, h), Image.LANCZOS)
+                    Image.fromarray(cropped).resize((w, h), Image.Resampling.LANCZOS)
                 )
 
             # Motion blur: velocity-driven Gaussian
@@ -290,7 +290,7 @@ class VideoCompositor:
                 y1 = (h - crop_h) // 2
                 cropped = frame[y1 : y1 + crop_h, x1 : x1 + crop_w]
                 frame = np.array(
-                    Image.fromarray(cropped).resize((w, h), Image.LANCZOS)
+                    Image.fromarray(cropped).resize((w, h), Image.Resampling.LANCZOS)
                 )
 
             # Motion blur: velocity-driven Gaussian, decays to 0 at end.
@@ -388,7 +388,7 @@ class VideoCompositor:
             codec="libx264",
             fps=10,
             threads=2,
-            preset="ultrafast",
+            preset=ENCODING_PRESET,
             logger=None,
         )
         bg.close()

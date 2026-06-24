@@ -203,9 +203,9 @@ COLOR_TEXT = os.getenv("COLOR_TEXT", "#FFFFFF")
 COLOR_HIGHLIGHT = os.getenv("COLOR_HIGHLIGHT", "#FFFF00")
 COLOR_STROKE = os.getenv("COLOR_STROKE", "#000000")
 
-# Encoding Settings (use more threads for faster rendering)
-ENCODING_PRESET = os.getenv("ENCODING_PRESET", "fast")
-ENCODING_CRF = _get_env_int("ENCODING_CRF", 23)
+# Encoding Settings (quality-first defaults)
+ENCODING_PRESET = os.getenv("ENCODING_PRESET", "medium")
+ENCODING_CRF = _get_env_int("ENCODING_CRF", 18)
 ENCODING_THREADS = _get_env_int("ENCODING_THREADS", 8)
 
 # Experimental Mode Constants
