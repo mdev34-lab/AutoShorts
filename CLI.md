@@ -1,0 +1,54 @@
+# AutoShorts CLI Reference
+
+## Basic usage
+
+```
+autoshorts new explainer [SUBJECT] [OPTIONS]
+```
+
+## Options
+
+| Option | Description |
+|---|---|
+| `-o, --output DIR` | Output directory (default: `output`) |
+| `-y, --youtube-url URL` | Direct YouTube URL (skips web search for background) |
+| `--images-only` | AI-generated images only, no YouTube background |
+| `--no-images` | Skip image overlays entirely |
+| `--images {web,ai}` | Image source: `web` (DDGS) or `ai` (Pollinations). Default: `web` |
+| `--no-web-search` | Disable web search (model knowledge only) |
+| `--batch "topic1; topic2"` | Semicolon-separated subjects for batch mode |
+| `-c, --custom-instructions TEXT` | Extra instructions for the AI scriptwriter |
+| `--goodnight` | Shutdown computer after processing |
+
+## Examples
+
+```bash
+# Basic explainer
+autoshorts new explainer "Como a Lua se formou"
+
+# Images-only (no YouTube bg)
+autoshorts new explainer "Segredos do Titanic" --images-only
+
+# Custom instructions
+autoshorts new explainer "Fla-Flu" -c "Foco no recorde de público de 1963"
+
+# From a specific YouTube video
+autoshorts new explainer -y "https://youtube.com/watch?v=..."
+
+# Batch mode
+autoshorts new explainer --batch "Tópico 1; Tópico 2; Tópico 3"
+
+# With AI-generated images
+autoshorts new explainer "Fenômenos da natureza" --images ai
+```
+
+## Requirements
+
+- Python 3.10+
+- `.env` file with API keys (see `.env.example`)
+- ffmpeg installed and in PATH
+- `.venv` with dependencies: `pip install -e ".[dev]"`
+
+## Output
+
+Videos are saved as `.mp4` files (720x1280, 15fps, H.264) in the output directory with auto-generated names including the sanitized subject and timestamp.

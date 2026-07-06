@@ -45,6 +45,12 @@ from .config import (
     MIN_VIDEO_DURATION,
     MODEL_IMAGE,
     MODEL_TEXT,
+    OPENING_ANIMATION_DURATION,
+    OPENING_ANIMATION_ENABLED,
+    OPENING_BLUR_SAMPLES,
+    OPENING_EASING_POWER,
+    OPENING_SHUTTER_FRACTION,
+    OPENING_ZOOM_START,
     OUTPUT_DIR,
     SCENE_DURATION_SECONDS,
     START_FADE,
@@ -65,9 +71,9 @@ from .config import (
     YOUTUBE_FORMAT,
     YOUTUBE_MAX_HEIGHT,
 )
-from .metadata import VideoMetadata
 from .image_searcher import ImageSearcher
 from .logging_system import Colors, log
+from .metadata import VideoMetadata
 from .script_generator import ScriptGenerator
 from .subtitle_system import SubtitleGenerator, SubtitleRenderer, SubtitleSystem
 from .tts_system import TTSSystem
@@ -127,6 +133,12 @@ __all__ = [
     "MIN_VIDEO_DURATION",
     "MODEL_IMAGE",
     "MODEL_TEXT",
+    "OPENING_ANIMATION_DURATION",
+    "OPENING_ANIMATION_ENABLED",
+    "OPENING_BLUR_SAMPLES",
+    "OPENING_EASING_POWER",
+    "OPENING_SHUTTER_FRACTION",
+    "OPENING_ZOOM_START",
     "OUTPUT_DIR",
     "SCENE_DURATION_SECONDS",
     "START_FADE",

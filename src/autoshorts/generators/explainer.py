@@ -30,6 +30,8 @@ from ..modules import (
     IMG_URL,
     MAX_ZOOM_VALUE,
     MODEL_IMAGE,
+    OPENING_ANIMATION_DURATION,
+    OPENING_ANIMATION_ENABLED,
     OUTPUT_DIR,
     SCENE_DURATION_SECONDS,
     START_FADE,
@@ -61,6 +63,7 @@ class ExplainerGenerator:
         no_images: bool = False,
         images_only: bool = False,
         image_source: str = "web",
+        custom_instructions: str | None = None,
         metadata: VideoMetadata | None = None,
     ):
         self.subject = subject
@@ -70,9 +73,13 @@ class ExplainerGenerator:
         self.no_images = no_images
         self.images_only = images_only
         self.image_source = image_source
+        self.custom_instructions = custom_instructions
         self.metadata = metadata or VideoMetadata()
 
-        self.script_generator = ScriptGenerator(web_search=web_search)
+        self.script_generator = ScriptGenerator(
+            web_search=web_search,
+            custom_instructions=custom_instructions,
+        )
         self.tts_system = TTSSystem()
         self.temp_dir = create_temp_dir()
 
@@ -348,13 +355,17 @@ class ExplainerGenerator:
         log(f"{num_imgs} scenes x {dur_per_img}s = {total_video_dur:.1f}s")
 
         clips = []
+        compositor = VideoCompositor()
         for i, path in enumerate(img_paths):
             clip = (
                 ImageClip(path)
                 .with_duration(dur_per_img)
                 .resized(new_size=(1080, 1920))
             )
-            clip = self._apply_overlay_animation(clip, dur_per_img)
+            if i == 0 and OPENING_ANIMATION_ENABLED:
+                clip = compositor._apply_opening_animation(clip, OPENING_ANIMATION_DURATION)
+            else:
+                clip = self._apply_overlay_animation(clip, dur_per_img)
             if i > 0:
                 clip = clip.with_effects([vfx.CrossFadeIn(CROSSFADE_TIME)])
             if i == 0:

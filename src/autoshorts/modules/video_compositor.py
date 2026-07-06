@@ -25,40 +25,28 @@ from moviepy import (
     VideoFileClip,
     concatenate_videoclips,
 )
-from moviepy.video.fx import FadeIn, MultiplyColor, Resize
+from moviepy.video.fx import FadeIn, MultiplyColor
 from moviepy.video.io.ffmpeg_reader import FFMPEG_VideoReader
 
 from .config import (
     AUDIO_CODEC,
+    BG_MODE,
+    BG_SKIP_INTRO,
     BLUR_RADIUS,
-    BOTTOM_MARGIN,
-    COLOR_HIGHLIGHT,
-    COLOR_STROKE,
-    COLOR_TEXT,
-    CROSSFADE_TIME,
-    DEFAULT_FONT,
     ENCODING_CRF,
     ENCODING_PRESET,
     ENCODING_THREADS,
-    FALLBACK_FONTS,
-    FONT_SIZE,
     IMAGE_BOUNCE_INTERVAL,
-    IMAGE_FADE_IN_TIME,
-    IMAGE_FADE_OUT_TIME,
-    IMAGE_MIN_HEIGHT,
-    IMAGE_MIN_WIDTH,
     IMAGE_OVERLAY_DURATION,
     JUMPCUT_SEG_DUR,
-    LINE_SPACING,
-    MAX_CHARS_PER_LINE,
     MAX_ZOOM_FACTOR,
-    MAX_ZOOM_VALUE,
-    START_FADE,
-    STROKE_WIDTH,
-    SUBTITLE_MODE,
-    SUBTITLE_START_Y_RATIO,
-    TARGET_IMAGE_HEIGHT,
-    TARGET_IMAGE_WIDTH,
+    OPENING_ANIMATION_DURATION,
+    OPENING_ANIMATION_ENABLED,
+    OPENING_BLUR_SAMPLES,
+    OPENING_EASING_POWER,
+    OPENING_SHUTTER_FRACTION,
+    OPENING_ZOOM_START,
+    START_WITH_IMAGE,
     VIDEO_CODEC,
     VIDEO_FPS,
     VIDEO_HEIGHT,
@@ -114,7 +102,7 @@ class VideoCompositor:
             "-c:v",
             "libx264",
             "-crf",
-            "23",
+            str(ENCODING_CRF),
             "-c:a",
             "copy",
             output_path,
@@ -132,8 +120,34 @@ class VideoCompositor:
             return 4 * t * t * t
         return 1 - pow(-2 * t + 2, 3) / 2
 
+    def _ease_out(self, t: float, power: float = OPENING_EASING_POWER) -> float:
+        """Ease-out (decelerating) curve: fast start, slow end.
+
+        Uses 1 - (1 - t) ** power. power=3 is cubic, power=5 is quintic.
+        """
+        if t <= 0:
+            return 0.0
+        if t >= 1:
+            return 1.0
+        return 1.0 - pow(1.0 - t, power)
+
     def _apply_overlay_animation(self, clip, duration: float):
-        """Smooth zoom-in-then-zoom-out + opacity on overlay clips."""
+        """Smooth zoom-in-then-zoom-out + opacity + motion blur on overlay clips.
+
+        Zoom is center-crop+resize (constant frame size), blur is a per-frame
+        PIL Gaussian whose sigma tracks the ease curve's slope (velocity).
+        Opacity is applied as a multiply in the same pass.
+        """
+
+        def _ease_slope(p: float) -> float:
+            """Normalized derivative [0,1] of ease_in_out_cubic at progress p ∈ [0,1]."""
+            if p <= 0.0:
+                return 0.0
+            if p >= 1.0:
+                return 0.0
+            if p < 0.5:
+                return 4.0 * p * p
+            return 4.0 * (1.0 - p) * (1.0 - p)
 
         def scale_anim(t: float) -> float:
             if duration <= 0:
@@ -169,15 +183,130 @@ class VideoCompositor:
                 out_progress = (progress - fade_out_start) / (1.0 - fade_out_start)
                 return max(1.0 - self._ease_in_out_cubic(out_progress), 0.0)
 
-        # MultiplyColor doesn't accept functions in MoviePy 2.x, use transform instead
-        def apply_opacity(get_frame, t):
-            frame = get_frame(t)
-            opacity = opacity_anim(t)
-            return np.minimum(255, frame * opacity).astype("uint8")
+        try:
+            from PIL import Image, ImageFilter
 
-        clip = clip.with_effects([Resize(scale_anim)])
-        clip = clip.transform(apply_opacity)
-        return clip.with_position(("center", "center"))
+            _pil = True
+        except ImportError:
+            _pil = False
+
+        samples = max(1, int(OPENING_BLUR_SAMPLES))
+        shutter = float(OPENING_SHUTTER_FRACTION)
+        max_sigma = max(0.0, float(samples) * shutter)
+
+        def apply_overlay(get_frame, t):
+            frame = get_frame(t)
+            scale = scale_anim(t)
+            opacity = opacity_anim(t)
+
+            # Zoom: center-crop + resize (constant frame size)
+            if scale > 1.001 and _pil:
+                h, w = frame.shape[:2]
+                crop_w = max(1, int(round(w / scale)))
+                crop_h = max(1, int(round(h / scale)))
+                x1 = (w - crop_w) // 2
+                y1 = (h - crop_h) // 2
+                cropped = frame[y1 : y1 + crop_h, x1 : x1 + crop_w]
+                frame = np.array(
+                    Image.fromarray(cropped).resize((w, h), Image.Resampling.LANCZOS)
+                )
+
+            # Motion blur: velocity-driven Gaussian
+            if _pil and max_sigma > 0:
+                progress = t / duration if duration > 0 else 0.0
+                fade_in_end = 0.15
+                fade_out_start = 0.85
+                if progress < fade_in_end:
+                    velocity = _ease_slope(progress / fade_in_end)
+                elif progress < fade_out_start:
+                    velocity = 0.0
+                else:
+                    out_p = (progress - fade_out_start) / (1.0 - fade_out_start)
+                    velocity = _ease_slope(out_p)
+                sigma = velocity * max_sigma
+                if sigma >= 0.1:
+                    frame = np.array(
+                        Image.fromarray(frame).filter(
+                            ImageFilter.GaussianBlur(radius=sigma)
+                        )
+                    )
+
+            # Opacity
+            if opacity < 1.0 and opacity >= 0.0:
+                frame = np.minimum(255, frame * opacity).astype("uint8")
+
+            return frame
+
+        return clip.transform(apply_overlay).with_position(("center", "center"))
+
+    def _apply_opening_animation(self, clip, duration: float = OPENING_ANIMATION_DURATION):
+        """Cold-open: ease-out zoom-out + per-frame motion-blur-style blur.
+
+        Starts at OPENING_ZOOM_START (e.g. 1.25) and decelerates to 1.0
+        over ``duration`` seconds.
+
+        The zoom is implemented as a center-crop + upscale in a single
+        ``transform`` callback, NOT via ``Resize(scale_anim)``. Animated
+        Resize produces frames of variable size which the writer then
+        letterboxes back to canvas size — inverting the visual (you'd see
+        zoom-out from 100% to <100% with black bezels). Keeping the
+        transform's output at canvas size avoids that entirely.
+
+        Blur is a per-frame PIL Gaussian whose sigma tracks the zoom
+        velocity (high at start, ~0 at the end) so it reads as
+        decelerating motion blur.
+
+        The legacy ``OPENING_BLUR_SAMPLES`` and ``OPENING_SHUTTER_FRACTION``
+        env vars are still honored as a combined strength multiplier.
+        """
+        if duration <= 0:
+            return clip
+        zoom_start = OPENING_ZOOM_START
+        samples = max(1, int(OPENING_BLUR_SAMPLES))
+        shutter = float(OPENING_SHUTTER_FRACTION)
+        max_sigma = max(0.0, float(samples) * shutter)
+
+        try:
+            from PIL import Image, ImageFilter
+
+            _pil_available = True
+        except ImportError:
+            _pil_available = False
+
+        def apply_zoom_and_blur(get_frame, t: float):
+            frame = get_frame(t)
+            progress = max(0.0, min(1.0, t / duration))
+            eased = self._ease_out(progress)
+            scale = zoom_start - (zoom_start - 1.0) * eased
+
+            # Zoom: center-crop a (1/scale) fraction, then resize back to
+            # canvas size. Output frame stays at canvas size, so the
+            # writer never letterboxes (the root cause of the bezels).
+            if scale > 1.001 and _pil_available:
+                h, w = frame.shape[:2]
+                crop_w = max(1, int(round(w / scale)))
+                crop_h = max(1, int(round(h / scale)))
+                x1 = (w - crop_w) // 2
+                y1 = (h - crop_h) // 2
+                cropped = frame[y1 : y1 + crop_h, x1 : x1 + crop_w]
+                frame = np.array(
+                    Image.fromarray(cropped).resize((w, h), Image.Resampling.LANCZOS)
+                )
+
+            # Motion blur: velocity-driven Gaussian, decays to 0 at end.
+            if _pil_available and max_sigma > 0:
+                velocity = 1.0 - eased
+                sigma = velocity * max_sigma
+                if sigma >= 0.1:
+                    frame = np.array(
+                        Image.fromarray(frame).filter(
+                            ImageFilter.GaussianBlur(radius=sigma)
+                        )
+                    )
+
+            return frame
+
+        return clip.transform(apply_zoom_and_blur).with_position(("center", "center"))
 
     def _ensure_duration(
         self, clip: VideoFileClip, min_duration: float
@@ -259,7 +388,7 @@ class VideoCompositor:
             codec="libx264",
             fps=10,
             threads=2,
-            preset="ultrafast",
+            preset=ENCODING_PRESET,
             logger=None,
         )
         bg.close()
@@ -543,6 +672,7 @@ class VideoCompositor:
                     log(f"Error creating overlay: {e}", "ERROR")
                     continue
 
+        subtitle_composite = None
         if vtt_path and Path(vtt_path).exists():
             subs = self.subtitle_system.render_subtitles(
                 vtt_path, (VIDEO_WIDTH, VIDEO_HEIGHT)
@@ -559,6 +689,43 @@ class VideoCompositor:
                     all_clips.append(subtitle_composite)
 
         final_result = CompositeVideoClip(all_clips, size=(VIDEO_WIDTH, VIDEO_HEIGHT))
+
+        if (
+            OPENING_ANIMATION_ENABLED
+            and OPENING_ANIMATION_DURATION > 0
+            and final_result.duration > OPENING_ANIMATION_DURATION
+            and image_paths
+        ):
+            try:
+                first_image_path = image_paths[0]
+                opening_img = (
+                    ImageClip(first_image_path)
+                    .resized((VIDEO_WIDTH, VIDEO_HEIGHT))
+                    .with_duration(OPENING_ANIMATION_DURATION)
+                )
+                # Include subtitles inside the opening animation so they
+                # get zoomed and blurred along with the image.
+                opening_layers = [opening_img]
+                if subtitle_composite is not None:
+                    opening_subs = subtitle_composite.subclipped(
+                        0, OPENING_ANIMATION_DURATION
+                    )
+                    opening_layers.append(opening_subs)
+                opening_clip = CompositeVideoClip(
+                    opening_layers, size=(VIDEO_WIDTH, VIDEO_HEIGHT)
+                )
+                opening_clip = self._apply_opening_animation(
+                    opening_clip, OPENING_ANIMATION_DURATION
+                )
+                rest_section = final_result.subclipped(
+                    OPENING_ANIMATION_DURATION, final_result.duration
+                )
+                final_result = concatenate_videoclips(
+                    [opening_clip, rest_section], method="compose"
+                )
+            except Exception as e:
+                log(f"Opening animation skipped: {e}", "WARNING")
+
         final_result.audio = audio
         return final_result
 

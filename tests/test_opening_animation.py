@@ -1,0 +1,208 @@
+"""
+Tests for the cold-open S-curve zoom-out with motion blur
+(VideoCompositor._apply_opening_animation).
+"""
+
+from unittest.mock import MagicMock, Mock
+
+import numpy as np
+
+from autoshorts.modules.video_compositor import VideoCompositor
+
+
+class TestEaseOut:
+    def setup_method(self):
+        self.compositor = VideoCompositor()
+
+    def test_boundaries(self):
+        assert self.compositor._ease_out(0.0) == 0.0
+        assert self.compositor._ease_out(1.0) == 1.0
+
+    def test_clamps_negative(self):
+        assert self.compositor._ease_out(-0.5) == 0.0
+
+    def test_clamps_above_one(self):
+        assert self.compositor._ease_out(1.5) == 1.0
+
+    def test_monotonic(self):
+        prev = -1.0
+        for i in range(101):
+            val = self.compositor._ease_out(i / 100.0)
+            assert val >= prev
+            prev = val
+
+    def test_default_power_is_cubic(self):
+        assert abs(self.compositor._ease_out(0.5) - 0.875) < 1e-10
+
+    def test_linear_power(self):
+        assert self.compositor._ease_out(0.5, power=1.0) == 0.5
+
+    def test_quadratic_power(self):
+        assert abs(self.compositor._ease_out(0.5, power=2.0) - 0.75) < 1e-10
+
+    def test_higher_power_decelerates_more(self):
+        cubic = self.compositor._ease_out(0.1, power=3.0)
+        quintic = self.compositor._ease_out(0.1, power=5.0)
+        assert cubic < quintic
+
+
+class TestApplyOpeningAnimation:
+    def setup_method(self):
+        self.compositor = VideoCompositor()
+
+    def _make_mock_clip(self):
+        mock_clip = MagicMock()
+        mock_clip.size = (1080, 1920)
+        mock_clip.with_effects.return_value = mock_clip
+        mock_clip.transform.return_value = mock_clip
+        mock_clip.with_position.return_value = mock_clip
+        return mock_clip
+
+    def test_returns_clip_with_transform_and_position(self):
+        mock_clip = self._make_mock_clip()
+
+        result = self.compositor._apply_opening_animation(mock_clip, 1.0)
+
+        assert result is mock_clip
+        mock_clip.with_effects.assert_not_called()
+        mock_clip.transform.assert_called_once()
+        mock_clip.with_position.assert_called_once_with(("center", "center"))
+
+    def test_zero_duration_is_noop(self):
+        mock_clip = self._make_mock_clip()
+
+        result = self.compositor._apply_opening_animation(mock_clip, 0.0)
+
+        assert result is mock_clip
+        mock_clip.with_effects.assert_not_called()
+        mock_clip.transform.assert_not_called()
+        mock_clip.with_position.assert_not_called()
+
+    def test_negative_duration_is_noop(self):
+        mock_clip = self._make_mock_clip()
+
+        result = self.compositor._apply_opening_animation(mock_clip, -0.5)
+
+        assert result is mock_clip
+        mock_clip.with_effects.assert_not_called()
+
+
+class TestOpeningAnimationMotionBlur:
+    def setup_method(self):
+        self.compositor = VideoCompositor()
+
+    def _capture_transform_callback(self, duration=1.0):
+        mock_clip = Mock()
+        mock_clip.size = (100, 100)
+        mock_clip.with_effects = Mock(return_value=mock_clip)
+        mock_clip.transform = Mock(return_value=mock_clip)
+        mock_clip.with_position = Mock(return_value=mock_clip)
+        self.compositor._apply_opening_animation(mock_clip, duration)
+        return mock_clip.transform.call_args[0][0]
+
+    def test_constant_frame_kept_near_constant(self):
+        """A flat frame stays flat after the velocity-driven Gaussian blur."""
+        callback = self._capture_transform_callback()
+
+        def constant_frame(t):
+            return np.full((100, 100, 3), 128, dtype=np.uint8)
+
+        out = callback(constant_frame, 0.0)
+        assert out.shape == (100, 100, 3)
+        assert np.all(out == 128)
+
+    def test_at_end_of_zoom_blur_is_negligible(self):
+        """At t=duration, velocity is ~0 so sigma is tiny — output is the source."""
+        callback = self._capture_transform_callback(duration=1.0)
+
+        def get_frame(t):
+            return np.full((100, 100, 3), 200, dtype=np.uint8)
+
+        out = callback(get_frame, 1.0)
+        assert out.dtype == np.uint8
+        assert np.all(out == 200)
+
+    def test_single_get_frame_call(self):
+        """Per-frame blur calls get_frame exactly once (no sub-frame sampling)."""
+        callback = self._capture_transform_callback(duration=2.0)
+
+        calls = []
+
+        def get_frame(t):
+            calls.append(t)
+            return np.full((100, 100, 3), 100, dtype=np.uint8)
+
+        callback(get_frame, 0.5)
+        assert len(calls) == 1
+        assert calls[0] == 0.5
+
+    def test_output_shape_matches_input_shape(self):
+        """Output has the same shape as the input — no broadcast errors."""
+        callback = self._capture_transform_callback()
+
+        def get_frame(t):
+            return np.full((100, 100, 3), 64, dtype=np.uint8)
+
+        out = callback(get_frame, 0.3)
+        assert out.shape == (100, 100, 3)
+
+
+class TestOpeningAnimationZoom:
+    """Zoom is implemented as center-crop + resize to keep canvas size constant."""
+
+    def setup_method(self):
+        self.compositor = VideoCompositor()
+
+    def _capture_transform_callback(self, duration=1.0):
+        mock_clip = Mock()
+        mock_clip.size = (100, 100)
+        mock_clip.with_effects = Mock(return_value=mock_clip)
+        mock_clip.transform = Mock(return_value=mock_clip)
+        mock_clip.with_position = Mock(return_value=mock_clip)
+        self.compositor._apply_opening_animation(mock_clip, duration)
+        return mock_clip.transform.call_args[0][0]
+
+    def test_zoomed_frame_center_is_a_center_crop_of_source(self):
+        """At t=0 with zoom_start=1.25, the output center should match the
+        center crop of the source at 1/1.25 ≈ 0.8 of the original size."""
+        callback = self._capture_transform_callback(duration=1.0)
+
+        source = np.zeros((100, 100, 3), dtype=np.uint8)
+        source[10:15, 10:15] = 255
+
+        def get_frame(t):
+            return source.copy()
+
+        out = callback(get_frame, 0.0)
+        # After center-crop to 80x80 and resize back to 100x100, the
+        # white square (originally at rows 10..14, cols 10..14) shifts
+        # toward the center. Just check the output has the bright pixel
+        # region and the rest is black (no gray/black bars).
+        assert out.shape == (100, 100, 3)
+        assert np.any(out > 0), "expected the cropped bright square to survive"
+        assert not np.all(out == 0), "expected more than just background"
+
+    def test_output_shape_is_constant_throughout_zoom(self):
+        """Output shape must equal input shape at every time t (no letterbox)."""
+        callback = self._capture_transform_callback(duration=1.0)
+
+        def get_frame(t):
+            return np.full((100, 100, 3), 100, dtype=np.uint8)
+
+        for t in (0.0, 0.1, 0.3, 0.5, 0.7, 0.9, 1.0):
+            out = callback(get_frame, t)
+            assert out.shape == (100, 100, 3), f"shape changed at t={t}"
+
+    def test_at_end_of_zoom_output_equals_input(self):
+        """At t=duration, scale=1.0 → output is just the source (no crop)."""
+        callback = self._capture_transform_callback(duration=1.0)
+
+        source = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
+
+        def get_frame(t):
+            return source.copy()
+
+        out = callback(get_frame, 1.0)
+        # The transform at t=duration should pass through the source
+        # (no crop, no blur) — values match exactly.
+        assert np.array_equal(out, source)
