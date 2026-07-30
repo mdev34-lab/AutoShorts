@@ -6,6 +6,7 @@ import requests  # type: ignore[import-untyped]
 
 from .config import (
     API_KEY,
+    API_TIMEOUT_IMAGE,
     API_TIMEOUT_TEXT,
     API_URL,
     MODEL_TEXT,
@@ -554,7 +555,7 @@ class ScriptGenerator:
                     self.api_url,
                     headers=headers,
                     json=payload,
-                    timeout=API_TIMEOUT_TEXT,
+                    timeout=API_TIMEOUT_IMAGE,
                 )
                 response.raise_for_status()
                 content = response.json()["choices"][0]["message"]["content"]
