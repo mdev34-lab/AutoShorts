@@ -1,0 +1,2 @@
+[console_scripts]
+autoshorts = autoshorts.main:main

@@ -7,7 +7,7 @@ from pathlib import Path
 import typer
 
 from ...generators import VIDEO_TYPES
-from ...modules import VideoMetadata, log, shutdown_computer
+from ...modules import HookStyle, VideoMetadata, log, shutdown_computer
 from ..new import new_app
 
 
@@ -41,6 +41,12 @@ def explainer_command(
         "--custom-instructions",
         "-c",
         help="Custom instructions for the AI on how to craft the video alongside the theme",
+    ),
+    hook_style: HookStyle = typer.Option(
+        HookStyle.DEFAULT,
+        "--hook-style",
+        "-hs",
+        help="Hook style for script generation (default, curiosity, counter, controversy, challenge, reveal, story)",
     ),
 ):
     if no_images and images_only:
@@ -103,6 +109,7 @@ def explainer_command(
                 image_source=images,
                 custom_instructions=custom_instructions,
                 metadata=metadata,
+                hook_style=hook_style,
             )
             success = asyncio.run(gen.generate())
             if success:

@@ -5,6 +5,7 @@ AI-powered tool for generating YouTube Shorts / TikTok videos with script genera
 ## Features
 
 - **AI Script Generation** — curiosity-driven scripts in Brazilian Portuguese via Pollinations AI with fact verification and hallucination guards
+- **Hook Engine** — 7 proven hook styles (curiosity, counter-narrative, controversy, challenge, reveal, story) based on copywriting frameworks
 - **Web-Grounded Scripts** — automatic web search generates independent queries, grounds the script in real sources, then cross-checks every claim
 - **Title Validation** — auto-validates hashtag count (3+), length (≤ 100 chars), and lowercases tags
 - **AI Image Generation** — background images via Pollinations AI or **real web images** via DuckDuckGo search (default), with NSFW domain/keyword filter
@@ -61,6 +62,9 @@ autoshorts new explainer "oceanography" --images ai
 # Script tone: 'corporate' (neutral, factual) or 'opinionated' (curiosity-driven, narrative)
 autoshorts new explainer "bitcoin" --tone corporate
 
+# Hook style: choose from 7 proven hook styles
+autoshorts new explainer "Corinthians 2012 Libertadores" --hook-style controversy
+
 # Disable web search (uses model knowledge only)
 autoshorts new explainer "neural networks" --no-web-search
 
@@ -91,6 +95,56 @@ VIDEO_WIDTH=1080
 VIDEO_HEIGHT=1920
 VIDEO_FPS=24
 ```
+
+## Hook Styles
+
+AutoShorts supports multiple hook styles to optimize script engagement:
+
+- **default** — Original curiosity-driven hook (backward compatible)
+- **curiosity** — Creates information asymmetry (viewer knows something is important but not what)
+- **counter** — Challenges common knowledge and assumptions
+- **controversy** — Takes a strong stance that demands engagement
+- **challenge** — Direct challenge to viewer's knowledge
+- **reveal** — Promises a shocking fact upfront
+- **story** — Opens a narrative arc with character and conflict
+
+### Usage Examples
+
+```bash
+# Curiosity gap (works well for history/facts)
+autoshorts new explainer "Pelé 1000 goals" --hook-style curiosity
+
+# Counter-narrative (works well for debates)
+autoshorts new explainer "Neymar vs Ronaldo" --hook-style counter
+
+# Controversy (works well for opinions)
+autoshorts new explainer "VAR no futebol brasileiro" --hook-style controversy
+
+# Challenge (works well for trivia/facts)
+autoshorts new explainer "Primeiro gol do Flamengo" --hook-style challenge
+
+# Reveal (works well for secrets/revelations)
+autoshorts new explainer "Segredos da Seleção de 70" --hook-style reveal
+
+# Story (works well for narratives)
+autoshorts new explainer "Zico e o Flamengo dos anos 80" --hook-style story
+```
+
+### Hook Templates
+
+Each hook style uses proven copywriting frameworks:
+
+**Curiosity Gap**: "Em 1950, o Uruguai venceu o Brasil na final da Copa — e ninguém esperava que um estádio inteiro chorasse."
+
+**Counter-Narrative**: "Você acha que conhece a história do Fla-Flu. Mas a história real é completamente diferente."
+
+**Controversy**: "Vou dizer algo impopular: o Corinthians é o time mais azão do Brasil. E posso provar."
+
+**Challenge**: "Aposto que você não sabe quem foi o primeiro estrangeiro a jogar no Brasil. Duvido. Vou te provar."
+
+**Reveal**: "O Flamengo tinha um segredo em 81. Só que esse segredo não era o que todo mundo pensava."
+
+**Story**: "Tudo começou quando Zico decidiu voltar ao Flamengo em 85. Ninguém imaginava o que viria depois."
 
 ## Project Structure
 

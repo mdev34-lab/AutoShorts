@@ -11,6 +11,7 @@ from .config import (
     API_URL,
     MODEL_TEXT,
 )
+from .hook_engine import HookEngine, HookStyle
 from .logging_system import log
 from .web_search import WebSearcher
 
@@ -25,12 +26,14 @@ class ScriptGenerator:
       Step 2 — search the web, then generate the final script grounded in results
     """
 
-    def __init__(self, web_search: bool = True, custom_instructions: str | None = None):
+    def __init__(self, web_search: bool = True, custom_instructions: str | None = None, hook_style: HookStyle = HookStyle.DEFAULT):
         self.api_url = API_URL
         self.api_key = API_KEY
         self.model = MODEL_TEXT
         self.web_search = web_search
         self.custom_instructions = custom_instructions
+        self.hook_style = hook_style
+        self.hook_engine = HookEngine()
         self.searcher = WebSearcher() if web_search else None
         self.generated_title: str | None = None
 
@@ -49,6 +52,10 @@ class ScriptGenerator:
             "FORBIDDEN: Hyperboles, exaggerated claims, 'designed by a god', "
             "'you won't believe', 'shocking truth' \u2014 these sound fake.\n"
         )
+        
+        # Add hook-specific instructions
+        hook_instructions = self.hook_engine.get_tone_instructions(self.hook_style)
+        base += hook_instructions
         if self.custom_instructions:
             base += (
                 f"\nADDITIONAL USER INSTRUCTIONS: {self.custom_instructions}\n"

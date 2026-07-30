@@ -1,0 +1,263 @@
+Metadata-Version: 2.4
+Name: autoshorts
+Version: 1.0.0
+Summary: Automated Viral Video Generator
+Author: AutoShorts Team
+License: MIT
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: typer[all]>=0.9.0
+Requires-Dist: moviepy>=1.0.3
+Requires-Dist: edge-tts>=6.1.0
+Requires-Dist: requests>=2.28.0
+Requires-Dist: yt-dlp>=2023.1.0
+Requires-Dist: ddgs>=9.14.2
+Requires-Dist: webvtt-py>=0.4.6
+Requires-Dist: python-dotenv>=1.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+Requires-Dist: black>=22.0.0; extra == "dev"
+Requires-Dist: ruff>=0.0.200; extra == "dev"
+Requires-Dist: mypy>=1.0.0; extra == "dev"
+Dynamic: license-file
+
+# AutoShorts — Automated Short-Form Video Generator
+
+AI-powered tool for generating YouTube Shorts / TikTok videos with script generation, text-to-speech, subtitle rendering, and video composition.
+
+## Features
+
+- **AI Script Generation** — curiosity-driven scripts in Brazilian Portuguese via Pollinations AI with fact verification and hallucination guards
+- **Hook Engine** — 7 proven hook styles (curiosity, counter-narrative, controversy, challenge, reveal, story) based on copywriting frameworks
+- **Web-Grounded Scripts** — automatic web search generates independent queries, grounds the script in real sources, then cross-checks every claim
+- **Title Validation** — auto-validates hashtag count (3+), length (≤ 100 chars), and lowercases tags
+- **AI Image Generation** — background images via Pollinations AI or **real web images** via DuckDuckGo search (default), with NSFW domain/keyword filter
+- **Text-to-Speech** — natural audio via Edge TTS
+- **Subtitle System** — VTT generation + word-level highlight rendering
+- **Video Composition** — blurred YouTube background or AI/web images with smooth overlay animation
+- **YouTube Integration** — download any video as background footage
+- **Two pipelines**: normal (YouTube bg + optional image overlays) and images-only (AI/web images + overlay animation, no YouTube bg)
+- **Typer CLI** — nested subcommands, auto-generated `--help`, shell completion
+- **Batch Processing** — semicolon-separated subjects for multi-video runs
+
+## Installation
+
+### Prerequisites
+- Python 3.10+
+- [uv](https://docs.astral.sh/uv/) (recommended) or pip
+
+### Steps
+```bash
+git clone https://github.com/yourusername/AutoShorts.git
+cd AutoShorts
+
+uv venv
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
+
+uv pip install -e ".[dev]"
+# or: pip install -e ".[dev]"
+```
+
+## Quick Start
+
+```bash
+# See available commands
+autoshorts --help
+
+# Generate an explainer video from a topic (web search + web images by default)
+autoshorts new explainer "artificial intelligence"
+
+# AI images only (no YouTube background)
+autoshorts new explainer "space exploration" --images-only
+
+# Use a YouTube video as background footage
+autoshorts new explainer --youtube-url "https://youtube.com/watch?v=VIDEO_ID"
+
+# Skip image overlays (blurred bg only)
+autoshorts new explainer "climate change" --no-images
+
+# Batch mode with semicolon-separated subjects
+autoshorts new explainer --batch "robotics; quantum computing; neural networks"
+
+# Image source: 'ai' uses Pollinations (default is 'web' via DDGS)
+autoshorts new explainer "oceanography" --images ai
+
+# Script tone: 'corporate' (neutral, factual) or 'opinionated' (curiosity-driven, narrative)
+autoshorts new explainer "bitcoin" --tone corporate
+
+# Hook style: choose from 7 proven hook styles
+autoshorts new explainer "Corinthians 2012 Libertadores" --hook-style controversy
+
+# Disable web search (uses model knowledge only)
+autoshorts new explainer "neural networks" --no-web-search
+
+# Auto-shutdown after completion
+autoshorts new explainer "future technology" --goodnight
+
+# Get help for any command
+autoshorts help
+autoshorts help new
+autoshorts help new explainer
+```
+
+## Configuration
+
+Copy `.env.example` to `.env` and edit:
+
+```env
+API_KEY=your_pollinations_api_key_here
+API_URL=https://gen.pollinations.ai/v1/chat/completions
+IMG_URL=https://gen.pollinations.ai/image/
+MODEL_TEXT=nova-fast
+MODEL_IMAGE=zimage
+VOICE=pt-BR-AntonioNeural
+TTS_RATE=+20%
+OUTPUT_DIR=output
+DEFAULT_FONT=fonts/BebasNeue-Regular.ttf
+VIDEO_WIDTH=1080
+VIDEO_HEIGHT=1920
+VIDEO_FPS=24
+```
+
+## Hook Styles
+
+AutoShorts supports multiple hook styles to optimize script engagement:
+
+- **default** — Original curiosity-driven hook (backward compatible)
+- **curiosity** — Creates information asymmetry (viewer knows something is important but not what)
+- **counter** — Challenges common knowledge and assumptions
+- **controversy** — Takes a strong stance that demands engagement
+- **challenge** — Direct challenge to viewer's knowledge
+- **reveal** — Promises a shocking fact upfront
+- **story** — Opens a narrative arc with character and conflict
+
+### Usage Examples
+
+```bash
+# Curiosity gap (works well for history/facts)
+autoshorts new explainer "Pelé 1000 goals" --hook-style curiosity
+
+# Counter-narrative (works well for debates)
+autoshorts new explainer "Neymar vs Ronaldo" --hook-style counter
+
+# Controversy (works well for opinions)
+autoshorts new explainer "VAR no futebol brasileiro" --hook-style controversy
+
+# Challenge (works well for trivia/facts)
+autoshorts new explainer "Primeiro gol do Flamengo" --hook-style challenge
+
+# Reveal (works well for secrets/revelations)
+autoshorts new explainer "Segredos da Seleção de 70" --hook-style reveal
+
+# Story (works well for narratives)
+autoshorts new explainer "Zico e o Flamengo dos anos 80" --hook-style story
+```
+
+### Hook Templates
+
+Each hook style uses proven copywriting frameworks:
+
+**Curiosity Gap**: "Em 1950, o Uruguai venceu o Brasil na final da Copa — e ninguém esperava que um estádio inteiro chorasse."
+
+**Counter-Narrative**: "Você acha que conhece a história do Fla-Flu. Mas a história real é completamente diferente."
+
+**Controversy**: "Vou dizer algo impopular: o Corinthians é o time mais azão do Brasil. E posso provar."
+
+**Challenge**: "Aposto que você não sabe quem foi o primeiro estrangeiro a jogar no Brasil. Duvido. Vou te provar."
+
+**Reveal**: "O Flamengo tinha um segredo em 81. Só que esse segredo não era o que todo mundo pensava."
+
+**Story**: "Tudo começou quando Zico decidiu voltar ao Flamengo em 85. Ninguém imaginava o que viria depois."
+
+## Project Structure
+
+```
+AutoShorts/
+├── src/
+│   └── autoshorts/
+│       ├── __init__.py
+│       ├── main.py                 # Entry point → app()
+│       ├── cli/                    # Typer CLI
+│       │   ├── __init__.py         # Root app + `help` command
+│       │   ├── new.py              # `new` command group
+│       │   └── commands/
+│       │       ├── explainer.py    # `new explainer` subcommand
+│       │       └── help_cmd.py     # `help` subcommand factory
+│       ├── generators/             # Plugin-style generator registry
+│       │   ├── __init__.py         # VIDEO_TYPES = {"explainer": ...}
+│       │   └── explainer.py        # ExplainerGenerator (both pipelines)
+│       └── modules/                # Core modules
+│           ├── config.py
+│           ├── image_searcher.py   # Web/AI image search + NSFW filter
+│           ├── logging_system.py
+│           ├── script_generator.py # Script gen, fact verification, title validation
+│           ├── subtitle_system.py
+│           ├── tts_system.py
+│           ├── utils.py
+│           ├── video_background.py # YouTube search & download
+│           ├── video_compositor.py
+│           └── web_search.py       # DuckDuckGo web search
+├── tests/
+│   ├── test_cli.py                 # CLI layer (32 tests)
+│   ├── test_config.py
+│   ├── test_edge_cases.py
+│   ├── test_fluximages.py          # Explainer generator tests
+│   ├── test_init.py
+│   ├── test_integration.py
+│   ├── test_script_generator.py
+│   ├── test_subtitle_system.py
+│   ├── test_tts_system.py
+│   ├── test_utils.py
+│   ├── test_video_background.py    # Video background (24 tests)
+│   ├── test_video_compositor.py    # Video compositor (11 tests)
+│   ├── test_web_search.py
+│   └── conftest.py
+├── fonts/                          # Bundled Bebas Neue font
+├── .env.example
+├── pyproject.toml
+├── uv.lock
+└── README.md
+```
+
+## Dependencies
+
+Core:
+- `moviepy` — video editing and composition
+- `edge-tts` — text-to-speech
+- `requests` — HTTP client
+- `yt-dlp` — YouTube downloading
+- `duckduckgo-search` — web search and image search (DDGS)
+- `Pillow` — image processing and resizing
+- `webvtt-py` — subtitle processing
+- `python-dotenv` — environment loading
+- `typer` — CLI framework
+
+Dev:
+- `pytest` + `pytest-asyncio` + `pytest-cov`
+- `ruff` + `mypy`
+
+## Development
+
+```bash
+# Run tests (omit --cov on Windows to avoid numpy multiprocessing conflict)
+pytest tests/
+
+# Format & lint
+black src/ tests/
+ruff check src/ tests/
+mypy src/
+```
+
+## License
+
+MIT — see LICENSE.

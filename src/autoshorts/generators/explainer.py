@@ -39,6 +39,7 @@ from ..modules import (
     VIDEO_FPS,
     VIDEO_HEIGHT,
     VIDEO_WIDTH,
+    HookStyle,
     ImageSearcher,
     ScriptGenerator,
     SubtitleSystem,
@@ -65,6 +66,7 @@ class ExplainerGenerator:
         image_source: str = "web",
         custom_instructions: str | None = None,
         metadata: VideoMetadata | None = None,
+        hook_style: HookStyle = HookStyle.DEFAULT,
     ):
         self.subject = subject
         self.output = output
@@ -74,11 +76,13 @@ class ExplainerGenerator:
         self.images_only = images_only
         self.image_source = image_source
         self.custom_instructions = custom_instructions
+        self.hook_style = hook_style
         self.metadata = metadata or VideoMetadata()
 
         self.script_generator = ScriptGenerator(
             web_search=web_search,
             custom_instructions=custom_instructions,
+            hook_style=hook_style,
         )
         self.tts_system = TTSSystem()
         self.temp_dir = create_temp_dir()
