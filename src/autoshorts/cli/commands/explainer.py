@@ -8,6 +8,7 @@ import typer
 
 from ...generators import VIDEO_TYPES
 from ...modules import VideoMetadata, log, shutdown_computer
+from ...modules.hook_engine import HookStyle
 from ..new import new_app
 
 
@@ -42,6 +43,12 @@ def explainer_command(
         "-c",
         help="Custom instructions for the AI on how to craft the video alongside the theme",
     ),
+    hook_style: HookStyle = typer.Option(
+        HookStyle.DEFAULT,
+        "--hook-style",
+        "-hs",
+        help="Hook style for script generation (default, curiosity, counter, controversy, challenge, reveal, story)",
+    ),
 ):
     if no_images and images_only:
         raise typer.BadParameter("--no-images and --images-only are mutually exclusive")
@@ -63,8 +70,9 @@ def explainer_command(
     output_path = Path(output)
     success_count = 0
     total_count = len(subjects)
+
     def _sanitize(s):
-        return re.sub(r'[\\/*?:"<>|]', "", s).replace(" ", "_").lower()[:20]
+        return re.sub(r'[\\/*?:\"<>|]', "", s).replace(" ", "_").lower()[:20]
 
     for i, subj in enumerate(subjects, 1):
         log(f"Processing {i}/{total_count}: {subj or 'youtube-url'}")
@@ -90,6 +98,7 @@ def explainer_command(
                     "no_web_search": no_web_search,
                     "batch": batch,
                     "custom_instructions": custom_instructions,
+                    "hook_style": hook_style.value if isinstance(hook_style, HookStyle) else str(hook_style),
                 }, ensure_ascii=False),
             )
 
@@ -103,6 +112,7 @@ def explainer_command(
                 image_source=images,
                 custom_instructions=custom_instructions,
                 metadata=metadata,
+                hook_style=hook_style,
             )
             success = asyncio.run(gen.generate())
             if success:

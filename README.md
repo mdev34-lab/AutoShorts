@@ -15,6 +15,49 @@ AI-powered tool for generating YouTube Shorts / TikTok videos with script genera
 - **Two pipelines**: normal (YouTube bg + optional image overlays) and images-only (AI/web images + overlay animation, no YouTube bg)
 - **Typer CLI** — nested subcommands, auto-generated `--help`, shell completion
 - **Batch Processing** — semicolon-separated subjects for multi-video runs
+- **Hook Engine** — 7 viral hook styles (curiosity, counter-narrative, controversy, challenge, reveal, story) with pattern interrupt and curiosity gap mechanics
+
+## Hook Styles
+
+AutoShorts now supports multiple hook styles to optimize script engagement:
+
+- `default` — Original curiosity-driven hook (backward compatible)
+- `curiosity` — Creates information asymmetry (viewer knows something is important but not what)
+- `counter` — Challenges common knowledge and assumptions
+- `controversy` — Takes a strong stance that demands engagement
+- `challenge` — Direct challenge to viewer's knowledge
+- `reveal` — Promises a shocking fact upfront
+- `story` — Opens a narrative arc with character and conflict
+
+### Usage
+
+```bash
+autoshorts new explainer "Corinthians 2012 Libertadores" --hook-style controversy
+autoshorts new explainer "Pelé 1000 goals" --hook-style curiosity
+autoshorts new explainer "Neymar vs Ronaldo" --hook-style counter
+```
+
+### Examples
+
+```bash
+# Curiosity gap (works well for history/facts)
+autoshorts new explainer "Pelé 1000 goals" --hook-style curiosity
+
+# Counter-narrative (works well for debates)
+autoshorts new explainer "Neymar vs Ronaldo" --hook-style counter
+
+# Controversy (works well for opinions)
+autoshorts new explainer "VAR no futebol brasileiro" --hook-style controversy
+
+# Challenge (works well for trivia)
+autoshorts new explainer "Primeiro estrangeiro no Brasil" --hook-style challenge
+
+# Reveal (works well for secrets)
+autoshorts new explainer "Flamengo 1981 bastidores" --hook-style reveal
+
+# Story (works well for narratives)
+autoshorts new explainer "Palmeiras 2006 quase rebaixado" --hook-style story
+```
 
 ## Installation
 
@@ -111,9 +154,10 @@ AutoShorts/
 │       │   └── explainer.py        # ExplainerGenerator (both pipelines)
 │       └── modules/                # Core modules
 │           ├── config.py
+│           ├── hook_engine.py      # Hook Engine with 7 viral styles, pattern interrupt, curiosity gap
 │           ├── image_searcher.py   # Web/AI image search + NSFW filter
 │           ├── logging_system.py
-│           ├── script_generator.py # Script gen, fact verification, title validation
+│           ├── script_generator.py # Script gen, fact verification, title validation, hook integration
 │           ├── subtitle_system.py
 │           ├── tts_system.py
 │           ├── utils.py
@@ -125,6 +169,7 @@ AutoShorts/
 │   ├── test_config.py
 │   ├── test_edge_cases.py
 │   ├── test_fluximages.py          # Explainer generator tests
+│   ├── test_hook_engine.py         # Hook Engine (15+ tests)
 │   ├── test_init.py
 │   ├── test_integration.py
 │   ├── test_script_generator.py

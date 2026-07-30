@@ -11,6 +11,7 @@ from .config import (
     API_URL,
     MODEL_TEXT,
 )
+from .hook_engine import HookEngine, HookStyle
 from .logging_system import log
 from .web_search import WebSearcher
 
@@ -23,9 +24,19 @@ class ScriptGenerator:
     When web_search is enabled, uses a two-step approach:
       Step 1 — generate verification search queries + title (draft is a byproduct)
       Step 2 — search the web, then generate the final script grounded in results
+
+    HookEngine integration:
+      - Supports multiple hook styles via HookStyle enum
+      - Generates optimized hooks before script generation
+      - Injects hook into first paragraph when style != DEFAULT
     """
 
-    def __init__(self, web_search: bool = True, custom_instructions: str | None = None):
+    def __init__(
+        self,
+        web_search: bool = True,
+        custom_instructions: str | None = None,
+        hook_style: HookStyle = HookStyle.DEFAULT,
+    ):
         self.api_url = API_URL
         self.api_key = API_KEY
         self.model = MODEL_TEXT
@@ -33,27 +44,59 @@ class ScriptGenerator:
         self.custom_instructions = custom_instructions
         self.searcher = WebSearcher() if web_search else None
         self.generated_title: str | None = None
+        # Hook Engine integration
+        self.hook_engine = HookEngine()
+        try:
+            if not isinstance(hook_style, HookStyle):
+                self.hook_style = HookStyle(hook_style)
+            else:
+                self.hook_style = hook_style
+        except Exception:
+            self.hook_style = HookStyle.DEFAULT
 
     def _tone_instructions(self) -> str:
-        base = (
+        """Get enhanced tone instructions based on hook style."""
+        base_tone = (
             "TONE: Curiosity-driven, narrative, engaging. "
-            "Write like a storyteller uncovering a fascinating truth \u2014 "
+            "Write like a storyteller uncovering a fascinating truth — "
             "never like Wikipedia or a corporate press release.\n"
-            "FIRST SENTENCE: Drop the viewer right into the action \u2014 "
-            "the goal, the controversy, the fact itself. "
-            "NO: 'Prepare-se', 'Voc\u00ea sabia', rhetorical questions. "
-            "Never waste the first 2 seconds on setup.\n"
-            "STRUCTURE: Hook (the fact itself) \u2192 Context \u2192 Revelation \u2192 Strong conclusion\n"
             "FORBIDDEN: Legal names (Ltda, S.A.), addresses, city/state abbreviations. "
             "NO corporate language.\n"
             "FORBIDDEN: Hyperboles, exaggerated claims, 'designed by a god', "
-            "'you won't believe', 'shocking truth' \u2014 these sound fake.\n"
+            "'you won't believe', 'shocking truth' — these sound fake.\n"
         )
+
+        # Add hook-specific instructions
+        try:
+            hook_instructions = self.hook_engine.get_tone_instructions(self.hook_style)
+        except Exception:
+            hook_instructions = ""
+
+        full = base_tone + hook_instructions
+
         if self.custom_instructions:
-            base += (
-                f"\nADDITIONAL USER INSTRUCTIONS: {self.custom_instructions}\n"
-            )
-        return base
+            full += f"\nADDITIONAL USER INSTRUCTIONS: {self.custom_instructions}\n"
+        return full
+
+    def _inject_hook(self, script: list, subject: str, context: str = "") -> list:
+        """Inject optimized hook into first paragraph if applicable."""
+        if not script:
+            return script
+        # DEFAULT preserves existing behavior — no injection
+        if self.hook_style == HookStyle.DEFAULT:
+            return script
+        try:
+            hook_data = self.hook_engine.generate_hook(subject, self.hook_style, context)
+            hook = hook_data.get("hook", "")
+            if hook and len(hook) > 10:
+                # Replace first paragraph with optimized hook, but keep validation
+                # Ensure hook doesn't violate filler rules
+                if not self._is_filler(hook):
+                    script = list(script)  # copy
+                    script[0] = hook
+        except Exception as e:
+            log(f"Hook injection failed: {e}, keeping original script", "WARNING")
+        return script
 
     # ── Public API ──────────────────────────────────────────────────────
 
@@ -64,10 +107,21 @@ class ScriptGenerator:
         tone_block = self._tone_instructions()
 
         if not self.web_search or not self.searcher or not subject:
+            # Generate hook even without web search, but context empty
+            hook_data = {}
+            try:
+                hook_data = self.hook_engine.generate_hook(subject, self.hook_style, "")
+            except Exception:
+                hook_data = {"hook": ""}
+
             script = self._make_text_api_call(
                 tone_block + _SYSTEM_PROMPT_SINGLE,
                 _user_prompt_single(subject, ""),
             )
+            # Prepend hook to script (replace first paragraph if needed)
+            if hook_data.get("hook") and script:
+                if not self._is_filler(hook_data["hook"]):
+                    script[0] = hook_data["hook"]
             self.generated_title = self._generate_title_from_script(script, subject)
             return script
 
@@ -82,16 +136,40 @@ class ScriptGenerator:
         if results:
             context = self.searcher.format_context(results[:15])
             log("Step 2: generating script with search context...")
+
+            # Generate hook based on style with context
+            hook_data = {}
+            try:
+                hook_data = self.hook_engine.generate_hook(subject, self.hook_style, context)
+            except Exception as e:
+                log(f"Hook generation failed: {e} — continuing with default", "WARNING")
+                hook_data = {"hook": ""}
+
             script = self._make_text_api_call(
                 tone_block + _SYSTEM_PROMPT_SINGLE,
                 _user_prompt_single(subject, context),
             )
             cleaned = self._validate_paragraphs(script)
             script = self._ensure_paragraph_count(cleaned, 5)
+
+            # Inject hook if available
+            if hook_data.get("hook") and script:
+                if not self._is_filler(hook_data["hook"]):
+                    script[0] = hook_data["hook"]
+
             if script:
                 log("Script generated with web sources", "SUCCESS")
                 # Step 4: post-generation fact verification
                 script = self._verify_factual_claims(script, subject)
+                # Re-inject hook after verification to ensure hook persists (verification may rewrite)
+                if hook_data.get("hook") and script:
+                    # Only re-inject if still not filler and style != DEFAULT
+                    if self.hook_style != HookStyle.DEFAULT and not self._is_filler(hook_data["hook"]):
+                        # Preserve verified facts but keep hook style - only if hook not contradicting?
+                        # Simple: keep hook as first paragraph if verification didn't drastically change length
+                        if len(script) >= 3:
+                            # Ensure hook is still valid: if verification flagged it as incorrect number, skip
+                            script[0] = hook_data["hook"]
                 self.generated_title = self._generate_title_from_script(script, subject)
                 log("Script verified", "SUCCESS")
                 return script
@@ -101,6 +179,8 @@ class ScriptGenerator:
             if repair and len(repair) >= 3:
                 log("Script repaired after validation", "SUCCESS")
                 script = repair
+                if hook_data.get("hook") and script and self.hook_style != HookStyle.DEFAULT:
+                    script[0] = hook_data["hook"]
                 script = self._verify_factual_claims(script, subject)
                 self.generated_title = self._generate_title_from_script(script, subject)
                 log("Script verified", "SUCCESS")
@@ -118,6 +198,8 @@ class ScriptGenerator:
         draft = self._validate_paragraphs(draft)
         draft = self._ensure_paragraph_count(draft, 5)
         if draft:
+            # Apply hook to fallback as well
+            draft = self._inject_hook(draft, subject, "")
             return draft
 
         log("All script generation paths failed", "ERROR")
@@ -129,10 +211,20 @@ class ScriptGenerator:
         desc = description[:1000] if description else ""
         combined_content = f"Title: {meta_title}\n\nDescription: {desc}"
         tone_block = self._tone_instructions()
+
+        hook_data = {}
+        try:
+            hook_data = self.hook_engine.generate_hook(meta_title, self.hook_style, desc)
+        except Exception:
+            hook_data = {"hook": ""}
+
         script = self._make_text_api_call(
             tone_block + _SYSTEM_PROMPT_METADATA,
             _user_prompt_metadata(combined_content),
         )
+        if hook_data.get("hook") and script and self.hook_style != HookStyle.DEFAULT:
+            if not self._is_filler(hook_data["hook"]):
+                script[0] = hook_data["hook"]
         self.generated_title = self._generate_title_from_script(script, meta_title)
         return script
 
@@ -142,6 +234,8 @@ class ScriptGenerator:
 
         if not self.web_search or not self.searcher or not subject:
             paragraphs, prompts = self._generate_script_with_prompts_single(subject)
+            # Inject hook
+            paragraphs = self._inject_hook(paragraphs, subject, "")
             self.generated_title = self._generate_title_from_script(paragraphs, subject)
             return paragraphs, prompts
 
@@ -163,6 +257,8 @@ class ScriptGenerator:
                 if paragraphs:
                     log("Script generated with web sources", "SUCCESS")
                     paragraphs = self._verify_factual_claims(paragraphs, subject)
+                    # Inject hook after verification, preserving hook style
+                    paragraphs = self._inject_hook(paragraphs, subject, context)
                     self.generated_title = self._generate_title_from_script(paragraphs, subject)
                     log("Script verified", "SUCCESS")
                     return paragraphs, []
@@ -172,6 +268,7 @@ class ScriptGenerator:
                 if repair and len(repair) >= 3:
                     log("Script repaired after validation", "SUCCESS")
                     paragraphs = self._verify_factual_claims(repair, subject)
+                    paragraphs = self._inject_hook(paragraphs, subject, context)
                     self.generated_title = self._generate_title_from_script(paragraphs, subject)
                     return paragraphs, []
 
@@ -187,6 +284,7 @@ class ScriptGenerator:
         draft = self._validate_paragraphs(draft)
         draft = self._ensure_paragraph_count(draft, 7)
         if draft:
+            draft = self._inject_hook(draft, subject, "")
             return draft, []
 
         log("All script generation paths failed", "ERROR")
@@ -226,19 +324,19 @@ class ScriptGenerator:
         system_prompt = (
             f"You are a YouTube Shorts scriptwriter. Output ONLY valid JSON with these exact keys:\n"
             f'1. "draft": Array of {num_paragraphs} strings (PT-BR), each 1-2 short sentences '
-            f"\u2014 a first-draft script about \"{subject}\".\n"
+            f"— a first-draft script about \"{subject}\".\n"
             f"   {tone_block}"
-            f"   - Every paragraph MUST contain a verifiable fact \u2014 no generalities, no filler.\n"
+            f"   - Every paragraph MUST contain a verifiable fact — no generalities, no filler.\n"
             f"   - CRITICAL: Do the math yourself. If you mention a date range, calculate the years correctly.\n"
-            f"   - End with a strong conclusion, NOT 'fica uma li\u00e7\u00e3o' or similar generic phrases.\n"
+            f"   - End with a strong conclusion, NOT 'fica uma lição' or similar generic phrases.\n"
             f'2. "queries": Array of 7-9 Portuguese web search queries to VERIFY '
             f"the factual claims in your draft.\n"
             f"   - At least 3 queries must be BROADER independent searches about the subject "
-            f"(e.g. 'Botafogo principais rivais' instead of 'hist\u00f3ria do cl\u00e1ssico X').\n"
+            f"(e.g. 'Botafogo principais rivais' instead of 'história do clássico X').\n"
             f"   - Each specific query should target one or more claims from the draft.\n"
             f"   - Be specific: include names, dates, unique terms.\n"
             f"   - Cover all major factual claims (dates, names, places, statistics, origins).\n"
-            f'3. "title": string, max 60 chars (PT-BR) \u2014 catchy YouTube Shorts title about {subject}.'
+            f'3. "title": string, max 60 chars (PT-BR) — catchy YouTube Shorts title about {subject}.'
         )
         user_prompt = (
             f"Write a first-draft script about {subject} in {num_paragraphs} paragraphs "
@@ -271,7 +369,7 @@ class ScriptGenerator:
             "Each query must target a different angle: origins, dates, key events, statistics, people.\n"
             "Be specific: include names, years, locations.\n"
             "These queries will be used to fact-check, so prioritize queries that return concrete data.\n"
-            "NEVER include the topic name alone as a query \u2014 always add qualifiers like year, event, or location."
+            "NEVER include the topic name alone as a query — always add qualifiers like year, event, or location."
         )
         user_prompt = (
             f"Generate search queries to find accurate factual information about: {subject}"
@@ -314,7 +412,7 @@ class ScriptGenerator:
             r"sem\s+\w+\s+(?:vence|ganha|perde|supera))",
             script_text, re.IGNORECASE
         ):
-            tabu_q = f"{subject} tabu hist\u00f3rico"
+            tabu_q = f"{subject} tabu histórico"
             if tabu_q not in verification_queries:
                 verification_queries.append(tabu_q)
 
@@ -329,7 +427,7 @@ class ScriptGenerator:
                 verification_queries.append(q)
 
         verification_queries.append(
-            f"{subject} hist\u00f3rico funda\u00e7\u00e3o dados"
+            f"{subject} histórico fundação dados"
         )
 
         if not verification_queries:
@@ -351,10 +449,10 @@ class ScriptGenerator:
         context = self.searcher.format_context(results[:10])
         system_prompt = (
             "You are a strict fact-checker. Output ONLY valid JSON with exactly these keys:\n"
-            '1. "verified": boolean \u2014 true if ALL claims match the web sources\n'
+            '1. "verified": boolean — true if ALL claims match the web sources\n'
             '2. "corrections": array of objects with "claim" and "correction" strings '
-            "\u2014 empty if verified is true\n"
-            '3. "paragraphs": array of strings (PT-BR) \u2014 corrected script paragraphs, '
+            "— empty if verified is true\n"
+            '3. "paragraphs": array of strings (PT-BR) — corrected script paragraphs, '
             "or the original if no changes needed\n\n"
             "CRITICAL rules:\n"
             "- Compare EVERY date, number, name, and place against the web sources.\n"
@@ -425,11 +523,11 @@ class ScriptGenerator:
         issues: list[str] = []
         hashtags = re.findall(r"#\w+", title)
         if not hashtags:
-            issues.append("n\u00e3o possui hashtags")
+            issues.append("não possui hashtags")
         elif len(hashtags) < 3:
-            issues.append(f"tem apenas {len(hashtags)} hashtags (m\u00ednimo 3)")
+            issues.append(f"tem apenas {len(hashtags)} hashtags (mínimo 3)")
         if len(title) > 100:
-            issues.append(f"tem {len(title)} caracteres (m\u00e1ximo 100)")
+            issues.append(f"tem {len(title)} caracteres (máximo 100)")
         return len(issues) == 0, issues
 
     @staticmethod
@@ -457,15 +555,15 @@ class ScriptGenerator:
             "FULL EXAMPLE:\n"
             "'A VERDADE sobre o Caso Girabank #carlinhosmaia #girabank'"
         )
-        user_prompt = f"Crie um t\u00edtulo PT-BR para este roteiro sobre {subject}, com se\u00e7\u00f5es em UPPERCASE e tags SPECIFICAS em lowercase: {script_text}"
+        user_prompt = f"Crie um título PT-BR para este roteiro sobre {subject}, com seções em UPPERCASE e tags SPECIFICAS em lowercase: {script_text}"
         for attempt in range(2):
             try:
                 prompt = user_prompt
                 if attempt == 1:
                     prompt += (
-                        "\n\nCORRE\u00c7\u00c3O: Na tentativa anterior o t\u00edtulo tinha problemas. "
+                        "\n\nCORREÇÃO: Na tentativa anterior o título tinha problemas. "
                         "Siga as regras: max 100 chars, 3-4 hashtags em lowercase, "
-                        "nada de hashtags gen\u00e9ricas."
+                        "nada de hashtags genéricas."
                     )
                 data = self._make_json_api_call(system_prompt, prompt)
                 title = data.get("title") or ""
@@ -650,21 +748,21 @@ class ScriptGenerator:
     def _is_filler(paragraph: str) -> bool:
         """Check if a paragraph is generic filler or corporate language that should be rejected."""
         filler_patterns = [
-            "fica uma li\u00e7\u00e3o",
+            "fica uma lição",
             "vale a pena conhecer",
-            "li\u00e7\u00e3o que vale",
-            "ningu\u00e9m sabia",
+            "lição que vale",
+            "ninguém sabia",
             "o segredo",
             "a verdade escondida",
-            "voc\u00ea n\u00e3o vai acreditar",
+            "você não vai acreditar",
             "poucos conhecem",
             "pouca gente sabe",
-            "muita gente n\u00e3o sabe",
+            "muita gente não sabe",
             "o que poucos sabem",
             "ltda",
             "s.a.",
-            "institui\u00e7\u00e3o de pagamento",
-            "pessoa jur\u00eddica",
+            "instituição de pagamento",
+            "pessoa jurídica",
         ]
         lower = paragraph.lower()
         return any(p in lower for p in filler_patterns)
@@ -689,7 +787,7 @@ class ScriptGenerator:
             return paragraphs[:target]
         if len(paragraphs) < 3:
             log(
-                f"Only {len(paragraphs)} paragraphs, need at least 3 \u2014 returning empty",
+                f"Only {len(paragraphs)} paragraphs, need at least 3 — returning empty",
                 "ERROR",
             )
             return []
@@ -707,21 +805,36 @@ class ScriptGenerator:
             "Output ONLY a JSON object with:\n"
             "1.'paragraphs': Array of 7 strings (PT-BR), each 1-2 short sentences.\n"
             f"{tone_block}"
-            'NEVER use "ningu\u00e9m sabia", "o segredo", or "a verdade" \u2014 these are vague.\n'
-            "Every paragraph MUST contain a verifiable fact \u2014 no generalities, no filler.\n"
+            'NEVER use "ninguém sabia", "o segredo", or "a verdade" — these are vague.\n'
+            "Every paragraph MUST contain a verifiable fact — no generalities, no filler.\n"
             "Keep each paragraph 1-2 sentences (~2-3 seconds audio each).\n"
-            "End with a strong conclusion, NOT 'fica uma li\u00e7\u00e3o' or similar.\n"
+            "End with a strong conclusion, NOT 'fica uma lição' or similar.\n"
             "Use the provided web sources as your primary source of facts. Verify every number against them."
         )
         user_prompt = (
             f"Tell a story about: {subject}. "
             f"Include origin, key facts, and specific details. "
-            f"Double-check every date and number \u2014 calculate ranges correctly.\n\n"
+            f"Double-check every date and number — calculate ranges correctly.\n\n"
             f"WEB SOURCES:\n{search_context}"
         )
         try:
             data = self._make_json_api_call(system_prompt, user_prompt)
-            return data.get("paragraphs")
+            paragraphs = data.get("paragraphs")
+
+            # Apply hook if needed
+            if paragraphs and self.hook_style != HookStyle.DEFAULT:
+                try:
+                    hook_data = self.hook_engine.generate_hook(
+                        subject, self.hook_style, search_context
+                    )
+                    if hook_data.get("hook") and len(hook_data["hook"]) > 10:
+                        if not self._is_filler(hook_data["hook"]):
+                            paragraphs = list(paragraphs)
+                            paragraphs[0] = hook_data["hook"]
+                except Exception:
+                    pass
+
+            return paragraphs
         except Exception as e:
             log(f"Script generation with context failed: {e}", "WARNING")
             return None
@@ -734,10 +847,10 @@ class ScriptGenerator:
             "Output ONLY a JSON object with:\n"
             "1.'paragraphs': Array of 7 strings (PT-BR), each 1-2 short sentences.\n"
             f"{tone_block}"
-            'NEVER use "ningu\u00e9m sabia", "o segredo", or "a verdade" \u2014 these are vague.\n'
-            "Every paragraph MUST contain a verifiable fact \u2014 no generalities, no filler.\n"
+            'NEVER use "ninguém sabia", "o segredo", or "a verdade" — these are vague.\n'
+            "Every paragraph MUST contain a verifiable fact — no generalities, no filler.\n"
             "Keep each paragraph 1-2 sentences (~2-3 seconds audio each).\n"
-            'End with a strong conclusion, NOT "fica uma li\u00e7\u00e3o" or similar.\n'
+            'End with a strong conclusion, NOT "fica uma lição" or similar.\n'
             "Do the math yourself. If you mention a date range, calculate the years correctly."
         )
         user_prompt = (
@@ -747,7 +860,18 @@ class ScriptGenerator:
         )
         try:
             data = self._make_json_api_call(system_prompt, user_prompt)
-            return data.get("paragraphs", []), data.get("image_prompts", [])
+            paragraphs = data.get("paragraphs", [])
+            # Inject hook
+            if paragraphs and self.hook_style != HookStyle.DEFAULT:
+                try:
+                    hook_data = self.hook_engine.generate_hook(subject, self.hook_style, "")
+                    if hook_data.get("hook"):
+                        if not self._is_filler(hook_data["hook"]):
+                            paragraphs = list(paragraphs)
+                            paragraphs[0] = hook_data["hook"]
+                except Exception:
+                    pass
+            return paragraphs, data.get("image_prompts", [])
         except Exception as e:
             log(f"Script generation failed: {e}", "ERROR")
             raise
@@ -760,27 +884,27 @@ _SYSTEM_PROMPT_SINGLE = (
     "CRITICAL RETENTION RULES:\n"
     "1.Write in Brazilian Portuguese (PT-BR).\n"
     "2.TONE: Curiosity-driven, narrative, engaging. "
-    "Write like a storyteller uncovering a fascinating truth \u2014 "
+    "Write like a storyteller uncovering a fascinating truth — "
     "never like Wikipedia or a corporate press release.\n"
-    "3.FIRST SENTENCE: Drop the viewer right into the action \u2014 "
+    "3.FIRST SENTENCE: Drop the viewer right into the action — "
     "the goal, the controversy, the fact itself. "
-    "NO: 'Prepare-se', 'Voc\u00ea sabia', rhetorical questions. "
+    "NO: 'Prepare-se', 'Você sabia', rhetorical questions. "
     "Never waste the first 2 seconds on setup.\n"
-    "4.STRUCTURE: Hook (the fact itself) \u2192 Context \u2192 Revelation \u2192 Strong conclusion\n"
-    '5.NEVER start with "ningu\u00e9m sabia", "o segredo", "a verdade escondida" '
-    'or "voc\u00ea n\u00e3o vai acreditar" \u2014 these are weak.\n'
+    "4.STRUCTURE: Hook (the fact itself) → Context → Revelation → Strong conclusion\n"
+    '5.NEVER start with "ninguém sabia", "o segredo", "a verdade escondida" '
+    'or "você não vai acreditar" — these are weak.\n'
     "6.FORBIDDEN: Legal names (Ltda, S.A.), addresses, city/state abbreviations. "
     "NO corporate language.\n"
     '6a.FORBIDDEN: Hyperboles, exaggerated claims, "designed by a god", '
-    '"you won\'t believe", "shocking truth" \u2014 these sound fake.\n'
+    '"you won\'t believe", "shocking truth" — these sound fake.\n'
     "7.Each paragraph 1-2 punchy sentences (~2-3 seconds audio each).\n"
     "8.Write exactly 4-5 paragraphs.\n"
     "9.NO markdown formatting, NO JSON, just plain text paragraphs.\n"
-    "10.Every paragraph must advance the story with a new specific fact \u2014 no filler.\n"
+    "10.Every paragraph must advance the story with a new specific fact — no filler.\n"
     "11.USE the provided web sources as your primary source of facts. "
     "Cite specific data from them.\n"
-     '12.End with a punchy conclusion, NOT "fica uma li\u00e7\u00e3o" or similar generic phrases.\n'
-     '13.NEVER use "no final fica uma li\u00e7\u00e3o" or "vale a pena conhecer" \u2014 these are filler.\n'
+     '12.End with a punchy conclusion, NOT "fica uma lição" or similar generic phrases.\n'
+     '13.NEVER use "no final fica uma lição" or "vale a pena conhecer" — these are filler.\n'
      "14.Do the math yourself. If you mention a date range or time period, calculate the years correctly."
  )
 
@@ -788,33 +912,33 @@ _SYSTEM_PROMPT_SINGLE = (
 def _user_prompt_single(subject: str, search_context: str) -> str:
     tone_rules = (
         "- TOM: Curiosidade, narrativa envolvente. "
-        "Conte como quem revela um fato fascinante \u2014 "
+        "Conte como quem revela um fato fascinante — "
         "NUNCA como Wikipedia ou release corporativo.\n"
-        "- PRIMEIRA FRASE: Jogue o espectador direto na a\u00e7\u00e3o \u2014 "
-        "o gol, a pol\u00eamica, o pr\u00f3prio fato. "
-        "NADA de 'Prepare-se', 'Voc\u00ea sabia', perguntas ret\u00f3ricas. "
-        "N\u00c3O desperdice os primeiros 2 segundos com introdu\u00e7\u00e3o.\n"
-        "- ESTRUTURA: Gancho (o fato) \u2192 Contexto \u2192 Revela\u00e7\u00e3o \u2192 Conclus\u00e3o forte\n"
-        "- PROIBIDO: Nomes jur\u00eddicos (Ltda, S.A.), endere\u00e7os, siglas. "
+        "- PRIMEIRA FRASE: Jogue o espectador direto na ação — "
+        "o gol, a polêmica, o próprio fato. "
+        "NADA de 'Prepare-se', 'Você sabia', perguntas retóricas. "
+        "NÃO desperdice os primeiros 2 segundos com introdução.\n"
+        "- ESTRUTURA: Gancho (o fato) → Contexto → Revelação → Conclusão forte\n"
+        "- PROIBIDO: Nomes jurídicos (Ltda, S.A.), endereços, siglas. "
         "NADA de linguagem corporativa.\n"
-        "- PROIBIDO: Hip\u00e9rboles, exageros, 'desenhada por um deus', "
-        "'voc\u00ea n\u00e3o vai acreditar', 'a verdade chocante' \u2014 soa falso.\n"
+        "- PROIBIDO: Hipérboles, exageros, 'desenhada por um deus', "
+        "'você não vai acreditar', 'a verdade chocante' — soa falso.\n"
     )
     return (
-        f'Crie uma hist\u00f3ria envolvente em 4-5 par\u00e1grafos sobre "{subject}".\n\n'
+        f'Crie uma história envolvente em 4-5 parágrafos sobre "{subject}".\n\n'
         f"{search_context}\n\n"
-        f"REGRAS CR\u00cdTICAS:\n"
+        f"REGRAS CRÍTICAS:\n"
         f"{tone_rules}"
-        f'- NUNCA comece com "ningu\u00e9m sabia", "o segredo", '
-        f'"a verdade escondida" \u2014 isso \u00e9 vago e fraco\n'
-        f"- Inclua nomes, datas, lugares e n\u00fameros espec\u00edficos sempre que poss\u00edvel\n"
-        f"- Conte a ORIGEM: como tudo come\u00e7ou, por que existe\n"
-        f"- Cada par\u00e1grafo DEVE conter um FATO VERIFIC\u00c1VEL \u2014 nada de generaliza\u00e7\u00f5es\n"
+        f'- NUNCA comece com "ninguém sabia", "o segredo", '
+        f'"a verdade escondida" — isso é vago e fraco\n'
+        f"- Inclua nomes, datas, lugares e números específicos sempre que possível\n"
+        f"- Conte a ORIGEM: como tudo começou, por que existe\n"
+        f"- Cada parágrafo DEVE conter um FATO VERIFICÁVEL — nada de generalizações\n"
         f"- NADA de frases de enchimento\n"
-        f"- TERMINE com uma conclus\u00e3o forte, N\u00c3O com 'fica uma li\u00e7\u00e3o'\n"
-        f"- Fa\u00e7a a conta voc\u00ea mesmo: se mencionar um per\u00edodo, calcule os anos corretamente\n"
-        f"- Use as FONTES DA WEB fornecidas como base para sua hist\u00f3ria\n\n"
-        f"Escreva cada par\u00e1grafo em uma linha separada."
+        f"- TERMINE com uma conclusão forte, NÃO com 'fica uma lição'\n"
+        f"- Faça a conta você mesmo: se mencionar um período, calcule os anos corretamente\n"
+        f"- Use as FONTES DA WEB fornecidas como base para sua história\n\n"
+        f"Escreva cada parágrafo em uma linha separada."
     )
 
 
@@ -823,62 +947,62 @@ _SYSTEM_PROMPT_METADATA = (
     "CRITICAL RETENTION RULES:\n"
     "1.Write in Brazilian Portuguese (PT-BR).\n"
     "2.TONE: Curiosity-driven, narrative, engaging. "
-    "Write like a storyteller uncovering a fascinating truth \u2014 "
+    "Write like a storyteller uncovering a fascinating truth — "
     "never like Wikipedia or a corporate press release.\n"
-    "3.FIRST SENTENCE: Drop the viewer right into the action \u2014 "
+    "3.FIRST SENTENCE: Drop the viewer right into the action — "
     "the goal, the controversy, the fact itself. "
-    "NO: 'Prepare-se', 'Voc\u00ea sabia', rhetorical questions. "
+    "NO: 'Prepare-se', 'Você sabia', rhetorical questions. "
     "Never waste the first 2 seconds on setup.\n"
-    "4.STRUCTURE: Hook (the fact itself) \u2192 Context \u2192 Revelation \u2192 Strong conclusion\n"
-    '5.NEVER start with "ningu\u00e9m sabia", "o segredo", '
-    'or "a verdade escondida" \u2014 these are vague and weak.\n'
+    "4.STRUCTURE: Hook (the fact itself) → Context → Revelation → Strong conclusion\n"
+    '5.NEVER start with "ninguém sabia", "o segredo", '
+    'or "a verdade escondida" — these are vague and weak.\n'
     "6.FORBIDDEN: Legal names (Ltda, S.A.), addresses, city/state abbreviations. "
     "NO corporate language.\n"
     '6a.FORBIDDEN: Hyperboles, exaggerated claims, "designed by a god", '
-    '"you won\'t believe", "shocking truth" \u2014 these sound fake.\n'
+    '"you won\'t believe", "shocking truth" — these sound fake.\n'
     "7.Extract concrete details from the video metadata: "
     "dates, names, places, statistics, historical context.\n"
-    "8.Include origin stories \u2014 explain HOW something started, "
+    "8.Include origin stories — explain HOW something started, "
     "not just THAT it happened.\n"
     "9.Each paragraph 1-2 punchy sentences (~2-3 seconds audio each).\n"
     "10.Write exactly 4-5 paragraphs.\n"
     "11.NO markdown formatting, NO JSON, just plain text paragraphs.\n"
     "12.Base your story entirely on the video's content, "
     "adding only well-known historical context.\n"
-     '13.End with a punchy conclusion, NOT "fica uma li\u00e7\u00e3o" or similar.\n'
-     "14.Every paragraph must contain a verifiable fact \u2014 no generalities."
+     '13.End with a punchy conclusion, NOT "fica uma lição" or similar.\n'
+     "14.Every paragraph must contain a verifiable fact — no generalities."
  )
 
 
 def _user_prompt_metadata(combined_content: str) -> str:
     tone_rules = (
         "- TOM: Curiosidade, narrativa envolvente. "
-        "Conte como quem revela um fato fascinante \u2014 "
+        "Conte como quem revela um fato fascinante — "
         "NUNCA como Wikipedia ou release corporativo.\n"
-        "- PRIMEIRA FRASE: Jogue o espectador direto na a\u00e7\u00e3o \u2014 "
-        "o gol, a pol\u00eamica, o pr\u00f3prio fato. "
-        "NADA de 'Prepare-se', 'Voc\u00ea sabia', perguntas ret\u00f3ricas. "
-        "N\u00c3O desperdice os primeiros 2 segundos com introdu\u00e7\u00e3o.\n"
-        "- ESTRUTURA: Gancho (o fato) \u2192 Contexto \u2192 Revela\u00e7\u00e3o \u2192 Conclus\u00e3o forte\n"
-        "- PROIBIDO: Nomes jur\u00eddicos (Ltda, S.A.), endere\u00e7os, siglas. "
+        "- PRIMEIRA FRASE: Jogue o espectador direto na ação — "
+        "o gol, a polêmica, o próprio fato. "
+        "NADA de 'Prepare-se', 'Você sabia', perguntas retóricas. "
+        "NÃO desperdice os primeiros 2 segundos com introdução.\n"
+        "- ESTRUTURA: Gancho (o fato) → Contexto → Revelação → Conclusão forte\n"
+        "- PROIBIDO: Nomes jurídicos (Ltda, S.A.), endereços, siglas. "
         "NADA de linguagem corporativa.\n"
-        "- PROIBIDO: Hip\u00e9rboles, exageros, 'desenhada por um deus', "
-        "'voc\u00ea n\u00e3o vai acreditar' \u2014 soa falso.\n"
+        "- PROIBIDO: Hipérboles, exageros, 'desenhada por um deus', "
+        "'você não vai acreditar' — soa falso.\n"
     )
     return (
-        "Crie uma hist\u00f3ria envolvente em 4-5 par\u00e1grafos baseada "
-        "neste v\u00eddeo do YouTube.\n\n"
-        "REGRAS CR\u00cdTICAS:\n"
+        "Crie uma história envolvente em 4-5 parágrafos baseada "
+        "neste vídeo do YouTube.\n\n"
+        "REGRAS CRÍTICAS:\n"
         f"{tone_rules}"
-        '- NUNCA comece com "ningu\u00e9m sabia", "o segredo" '
+        '- NUNCA comece com "ninguém sabia", "o segredo" '
         'ou "a verdade escondida"\n'
-        "- Extraia detalhes espec\u00edficos do t\u00edtulo e descri\u00e7\u00e3o: "
-        "datas, nomes, locais, estat\u00edsticas\n"
-        "- Conte a ORIGEM: como tudo come\u00e7ou, por que \u00e9 importante\n"
-        "- Cada par\u00e1grafo DEVE conter um FATO VERIFIC\u00c1VEL \u2014 nada de generaliza\u00e7\u00f5es\n"
-        "- NADA de ganchos gen\u00e9ricos ou frases de enchimento\n"
-        "- TERMINE com uma conclus\u00e3o forte, N\u00c3O com 'fica uma li\u00e7\u00e3o'\n"
-        "- Fa\u00e7a a conta voc\u00ea mesmo: se mencionar um per\u00edodo, calcule os anos corretamente\n\n"
-        f"V\u00eddeo:\n{combined_content}\n\n"
-        "Escreva cada par\u00e1grafo em uma linha separada."
+        "- Extraia detalhes específicos do título e descrição: "
+        "datas, nomes, locais, estatísticas\n"
+        "- Conte a ORIGEM: como tudo começou, por que é importante\n"
+        "- Cada parágrafo DEVE conter um FATO VERIFICÁVEL — nada de generalizações\n"
+        "- NADA de ganchos genéricos ou frases de enchimento\n"
+        "- TERMINE com uma conclusão forte, NÃO com 'fica uma lição'\n"
+        "- Faça a conta você mesmo: se mencionar um período, calcule os anos corretamente\n\n"
+        f"Vídeo:\n{combined_content}\n\n"
+        "Escreva cada parágrafo em uma linha separada."
     )

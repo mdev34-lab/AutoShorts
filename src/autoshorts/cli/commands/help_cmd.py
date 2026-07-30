@@ -13,8 +13,14 @@ def make_help_command(app: typer.Typer):
 
         if args:
             for name in args:
-                if isinstance(target, click.Group) and name in target.commands:
-                    target = target.commands[name]
+                # Support both click.Group and typer TyperGroup (which may not subclass click.Group in newer typer)
+                has_commands = hasattr(target, "commands") and isinstance(getattr(target, "commands"), dict) or hasattr(target, "commands")
+                try:
+                    cmds = getattr(target, "commands", {}) or {}
+                except Exception:
+                    cmds = {}
+                if has_commands and name in cmds:
+                    target = cmds[name]
                     info_parts.append(name)
                 else:
                     typer.secho(

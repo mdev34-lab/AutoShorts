@@ -71,6 +71,7 @@ from .config import (
     YOUTUBE_FORMAT,
     YOUTUBE_MAX_HEIGHT,
 )
+from .hook_engine import HookEngine, HookStyle
 from .image_searcher import ImageSearcher
 from .logging_system import Colors, log
 from .metadata import VideoMetadata
@@ -164,6 +165,8 @@ __all__ = [
     "log",
     "Colors",
     "ScriptGenerator",
+    "HookEngine",
+    "HookStyle",
     "TTSSystem",
     "VideoBackgroundManager",
     "VideoCompositor",

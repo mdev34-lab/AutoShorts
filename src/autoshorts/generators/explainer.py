@@ -50,6 +50,7 @@ from ..modules import (
     log,
     setup_directories,
 )
+from ..modules.hook_engine import HookStyle
 
 
 class ExplainerGenerator:
@@ -65,6 +66,7 @@ class ExplainerGenerator:
         image_source: str = "web",
         custom_instructions: str | None = None,
         metadata: VideoMetadata | None = None,
+        hook_style: HookStyle = HookStyle.DEFAULT,
     ):
         self.subject = subject
         self.output = output
@@ -75,10 +77,12 @@ class ExplainerGenerator:
         self.image_source = image_source
         self.custom_instructions = custom_instructions
         self.metadata = metadata or VideoMetadata()
+        self.hook_style = hook_style
 
         self.script_generator = ScriptGenerator(
             web_search=web_search,
             custom_instructions=custom_instructions,
+            hook_style=hook_style,
         )
         self.tts_system = TTSSystem()
         self.temp_dir = create_temp_dir()
