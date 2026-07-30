@@ -13,21 +13,18 @@ def make_help_command(app: typer.Typer):
 
         if args:
             for name in args:
-                # Support both click.Group and typer TyperGroup (which may not subclass click.Group in newer typer)
-                has_commands = hasattr(target, "commands") and isinstance(getattr(target, "commands"), dict) or hasattr(target, "commands")
-                try:
+                if hasattr(target, "commands"):
                     cmds = getattr(target, "commands", {}) or {}
-                except Exception:
-                    cmds = {}
-                if has_commands and name in cmds:
-                    target = cmds[name]
-                    info_parts.append(name)
-                else:
-                    typer.secho(
-                        f"Error: No such command: autoshorts {' '.join(args)}",
-                        fg="red",
-                    )
-                    raise typer.Exit(1)
+                    if name in cmds:
+                        target = cmds[name]
+                        info_parts.append(name)
+                        continue
+
+                typer.secho(
+                    f"Error: No such command: autoshorts {' '.join(args)}",
+                    fg="red",
+                )
+                raise typer.Exit(1)
 
         help_ctx = click.Context(target, info_name=" ".join(info_parts))
         typer.echo(target.get_help(help_ctx))

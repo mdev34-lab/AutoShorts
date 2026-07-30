@@ -10,7 +10,7 @@ Implements proven copywriting frameworks:
 
 Hook quality rules:
 - 1-2 sentences max
-- Must contain specific fact, name, or number
+- Must contain specific fact, name, or number (grounded, not hallucinated)
 - Must NOT start with "Você sabia", "Prepare-se", or rhetorical questions
 """
 
@@ -18,7 +18,7 @@ import hashlib
 import random
 import re
 from enum import Enum
-from typing import Dict
+from typing import Dict, Optional
 
 
 class HookStyle(str, Enum):
@@ -32,15 +32,11 @@ class HookStyle(str, Enum):
     REVEAL = "reveal"  # Promise a shocking fact
     STORY = "story"  # Narrative arc hook
 
-    # Allow pydantic/typer to handle case-insensitive? Typer will match by value.
-    # Provide __str__ as value already via str Enum.
-
 
 class HookEngine:
     """Generates optimized hook templates based on style and subject."""
 
-    # --- Template definitions (raw, for reference) ---
-
+    # Template definitions — used to drive generation (not dead code)
     _TEMPLATES_INFO = {
         HookStyle.CURIOSITY_GAP: [
             "Em [YEAR], [ENTITY] [ACTION] — e ninguém esperava que [CONSEQUENCE].",
@@ -74,8 +70,7 @@ class HookEngine:
         ],
     }
 
-    # Supporting vocab for filling placeholders - PT-BR focused
-
+    # Supporting vocab — PT-BR focused, non-hallucinating where possible
     _ACTIONS = [
         "fez história",
         "mudou as regras do jogo",
@@ -143,7 +138,6 @@ class HookEngine:
     ]
 
     def __init__(self):
-        # deterministic randomness seed base — but we use subject hash for variation
         pass
 
     # ------------------------------------------------------------------ #
@@ -152,8 +146,6 @@ class HookEngine:
 
     def get_tone_instructions(self, style: HookStyle) -> str:
         """Returns enhanced tone instructions for the script generator."""
-
-        # Ensure style is HookStyle enum
         try:
             if not isinstance(style, HookStyle):
                 style = HookStyle(style)
@@ -220,25 +212,28 @@ class HookEngine:
         """
         Returns:
             {
-                "hook": str,           # The first 1-2 sentences
-                "pattern_interrupt": str,  # Unexpected statement
-                "curiosity_gap": str,  # What the viewer needs to know
-                "tone_instructions": str   # Enhanced tone block for script generation
+                "hook": str,
+                "pattern_interrupt": str,
+                "curiosity_gap": str,
+                "tone_instructions": str
             }
         """
         try:
             if not isinstance(style, HookStyle):
                 style = HookStyle(style)
-        except Exception:
-            # Fallback to DEFAULT silently on invalid style
+        except Exception as e:
+            # Log invalid style fallback for debugging
+            try:
+                from .logging_system import log
+
+                log(f"Hook generation: invalid style '{style}' -> fallback DEFAULT: {e}", "WARNING")
+            except Exception:
+                pass
             style = HookStyle.DEFAULT
 
-        # Safe fallback for empty subject
         safe_subject = (subject or "").strip() or "essa história"
-
         tone_instructions = self.get_tone_instructions(style)
 
-        # DEFAULT preserves existing behavior — return empty hook so script generator keeps original first paragraph
         if style == HookStyle.DEFAULT:
             return {
                 "hook": "",
@@ -252,7 +247,6 @@ class HookEngine:
             pattern_interrupt = self._build_pattern_interrupt(safe_subject, style, context)
             curiosity_gap = self._build_curiosity_gap(safe_subject, style, context)
 
-            # Quality guards — ensure hook meets spec
             hook = self._enforce_quality(hook, safe_subject, style)
 
             return {
@@ -262,7 +256,6 @@ class HookEngine:
                 "tone_instructions": tone_instructions,
             }
         except Exception as e:
-            # Silent fallback to DEFAULT on failure
             try:
                 from .logging_system import log
 
@@ -277,31 +270,29 @@ class HookEngine:
             }
 
     # ------------------------------------------------------------------ #
-    # Internal builders
+    # Internal builders — grounded, no random hallucinated years
     # ------------------------------------------------------------------ #
 
     def _stable_seed(self, subject: str, style: HookStyle) -> int:
         h = hashlib.sha256(f"{subject}|{style.value}".encode()).hexdigest()
         return int(h[:8], 16)
 
-    def _extract_year(self, subject: str, seed: int) -> int:
-        # Try to find 4-digit year in subject
+    def _extract_year(self, subject: str, context: str = "") -> Optional[int]:
+        """Extract year from subject or context — returns None if not found (no hallucination)."""
+        # Subject first (most reliable)
         m = re.search(r"\b(18\d{2}|19\d{2}|20[0-2]\d|202[0-5])\b", subject)
         if m:
             return int(m.group(1))
-        # Deterministic pseudo-random year based on seed
-        rng = random.Random(seed)
-        return rng.randint(1950, 2023)
+        # Then context (web search results)
+        if context:
+            m = re.search(r"\b(18\d{2}|19\d{2}|20[0-2]\d|202[0-5])\b", context)
+            if m:
+                return int(m.group(1))
+        return None
 
     def _extract_entity(self, subject: str) -> str:
-        # Use subject as entity, but trim if too long
-        # Keep first 40 chars or up to comma
         s = subject.strip()
-        # Remove year numbers for cleaner entity when needed
-        # But keep original casing for hook
-        # Limit length
         if len(s) > 60:
-            # take first 2-3 words + keep meaning
             words = s.split()
             if len(words) > 4:
                 return " ".join(words[:4])
@@ -309,124 +300,171 @@ class HookEngine:
 
     def _domain_from_subject(self, subject: str, seed: int) -> str:
         low = subject.lower()
-        # Heuristic
-        if any(k in low for k in ["futebol", "flamengo", "corinthians", "palmeiras", "vasco", "são paulo", "seleção", "copa", "libertadores", "brasileirão", "var", "neymar", "pelé", "zico", "ronaldo"]):
+        if any(
+            k in low
+            for k in [
+                "futebol",
+                "flamengo",
+                "corinthians",
+                "palmeiras",
+                "vasco",
+                "são paulo",
+                "seleção",
+                "copa",
+                "libertadores",
+                "brasileirão",
+                "var",
+                "neymar",
+                "pelé",
+                "zico",
+                "ronaldo",
+            ]
+        ):
             rng = random.Random(seed + 1)
             return rng.choice(["o futebol brasileiro", "o futebol", "o esporte"])
         if any(k in low for k in ["tecnologia", "ia", "inteligência", "space", "nasa"]):
             return "a tecnologia"
         return random.Random(seed + 2).choice(self._DOMAINS)
 
-    def _number_for_subject(self, seed: int) -> int:
+    def _number_for_subject(self, seed: int, context: str = "") -> int:
+        """Return a number for structural templates (e.g., '5 razões') — not claiming factual world data."""
+        # Try to extract a number from context that could be relevant, else deterministic random for structure only
+        if context:
+            m = re.search(r"\b([3-9])\s+(?:títulos|anos|vezes|gols|motivos|razões)\b", context, re.IGNORECASE)
+            if m:
+                try:
+                    return int(m.group(1))
+                except Exception:
+                    pass
         rng = random.Random(seed + 3)
         return rng.randint(3, 9)
 
-    def _build_hook(self, subject: str, style: HookStyle, context: str) -> str:
-        seed = self._stable_seed(subject, style)
+    def _fill_template(self, template: str, values: Dict[str, str]) -> str:
+        """Replace [PLACEHOLDER] with values — leaves unknown placeholders intact then cleans."""
+        result = template
+        for key, val in values.items():
+            placeholder = f"[{key}]"
+            result = result.replace(placeholder, str(val))
+        # Clean any unreplaced placeholders: replace with generic safe value or remove brackets
+        # For year/missing values, replace [YEAR] with empty and tidy spaces if values had empty
+        result = re.sub(r"\[([A-Z_]+)\]", "", result)
+        result = re.sub(r"\s+", " ", result).strip()
+        result = result.replace("  ", " ").replace(" .", ".").replace(" ,", ",")
+        return result
+
+    def _build_placeholder_values(
+        self, subject: str, style: HookStyle, context: str, seed: int, year: Optional[int]
+    ) -> Dict[str, str]:
         rng = random.Random(seed)
-        year = self._extract_year(subject, seed)
         entity = self._extract_entity(subject)
         domain = self._domain_from_subject(subject, seed)
-        number = self._number_for_subject(seed)
+        number = self._number_for_subject(seed, context)
         time_period = rng.choice(self._TIME_PERIODS)
         reveal = rng.choice(self._REVEALS)
         action = rng.choice(self._ACTIONS)
         consequence = rng.choice(self._CONSEQUENCES)
         crisis = rng.choice(self._CRISES)
+        age = str(rng.randint(17, 35))
 
-        # Use context if provided to enrich — simple keyword extraction
-        extra_fact = ""
-        if context:
-            # Take first 100 chars of context as inspiration (no API needed)
-            snippet = context[:120].strip()
-            if snippet:
-                extra_fact = snippet.split(".")[0][:80]
+        # Derived values
+        event = subject
+        common_belief = rng.choice(self._COMMON_BELIEFS).format(subject=subject)
+        controversial_take = rng.choice(self._CONTROVERSIAL_TAKES).format(subject=subject)
 
-        # Dispatch per style
-        if style == HookStyle.CURIOSITY_GAP:
-            tmpl_choice = rng.randint(1, 3)
-            if tmpl_choice == 1:
-                return f"Em {year}, {entity} {action} — e ninguém esperava que {consequence}."
-            elif tmpl_choice == 2:
-                return f"O que {entity} fez em {year} mudou {domain} para sempre. Mas o motivo é mais estranho do que parece."
-            else:
-                event = subject
-                return f"{number} {time_period} depois de {event}, {entity} finalmente {reveal}. A razão vai te surpreender."
+        # Grounded specific data — only use year if we actually found it
+        if year:
+            specific_data = f"{number} títulos em {year}" if "futebol" in domain else f"dados oficiais de {year}"
+            truth = f"{entity} quebrou todas as estatísticas em {year}"
+        else:
+            specific_data = "dados oficiais"
+            truth = f"{entity} quebrou todas as estatísticas"
 
-        elif style == HookStyle.COUNTER_NARRATIVE:
-            tmpl_choice = rng.randint(1, 3)
-            if tmpl_choice == 1:
-                return f"Você acha que conhece {subject}. Mas a história real é completamente diferente."
-            elif tmpl_choice == 2:
-                belief = rng.choice(self._COMMON_BELIEFS).format(subject=subject)
-                return f"Todo mundo diz que {belief}. Os dados mostram o oposto."
-            else:
-                # Template 3 with enriched data
-                specific_data = f"{number} títulos em {year}" if year else f"{number} dados oficiais"
-                surprising = f"o oposto do que contam"
-                common_assump = f"só {domain}"
-                return f"{entity} não é {common_assump}. Na verdade, é {surprising}. E a prova está em {specific_data}."
+        # For templates needing surprising fact etc.
+        if year:
+            surprising_fact = f"quem foi o primeiro a fazer {subject} em {year}"
+            fact_with_year = f"em {year}"
+        else:
+            surprising_fact = f"o detalhe escondido de {subject}"
+            fact_with_year = "naquela época"
 
-        elif style == HookStyle.CONTROVERSY:
-            tmpl_choice = rng.randint(1, 3)
-            if tmpl_choice == 1:
-                take = rng.choice(self._CONTROVERSIAL_TAKES).format(subject=subject)
-                return f"Vou dizer algo impopular: {take}. E posso provar."
-            elif tmpl_choice == 2:
-                return f"{entity} é superestimado. Aqui estão {number} razões que ninguém quer admitir."
-            else:
-                lie = f"{domain} é justo"
-                truth = f"3 times ganharam 70% dos títulos em 20 anos" if "futebol" in domain else f"{entity} quebrou todas as estatísticas em {year}"
-                return f"A maior mentira do {domain} é que {lie}. A verdade? {truth}."
+        # Build dict for all placeholders used in _TEMPLATES_INFO
+        values = {
+            "YEAR": str(year) if year else "",
+            "ENTITY": entity,
+            "SUBJECT": subject,
+            "ACTION": action,
+            "CONSEQUENCE": consequence,
+            "DOMAIN": domain,
+            "NUMBER": str(number),
+            "TIME_PERIOD": time_period,
+            "EVENT": event,
+            "REVEAL": reveal,
+            "AGE": age,
+            "CRISIS": crisis,
+            "COMMON_BELIEF": common_belief,
+            "COMMON_ASSUMPTION": f"só {domain}",
+            "SURPRISING_TRUTH": "o oposto do que contam",
+            "SPECIFIC_DATA": specific_data,
+            "CONTROVERSIAL_TAKE": controversial_take,
+            "LIE": f"{domain} é justo",
+            "TRUTH": truth,
+            "SURPRISING_FACT": surprising_fact,
+            "ASSUMPTION": f"{subject} sempre foi assim",
+            "FACT_WITH_YEAR": fact_with_year,
+        }
+        return values
 
-        elif style == HookStyle.CHALLENGE:
-            tmpl_choice = rng.randint(1, 3)
-            if tmpl_choice == 1:
-                fact = f"quem foi o primeiro a fazer {subject} em {year}" if year else f"o detalhe escondido de {subject}"
-                return f"Aposto que você não sabe {fact}. Duvido. Vou te provar."
-            elif tmpl_choice == 2:
-                assumption = f"{subject} sempre foi assim"
-                return f"Se você acha que {assumption}, você está errado. E eu vou te mostrar por quê."
-            else:
-                return f"Pare tudo. Você não vai acreditar como {entity} {action} em {year}. E a história real é melhor que a ficção."
+    def _build_hook(self, subject: str, style: HookStyle, context: str) -> str:
+        seed = self._stable_seed(subject, style)
+        rng = random.Random(seed)
+        year = self._extract_year(subject, context)
+        values = self._build_placeholder_values(subject, style, context, seed, year)
 
-        elif style == HookStyle.REVEAL:
-            tmpl_choice = rng.randint(1, 3)
-            if tmpl_choice == 1:
-                return f"O que você vai descobrir sobre {subject} vai mudar como você vê {domain}."
-            elif tmpl_choice == 2:
-                return f"{entity} tinha um segredo em {year}. Só que esse segredo não era o que todo mundo pensava."
-            else:
-                return f"Em {year}, aconteceu algo que {domain} nunca contou. Até hoje."
+        templates = self._TEMPLATES_INFO.get(style, [])
+        if not templates:
+            entity = self._extract_entity(subject)
+            return f"{entity} — a história que {values['DOMAIN']} tentou esquecer."
 
-        elif style == HookStyle.STORY:
-            tmpl_choice = rng.randint(1, 3)
-            if tmpl_choice == 1:
-                return f"Tudo começou quando {entity} decidiu {action} em {year}. Ninguém imaginava o que viria depois."
-            elif tmpl_choice == 2:
-                return f"Em {year}, {entity} estava prestes a {crisis}. O que aconteceu nos próximos {number} {time_period} definiu {domain}."
-            else:
-                age = rng.randint(17, 35)
-                event = f"encarar {subject}"
-                return f"{entity} tinha {age} anos quando {event}. A decisão que tomou naquele dia mudou tudo."
+        # If year is None, prefer templates without [YEAR] to avoid hallucination
+        if year is None:
+            no_year_templates = [t for t in templates if "[YEAR]" not in t]
+            if no_year_templates:
+                templates = no_year_templates
 
-        # Fallback
-        return f"{entity} em {year} — a história que {domain} tentou esquecer."
+        # Deterministic choice
+        tmpl = rng.choice(templates)
+        hook = self._fill_template(tmpl, values)
+
+        # Post-process: if we removed year and left double spaces like "Em ,"
+        hook = hook.replace("Em ,", "Em um momento,").replace("Em  ,", "Em um momento,")
+        hook = re.sub(r"\bEm\s+,", "Em um momento,", hook)
+
+        # If hook still empty after filling, fallback
+        if not hook or len(hook) < 10:
+            entity = self._extract_entity(subject)
+            if year:
+                return f"{entity} em {year} mudou {values['DOMAIN']} para sempre."
+            return f"{entity} — a história que {values['DOMAIN']} tentou esquecer."
+
+        return hook
 
     def _build_pattern_interrupt(self, subject: str, style: HookStyle, context: str) -> str:
         seed = self._stable_seed(subject, style) + 100
         rng = random.Random(seed)
-        year = self._extract_year(subject, seed)
+        year = self._extract_year(subject, context)
         entity = self._extract_entity(subject)
+        year_str = str(year) if year else "naquela época"
+        domain = self._domain_from_subject(subject, seed)
+
         patterns = {
             HookStyle.CURIOSITY_GAP: [
                 f"{entity} fez algo que ninguém viu chegando.",
-                f"Em {year}, tudo mudou em 48 horas.",
+                f"Em {year_str}, tudo mudou em 48 horas." if year else f"{entity} mudou tudo em 48 horas.",
                 f"O dado que ninguém mostra: {rng.randint(70,99)}% das pessoas erram isso.",
             ],
             HookStyle.COUNTER_NARRATIVE: [
                 f"Os livros contam uma versão. Os números contam outra.",
-                f"{entity} quebrou a lógica de {self._domain_from_subject(subject, seed)}.",
+                f"{entity} quebrou a lógica de {domain}.",
                 f"O oposto do que te ensinaram na escola.",
             ],
             HookStyle.CONTROVERSY: [
@@ -440,7 +478,7 @@ class HookEngine:
                 f"Pause. Tenta adivinhar.",
             ],
             HookStyle.REVEAL: [
-                f"O detalhe que faltava estava em {year}.",
+                f"O detalhe que faltava estava em {year_str}." if year else "O detalhe que faltava estava nos bastidores.",
                 f"Ninguém viu isso chegando até hoje.",
                 f"E o segredo estava nos números.",
             ],
@@ -455,22 +493,23 @@ class HookEngine:
 
     def _build_curiosity_gap(self, subject: str, style: HookStyle, context: str) -> str:
         seed = self._stable_seed(subject, style) + 200
-        rng = random.Random(seed)
-        year = self._extract_year(subject, seed)
+        year = self._extract_year(subject, context)
         entity = self._extract_entity(subject)
         domain = self._domain_from_subject(subject, seed)
+        year_part = f"em {year}" if year else "naquela época"
+
         gaps = {
-            HookStyle.CURIOSITY_GAP: f"Por que {entity} fez isso em {year} e como isso ainda afeta {domain} hoje?",
+            HookStyle.CURIOSITY_GAP: f"Por que {entity} fez isso {year_part} e como isso ainda afeta {domain} hoje?",
             HookStyle.COUNTER_NARRATIVE: f"Qual é a história real de {subject} que os dados revelam, mas ninguém conta?",
             HookStyle.CONTROVERSY: f"Por que {entity} é tão polarizador e o que os números escondem sobre {subject}?",
-            HookStyle.CHALLENGE: f"Você realmente sabe o que aconteceu com {entity} em {year}?",
-            HookStyle.REVEAL: f"Qual foi o segredo de {entity} em {year} que {domain} nunca contou?",
-            HookStyle.STORY: f"Como {entity} saiu de {rng.choice(self._CRISES)} para definir {domain}?",
+            HookStyle.CHALLENGE: f"Você realmente sabe o que aconteceu com {entity} {year_part}?",
+            HookStyle.REVEAL: f"Qual foi o segredo de {entity} {year_part} que {domain} nunca contou?",
+            HookStyle.STORY: f"Como {entity} saiu de {random.Random(seed).choice(self._CRISES)} para definir {domain}?",
         }
-        return gaps.get(style, f"O que realmente aconteceu com {subject} em {year}?")
+        return gaps.get(style, f"O que realmente aconteceu com {subject} {year_part}?")
 
     def _enforce_quality(self, hook: str, subject: str, style: HookStyle) -> str:
-        """Ensure hook meets quality criteria."""
+        """Ensure hook meets quality criteria — no forbidden starts, 1-2 sentences, grounded."""
         hook = hook.strip()
 
         # Rule 1: Must not start with forbidden phrases
@@ -478,47 +517,37 @@ class HookEngine:
         lower = hook.lower()
         for fb in forbidden_starts:
             if lower.startswith(fb):
-                # Rewrite to remove forbidden start
-                # Strip leading phrase up to first space after forbidden?
-                # Simple: replace with entity + action
-                hook = hook[len(fb):].lstrip(" ?!:,-")
-                # Ensure first letter upper
+                hook = hook[len(fb) :].lstrip(" ?!:,-")
                 if hook:
                     hook = hook[0].upper() + hook[1:]
-                # Prepend entity if not present
                 if subject.lower() not in hook.lower():
                     hook = f"{self._extract_entity(subject)}: {hook}"
                 break
 
-        # Rule 2: Must not be question-only? Requirement says NO rhetorical questions at start
-        # Allow questions internally? But ensure not starting with question? Our templates avoid starting with rhetorical.
-        # If hook ends up starting with "?" or is just question, fix.
         if hook.startswith("?"):
             hook = hook.lstrip("? ").strip()
 
-        # Rule 3: Must contain specific fact, name, or number -> ensure subject or year present
-        # If not, inject year
-        seed = self._stable_seed(subject, style)
-        year = self._extract_year(subject, seed)
-        if subject.lower() not in hook.lower() and str(year) not in hook:
-            # Append year context if missing both?
+        # Rule 2: Must contain specific fact — ensure subject/entity present, if not inject
+        if subject.lower() not in hook.lower() and self._extract_entity(subject).lower() not in hook.lower():
+            # Append entity if missing and length allows
             if len(hook) < 120:
-                hook = f"{hook.rstrip('.')} em {year}."
+                hook = f"{hook.rstrip('.')} — {self._extract_entity(subject)}."
 
-        # Rule 4: 1-2 sentences max — count sentences by '.'
-        # Rough split
+        # Rule 3: 1-2 sentences max
         sentences = [s.strip() for s in hook.split(".") if s.strip()]
         if len(sentences) > 2:
             hook = ". ".join(sentences[:2]) + "."
 
-        # Ensure ends with period if not already
-        if hook and not hook[-1] in ".!?":
+        if hook and hook[-1] not in ".!?":
             hook += "."
 
-        # Ensure length >10 (for tests)
         if len(hook) < 15:
-            hook = f"{self._extract_entity(subject)} em {year} mudou {self._domain_from_subject(subject, seed)} para sempre."
+            entity = self._extract_entity(subject)
+            year = self._extract_year(subject)
+            if year:
+                hook = f"{entity} em {year} mudou {self._domain_from_subject(subject, self._stable_seed(subject, style))} para sempre."
+            else:
+                hook = f"{entity} — a história que {self._domain_from_subject(subject, self._stable_seed(subject, style))} tentou esquecer."
 
-        # Final forbidden check: remove double spaces
         hook = re.sub(r"\s+", " ", hook).strip()
         return hook

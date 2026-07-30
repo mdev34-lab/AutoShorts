@@ -21,14 +21,10 @@ FALLBACK_PARAGRAPHS: list[str] = []
 class ScriptGenerator:
     """Unified script generation using Pollinations API.
 
-    When web_search is enabled, uses a two-step approach:
-      Step 1 — generate verification search queries + title (draft is a byproduct)
-      Step 2 — search the web, then generate the final script grounded in results
-
     HookEngine integration:
-      - Supports multiple hook styles via HookStyle enum
-      - Generates optimized hooks before script generation
-      - Injects hook into first paragraph when style != DEFAULT
+      - Generates optimized hook BEFORE verification to preserve fact-checking
+      - Does NOT re-inject after verification to avoid overwriting corrections (fixes hallucination bypass)
+      - Uses context to ground year extraction (no random hallucinated years)
     """
 
     def __init__(
@@ -44,7 +40,6 @@ class ScriptGenerator:
         self.custom_instructions = custom_instructions
         self.searcher = WebSearcher() if web_search else None
         self.generated_title: str | None = None
-        # Hook Engine integration
         self.hook_engine = HookEngine()
         try:
             if not isinstance(hook_style, HookStyle):
@@ -65,35 +60,28 @@ class ScriptGenerator:
             "FORBIDDEN: Hyperboles, exaggerated claims, 'designed by a god', "
             "'you won't believe', 'shocking truth' — these sound fake.\n"
         )
-
-        # Add hook-specific instructions
         try:
             hook_instructions = self.hook_engine.get_tone_instructions(self.hook_style)
         except Exception:
             hook_instructions = ""
 
         full = base_tone + hook_instructions
-
         if self.custom_instructions:
             full += f"\nADDITIONAL USER INSTRUCTIONS: {self.custom_instructions}\n"
         return full
 
     def _inject_hook(self, script: list, subject: str, context: str = "") -> list:
-        """Inject optimized hook into first paragraph if applicable."""
+        """Inject optimized hook into first paragraph — used consistently (DRY)."""
         if not script:
             return script
-        # DEFAULT preserves existing behavior — no injection
         if self.hook_style == HookStyle.DEFAULT:
             return script
         try:
             hook_data = self.hook_engine.generate_hook(subject, self.hook_style, context)
             hook = hook_data.get("hook", "")
-            if hook and len(hook) > 10:
-                # Replace first paragraph with optimized hook, but keep validation
-                # Ensure hook doesn't violate filler rules
-                if not self._is_filler(hook):
-                    script = list(script)  # copy
-                    script[0] = hook
+            if hook and len(hook) > 10 and not self._is_filler(hook):
+                script = list(script)
+                script[0] = hook
         except Exception as e:
             log(f"Hook injection failed: {e}, keeping original script", "WARNING")
         return script
@@ -103,48 +91,25 @@ class ScriptGenerator:
     def generate_script(self, subject: str) -> list:
         """Generate script from subject. Searches web first, then generates grounded script."""
         log("Generating script...")
-
         tone_block = self._tone_instructions()
 
         if not self.web_search or not self.searcher or not subject:
-            # Generate hook even without web search, but context empty
-            hook_data = {}
-            try:
-                hook_data = self.hook_engine.generate_hook(subject, self.hook_style, "")
-            except Exception:
-                hook_data = {"hook": ""}
-
             script = self._make_text_api_call(
                 tone_block + _SYSTEM_PROMPT_SINGLE,
                 _user_prompt_single(subject, ""),
             )
-            # Prepend hook to script (replace first paragraph if needed)
-            if hook_data.get("hook") and script:
-                if not self._is_filler(hook_data["hook"]):
-                    script[0] = hook_data["hook"]
+            # Single injection — no verification in this path
+            script = self._inject_hook(script, subject, "")
             self.generated_title = self._generate_title_from_script(script, subject)
             return script
 
-        # Step 1: generate independent search queries (NOT from draft — avoids circular hallucination)
         log("Step 1: generating independent search queries...")
         queries = self._generate_search_queries(subject)
-
-        # Step 2: search the web with neutral queries
         results = self.searcher.search_with_queries(queries)
 
-        # Step 3: generate script grounded in search results
         if results:
             context = self.searcher.format_context(results[:15])
             log("Step 2: generating script with search context...")
-
-            # Generate hook based on style with context
-            hook_data = {}
-            try:
-                hook_data = self.hook_engine.generate_hook(subject, self.hook_style, context)
-            except Exception as e:
-                log(f"Hook generation failed: {e} — continuing with default", "WARNING")
-                hook_data = {"hook": ""}
-
             script = self._make_text_api_call(
                 tone_block + _SYSTEM_PROMPT_SINGLE,
                 _user_prompt_single(subject, context),
@@ -152,45 +117,31 @@ class ScriptGenerator:
             cleaned = self._validate_paragraphs(script)
             script = self._ensure_paragraph_count(cleaned, 5)
 
-            # Inject hook if available
-            if hook_data.get("hook") and script:
-                if not self._is_filler(hook_data["hook"]):
-                    script[0] = hook_data["hook"]
+            # Inject BEFORE verification so verifier can correct hallucinated years/numbers
+            script = self._inject_hook(script, subject, context)
 
             if script:
                 log("Script generated with web sources", "SUCCESS")
-                # Step 4: post-generation fact verification
+                # Fact verification now sees the hook and can fix it
                 script = self._verify_factual_claims(script, subject)
-                # Re-inject hook after verification to ensure hook persists (verification may rewrite)
-                if hook_data.get("hook") and script:
-                    # Only re-inject if still not filler and style != DEFAULT
-                    if self.hook_style != HookStyle.DEFAULT and not self._is_filler(hook_data["hook"]):
-                        # Preserve verified facts but keep hook style - only if hook not contradicting?
-                        # Simple: keep hook as first paragraph if verification didn't drastically change length
-                        if len(script) >= 3:
-                            # Ensure hook is still valid: if verification flagged it as incorrect number, skip
-                            script[0] = hook_data["hook"]
+                # Do NOT re-inject after verification — preserves fact-checked version (fixes bypass)
                 self.generated_title = self._generate_title_from_script(script, subject)
                 log("Script verified", "SUCCESS")
                 return script
 
-            # Try to repair instead of full regeneration
             repair = self._repair_paragraphs(cleaned, subject, 5)
             if repair and len(repair) >= 3:
                 log("Script repaired after validation", "SUCCESS")
-                script = repair
-                if hook_data.get("hook") and script and self.hook_style != HookStyle.DEFAULT:
-                    script[0] = hook_data["hook"]
-                script = self._verify_factual_claims(script, subject)
-                self.generated_title = self._generate_title_from_script(script, subject)
+                repair = self._inject_hook(repair, subject, context)
+                repair = self._verify_factual_claims(repair, subject)
+                self.generated_title = self._generate_title_from_script(repair, subject)
                 log("Script verified", "SUCCESS")
-                return script
+                return repair
 
             log("Script generation with context failed or produced filler", "WARNING")
         else:
             log("No search results for grounding", "WARNING")
 
-        # Fallback: generate draft for title + fallback content
         log("Generating draft as fallback...")
         draft_data = self._generate_draft(subject, num_paragraphs=5)
         self.generated_title = draft_data.get("title") or None
@@ -198,7 +149,6 @@ class ScriptGenerator:
         draft = self._validate_paragraphs(draft)
         draft = self._ensure_paragraph_count(draft, 5)
         if draft:
-            # Apply hook to fallback as well
             draft = self._inject_hook(draft, subject, "")
             return draft
 
@@ -211,20 +161,11 @@ class ScriptGenerator:
         desc = description[:1000] if description else ""
         combined_content = f"Title: {meta_title}\n\nDescription: {desc}"
         tone_block = self._tone_instructions()
-
-        hook_data = {}
-        try:
-            hook_data = self.hook_engine.generate_hook(meta_title, self.hook_style, desc)
-        except Exception:
-            hook_data = {"hook": ""}
-
         script = self._make_text_api_call(
             tone_block + _SYSTEM_PROMPT_METADATA,
             _user_prompt_metadata(combined_content),
         )
-        if hook_data.get("hook") and script and self.hook_style != HookStyle.DEFAULT:
-            if not self._is_filler(hook_data["hook"]):
-                script[0] = hook_data["hook"]
+        script = self._inject_hook(script, meta_title, desc)
         self.generated_title = self._generate_title_from_script(script, meta_title)
         return script
 
@@ -234,19 +175,14 @@ class ScriptGenerator:
 
         if not self.web_search or not self.searcher or not subject:
             paragraphs, prompts = self._generate_script_with_prompts_single(subject)
-            # Inject hook
-            paragraphs = self._inject_hook(paragraphs, subject, "")
+            # _generate_script_with_prompts_single already injects via _inject_hook
             self.generated_title = self._generate_title_from_script(paragraphs, subject)
             return paragraphs, prompts
 
-        # Step 1: generate independent search queries (NOT from draft)
         log("Step 1: generating independent search queries...")
         queries = self._generate_search_queries(subject)
-
-        # Step 2: search the web with neutral queries
         results = self.searcher.search_with_queries(queries)
 
-        # Step 3: generate script grounded in search results
         if results:
             context = self.searcher.format_context(results[:15])
             log("Step 2: generating script with search context...")
@@ -256,27 +192,26 @@ class ScriptGenerator:
                 paragraphs = self._ensure_paragraph_count(cleaned, 7)
                 if paragraphs:
                     log("Script generated with web sources", "SUCCESS")
-                    paragraphs = self._verify_factual_claims(paragraphs, subject)
-                    # Inject hook after verification, preserving hook style
+                    # Inject BEFORE verification
                     paragraphs = self._inject_hook(paragraphs, subject, context)
+                    paragraphs = self._verify_factual_claims(paragraphs, subject)
+                    # No re-injection after verification — preserves verified facts
                     self.generated_title = self._generate_title_from_script(paragraphs, subject)
                     log("Script verified", "SUCCESS")
                     return paragraphs, []
 
-                # Try to repair instead of full regeneration
                 repair = self._repair_paragraphs(cleaned, subject, 7)
                 if repair and len(repair) >= 3:
                     log("Script repaired after validation", "SUCCESS")
-                    paragraphs = self._verify_factual_claims(repair, subject)
-                    paragraphs = self._inject_hook(paragraphs, subject, context)
-                    self.generated_title = self._generate_title_from_script(paragraphs, subject)
-                    return paragraphs, []
+                    repair = self._inject_hook(repair, subject, context)
+                    repair = self._verify_factual_claims(repair, subject)
+                    self.generated_title = self._generate_title_from_script(repair, subject)
+                    return repair, []
 
             log("Script generation with context failed or produced filler", "WARNING")
         else:
             log("No search results for grounding", "WARNING")
 
-        # Fallback to draft
         log("Generating draft as fallback...")
         draft_data = self._generate_draft(subject, num_paragraphs=7)
         self.generated_title = draft_data.get("title") or None
@@ -293,10 +228,6 @@ class ScriptGenerator:
     def generate_image_prompts_from_script(
         self, paragraphs: list, num_images: int
     ) -> list[dict]:
-        """Generate paired image prompts (web query + AI prompt) based on script.
-
-        Returns list of dicts: [{"web_query": "...", "ai_prompt": "..."}, ...]
-        """
         log(f"Generating {num_images} paired image prompts based on script...")
         script_text = " ".join(paragraphs)
         system_prompt = f"""
@@ -319,12 +250,11 @@ class ScriptGenerator:
     # ── Two-pass helpers ─────────────────────────────────────────────────
 
     def _generate_draft(self, subject: str, num_paragraphs: int = 5) -> dict:
-        """Pass 1: generate draft script + verification queries + title."""
         tone_block = self._tone_instructions()
         system_prompt = (
             f"You are a YouTube Shorts scriptwriter. Output ONLY valid JSON with these exact keys:\n"
             f'1. "draft": Array of {num_paragraphs} strings (PT-BR), each 1-2 short sentences '
-            f"— a first-draft script about \"{subject}\".\n"
+            f'— a first-draft script about "{subject}".\n'
             f"   {tone_block}"
             f"   - Every paragraph MUST contain a verifiable fact — no generalities, no filler.\n"
             f"   - CRITICAL: Do the math yourself. If you mention a date range, calculate the years correctly.\n"
@@ -358,10 +288,7 @@ class ScriptGenerator:
             log(f"Draft generation failed: {e}", "ERROR")
             return {"draft": [], "queries": [subject], "title": ""}
 
-    # ── Independent query generation (breaks circular hallucination) ─────
-
     def _generate_search_queries(self, subject: str) -> list[str]:
-        """Generate neutral, independent search queries — NOT derived from draft content."""
         system_prompt = (
             "You are a research assistant. Output ONLY valid JSON with one key:\n"
             "'queries': Array of 6-8 specific web search queries in Portuguese.\n"
@@ -383,19 +310,14 @@ class ScriptGenerator:
             log(f"Search query generation failed: {e}", "WARNING")
             return [subject]
 
-    # ── Post-generation fact verification ────────────────────────────────
-
     def _verify_factual_claims(self, paragraphs: list, subject: str) -> list:
-        """Cross-check dates, scores, tabus, and numbers in script against web search results."""
         script_text = " ".join(paragraphs)
         verification_queries: list[str] = []
 
-        # 1. Extract years
         years = set(re.findall(r"\b(1[4-9]\d{2}|20[0-2]\d)\b", script_text))
         for y in sorted(years):
             verification_queries.append(f"{subject} {y}")
 
-        # 2. Extract score/result patterns: "3 a 2", "3x2", "por 3 a 2", "3-2"
         score_matches = re.findall(
             r"(\d+)\s*(?:[a\u00e0x-]\s*|a\s+|venceu por\s+|por\s+)(\d+)",
             script_text, re.IGNORECASE
@@ -406,7 +328,6 @@ class ScriptGenerator:
                 if q not in verification_queries:
                     verification_queries.append(q)
 
-        # 3. Detect tabu/streak claims
         if re.search(
             r"(?:n\u00e3o\s+\w+\s+(?:vence|ganha|perde|supera)|tabu|"
             r"sem\s+\w+\s+(?:vence|ganha|perde|supera))",
@@ -416,7 +337,6 @@ class ScriptGenerator:
             if tabu_q not in verification_queries:
                 verification_queries.append(tabu_q)
 
-        # 4. Extract "em [month] de [year]" / "desde [month] de [year]" contexts
         context_years = re.findall(
             r"(?:em|desde|no|na)\s+\w+\s+de\s+(\d{4})",
             script_text, re.IGNORECASE
@@ -426,17 +346,12 @@ class ScriptGenerator:
             if q not in verification_queries:
                 verification_queries.append(q)
 
-        verification_queries.append(
-            f"{subject} histórico fundação dados"
-        )
+        verification_queries.append(f"{subject} histórico fundação dados")
 
         if not verification_queries:
             return paragraphs
 
-        log(
-            f"Verifying claims with {len(verification_queries)} targeted queries",
-            "INFO",
-        )
+        log(f"Verifying claims with {len(verification_queries)} targeted queries", "INFO")
 
         if not self.searcher:
             log("Fact verification skipped: searcher not available", "WARNING")
@@ -490,33 +405,22 @@ class ScriptGenerator:
                 corrections = data.get("corrections") or []
                 is_verified = data.get("verified", False)
                 if corrections:
-                    log(
-                        f"Fact verification: {len(corrections)} corrections applied",
-                        "WARNING",
-                    )
+                    log(f"Fact verification: {len(corrections)} corrections applied", "WARNING")
                     for c in corrections:
-                        log(
-                            f"  '{c.get('claim', '?')}' -> '{c.get('correction', '?')}'",
-                            "INFO",
-                        )
+                        log(f"  '{c.get('claim', '?')}' -> '{c.get('correction', '?')}'", "INFO")
                     corrected = self._validate_paragraphs(corrected)
                     corrected = self._ensure_paragraph_count(corrected, target_count)
                 elif is_verified:
                     log("Fact verification: all claims match sources", "SUCCESS")
                 if corrected and len(corrected) >= 3:
                     return corrected
-                log(
-                    f"Verification returned {len(corrected)} paragraphs, need >= 3, retrying...",
-                    "WARNING",
-                )
+                log(f"Verification returned {len(corrected)} paragraphs, need >= 3, retrying...", "WARNING")
             except Exception as e:
                 log(f"Fact verification attempt {attempt + 1} failed: {e}", "WARNING")
                 corrected = []
         if paragraphs and len(paragraphs) >= 3:
             return paragraphs
         return paragraphs
-
-    # ── Title generation ─────────────────────────────────────────────────
 
     @staticmethod
     def _validate_title(title: str) -> tuple[bool, list[str]]:
@@ -534,10 +438,7 @@ class ScriptGenerator:
     def _fix_hashtags_case(title: str) -> str:
         return re.sub(r"#(\w+)", lambda m: f"#{m.group(1).lower()}", title)
 
-    def _generate_title_from_script(
-        self, paragraphs: list, subject: str
-    ) -> str | None:
-        """Generate a YouTube Shorts title from the final script."""
+    def _generate_title_from_script(self, paragraphs: list, subject: str) -> str | None:
         script_text = " ".join(paragraphs)[:500]
         system_prompt = (
             "Output ONLY a JSON object with one key: 'title'.\n"
@@ -577,13 +478,10 @@ class ScriptGenerator:
         return None
 
     def _repair_paragraphs(self, good: list, subject: str, target: int) -> list:
-        """Extend existing good paragraphs to reach target count instead of regenerating everything."""
         if len(good) >= target or not good:
             return good
-
         needed = target - len(good)
         good_text = "\n".join(good)
-
         system_prompt = (
             f"Output ONLY a JSON object with one key:\n"
             f"'paragraphs': Array of {needed} strings (PT-BR), each 1-2 short sentences.\n"
@@ -600,44 +498,25 @@ class ScriptGenerator:
         try:
             data = self._make_json_api_call(system_prompt, user_prompt)
             new_p = data.get("paragraphs") or []
-            log(
-                f"Repair attempt: API returned {len(new_p)} paragraphs, "
-                f"had {len(good)} good",
-                "INFO",
-            )
+            log(f"Repair attempt: API returned {len(new_p)} paragraphs, had {len(good)} good", "INFO")
             combined = good + new_p
             before = len(combined)
             combined = self._validate_paragraphs(combined)
             after_validation = len(combined)
             if before != after_validation:
-                log(
-                    f"Repair validation: {before} -> {after_validation} "
-                    f"({before - after_validation} removed as filler)",
-                    "INFO",
-                )
+                log(f"Repair validation: {before} -> {after_validation} ({before - after_validation} removed as filler)", "INFO")
             combined = self._ensure_paragraph_count(combined, target)
             if combined:
                 log(f"Repair success: {len(good)} -> {len(combined)} paragraphs", "SUCCESS")
                 return combined
-            log(
-                f"Repair failed: only {after_validation} good paragraphs "
-                f"after validation, needed {target}",
-                "WARNING",
-            )
+            log(f"Repair failed: only {after_validation} good paragraphs after validation, needed {target}", "WARNING")
             return []
         except Exception as e:
             log(f"Repair LLM call failed: {e}", "WARNING")
             return []
 
-    # ── API helpers ──────────────────────────────────────────────────────
-
     def _make_json_api_call(self, system_prompt: str, user_prompt: str) -> dict:
-        """Make API call expecting JSON response. Retries once on empty content."""
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         payload = {
             "model": self.model,
             "messages": [
@@ -650,38 +529,25 @@ class ScriptGenerator:
         for attempt in range(2):
             try:
                 response = requests.post(
-                    self.api_url,
-                    headers=headers,
-                    json=payload,
-                    timeout=API_TIMEOUT_IMAGE,
+                    self.api_url, headers=headers, json=payload, timeout=API_TIMEOUT_IMAGE
                 )
                 response.raise_for_status()
                 content = response.json()["choices"][0]["message"]["content"]
                 if content and content.strip():
                     result = json.loads(content)
                     if not isinstance(result, dict):
-                        log(
-                            f"API returned {type(result).__name__} instead of dict",
-                            "WARNING",
-                        )
+                        log(f"API returned {type(result).__name__} instead of dict", "WARNING")
                         return {}
                     return result
                 log(f"API returned empty content (attempt {attempt + 1})", "WARNING")
             except (json.JSONDecodeError, KeyError, requests.RequestException) as e:
-                log(
-                    f"JSON API call failed (attempt {attempt + 1}): {e}",
-                    "WARNING",
-                )
+                log(f"JSON API call failed (attempt {attempt + 1}): {e}", "WARNING")
             if attempt == 0:
                 time.sleep(1)
         raise ValueError("JSON API call failed after 2 attempts")
 
     def _make_text_api_call(self, system_prompt: str, user_prompt: str) -> list:
-        """Make API call and parse plain text response into paragraphs."""
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         payload = {
             "model": self.model,
             "messages": [
@@ -690,34 +556,24 @@ class ScriptGenerator:
             ],
             "temperature": 0.7,
         }
-
         try:
-            response = requests.post(
-                self.api_url, headers=headers, json=payload, timeout=API_TIMEOUT_TEXT
-            )
+            response = requests.post(self.api_url, headers=headers, json=payload, timeout=API_TIMEOUT_TEXT)
             response.raise_for_status()
             response_data = response.json()
 
             if isinstance(response_data, list):
                 log("API returned a list, attempting to extract content...", "WARNING")
                 if len(response_data) > 0 and isinstance(response_data[0], dict):
-                    content = response_data[0].get("content", "") or response_data[
-                        0
-                    ].get("text", "")
+                    content = response_data[0].get("content", "") or response_data[0].get("text", "")
                 else:
                     content = str(response_data[0]) if response_data else ""
             else:
                 content = response_data["choices"][0]["message"]["content"]
 
-            content = (
-                content.replace("```", "").replace("**", "").replace("*", "").strip()
-            )
-
+            content = content.replace("```", "").replace("**", "").replace("*", "").strip()
             lines = [line.strip() for line in content.split("\n") if line.strip()]
-
             if len(lines) <= 1:
                 lines = [para.strip() for para in content.split("\n\n") if para.strip()]
-
             if len(lines) <= 1:
                 sentences = [s.strip() + "." for s in content.split(".") if s.strip()]
                 lines = []
@@ -731,22 +587,15 @@ class ScriptGenerator:
                         current_para = ""
                 if current_para:
                     lines.append(current_para)
-
             if len(lines) < 4:
-                log(
-                    f"Only {len(lines)} paragraphs generated, expected at least 4",
-                    "WARNING",
-                )
-
+                log(f"Only {len(lines)} paragraphs generated, expected at least 4", "WARNING")
             return lines[:5]
-
         except Exception as e:
             log(f"Script generation failed: {e}", "ERROR")
             return []
 
     @staticmethod
     def _is_filler(paragraph: str) -> bool:
-        """Check if a paragraph is generic filler or corporate language that should be rejected."""
         filler_patterns = [
             "fica uma lição",
             "vale a pena conhecer",
@@ -769,36 +618,24 @@ class ScriptGenerator:
 
     @staticmethod
     def _validate_paragraphs(paragraphs: list) -> list:
-        """Remove filler paragraphs and validate quality. Returns cleaned list or empty."""
         if not paragraphs:
             return []
         cleaned = [p for p in paragraphs if isinstance(p, str) and not ScriptGenerator._is_filler(p)]
         if len(cleaned) < 3:
-            log(
-                f"Validation: {len(paragraphs)} input, {len(cleaned)} after removing filler",
-                "WARNING",
-            )
+            log(f"Validation: {len(paragraphs)} input, {len(cleaned)} after removing filler", "WARNING")
         return cleaned
 
     @staticmethod
     def _ensure_paragraph_count(paragraphs: list, target: int) -> list:
-        """Trim or validate paragraph count. Never pads with filler."""
         if len(paragraphs) >= target:
             return paragraphs[:target]
         if len(paragraphs) < 3:
-            log(
-                f"Only {len(paragraphs)} paragraphs, need at least 3 — returning empty",
-                "ERROR",
-            )
+            log(f"Only {len(paragraphs)} paragraphs, need at least 3 — returning empty", "ERROR")
             return []
         return paragraphs
 
-    # ── Single-pass path for images-only without web search ──────────────
-
-    def _generate_script_with_context(
-        self, subject: str, search_context: str
-    ) -> list | None:
-        """Generate paragraphs grounded in search context (JSON API call)."""
+    def _generate_script_with_context(self, subject: str, search_context: str) -> list | None:
+        """Generate paragraphs grounded in search context — does NOT inject hook (caller handles it)."""
         tone_block = self._tone_instructions()
         system_prompt = (
             "You are a master storyteller for viral YouTube Shorts.\n"
@@ -819,28 +656,12 @@ class ScriptGenerator:
         )
         try:
             data = self._make_json_api_call(system_prompt, user_prompt)
-            paragraphs = data.get("paragraphs")
-
-            # Apply hook if needed
-            if paragraphs and self.hook_style != HookStyle.DEFAULT:
-                try:
-                    hook_data = self.hook_engine.generate_hook(
-                        subject, self.hook_style, search_context
-                    )
-                    if hook_data.get("hook") and len(hook_data["hook"]) > 10:
-                        if not self._is_filler(hook_data["hook"]):
-                            paragraphs = list(paragraphs)
-                            paragraphs[0] = hook_data["hook"]
-                except Exception:
-                    pass
-
-            return paragraphs
+            return data.get("paragraphs")
         except Exception as e:
             log(f"Script generation with context failed: {e}", "WARNING")
             return None
 
     def _generate_script_with_prompts_single(self, subject: str) -> tuple:
-        """Original single-pass JSON generation (no web search)."""
         tone_block = self._tone_instructions()
         system_prompt = (
             "You are a master storyteller for viral YouTube Shorts.\n"
@@ -861,23 +682,12 @@ class ScriptGenerator:
         try:
             data = self._make_json_api_call(system_prompt, user_prompt)
             paragraphs = data.get("paragraphs", [])
-            # Inject hook
-            if paragraphs and self.hook_style != HookStyle.DEFAULT:
-                try:
-                    hook_data = self.hook_engine.generate_hook(subject, self.hook_style, "")
-                    if hook_data.get("hook"):
-                        if not self._is_filler(hook_data["hook"]):
-                            paragraphs = list(paragraphs)
-                            paragraphs[0] = hook_data["hook"]
-                except Exception:
-                    pass
+            paragraphs = self._inject_hook(paragraphs, subject, "")
             return paragraphs, data.get("image_prompts", [])
         except Exception as e:
             log(f"Script generation failed: {e}", "ERROR")
             raise
 
-
-# ── Prompt templates for single-pass text path ──────────────────────────
 
 _SYSTEM_PROMPT_SINGLE = (
     "You are a master storyteller for viral YouTube Shorts.\n"

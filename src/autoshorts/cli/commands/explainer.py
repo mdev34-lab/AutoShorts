@@ -47,6 +47,7 @@ def explainer_command(
         HookStyle.DEFAULT,
         "--hook-style",
         "-hs",
+        case_sensitive=False,
         help="Hook style for script generation (default, curiosity, counter, controversy, challenge, reveal, story)",
     ),
 ):

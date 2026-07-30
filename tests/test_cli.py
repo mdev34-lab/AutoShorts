@@ -293,6 +293,54 @@ class TestExplainerCommand:
         result = self.runner.invoke(app, ["new", "explainer", "test"])
         assert result.exit_code == 0  # CLI handles exceptions gracefully
 
+    def test_hook_style_flag_shows_in_help(self):
+        result = self.runner.invoke(app, ["new", "explainer", "--help"])
+        assert result.exit_code == 0
+        output = result.output.replace("\x1b[", "")
+        assert "--hook-style" in output
+        assert "curiosity" in output.lower()
+
+    @patch("autoshorts.cli.commands.explainer.VIDEO_TYPES")
+    @patch("autoshorts.cli.commands.explainer.asyncio.run")
+    def test_hook_style_flag_valid(self, mock_asyncio_run, mock_video_types):
+        gen_mock = Mock()
+        gen_mock.generate = Mock(return_value=True)
+        gen_mock.cleanup = Mock()
+        mock_video_types.__getitem__.return_value = lambda **kw: gen_mock
+        mock_asyncio_run.return_value = True
+
+        for style in ["default", "curiosity", "counter", "controversy", "challenge", "reveal", "story"]:
+            result = self.runner.invoke(app, ["new", "explainer", "test", "--hook-style", style])
+            assert result.exit_code == 0, f"Failed for style {style}: {result.output}"
+
+    @patch("autoshorts.cli.commands.explainer.VIDEO_TYPES")
+    @patch("autoshorts.cli.commands.explainer.asyncio.run")
+    def test_hook_style_short_flag(self, mock_asyncio_run, mock_video_types):
+        gen_mock = Mock()
+        gen_mock.generate = Mock(return_value=True)
+        gen_mock.cleanup = Mock()
+        mock_video_types.__getitem__.return_value = lambda **kw: gen_mock
+        mock_asyncio_run.return_value = True
+
+        result = self.runner.invoke(app, ["new", "explainer", "test", "-hs", "curiosity"])
+        assert result.exit_code == 0
+
+    def test_hook_style_flag_invalid(self):
+        result = self.runner.invoke(app, ["new", "explainer", "test", "--hook-style", "invalid_style"])
+        assert result.exit_code != 0
+
+    @patch("autoshorts.cli.commands.explainer.VIDEO_TYPES")
+    @patch("autoshorts.cli.commands.explainer.asyncio.run")
+    def test_hook_style_case_insensitive(self, mock_asyncio_run, mock_video_types):
+        gen_mock = Mock()
+        gen_mock.generate = Mock(return_value=True)
+        gen_mock.cleanup = Mock()
+        mock_video_types.__getitem__.return_value = lambda **kw: gen_mock
+        mock_asyncio_run.return_value = True
+
+        result = self.runner.invoke(app, ["new", "explainer", "test", "--hook-style", "CURIOSITY"])
+        assert result.exit_code == 0
+
 
 class TestMainEntry:
     """Test the main entry point."""
