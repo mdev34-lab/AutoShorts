@@ -12,6 +12,7 @@ from .config import (
     MODEL_TEXT,
 )
 from .logging_system import log
+from .utils import strip_markdown
 from .web_search import WebSearcher
 
 FALLBACK_PARAGRAPHS: list[str] = []
@@ -611,9 +612,7 @@ class ScriptGenerator:
             else:
                 content = response_data["choices"][0]["message"]["content"]
 
-            content = (
-                content.replace("```", "").replace("**", "").replace("*", "").strip()
-            )
+            content = strip_markdown(content).strip()
 
             lines = [line.strip() for line in content.split("\n") if line.strip()]
 
@@ -671,10 +670,14 @@ class ScriptGenerator:
 
     @staticmethod
     def _validate_paragraphs(paragraphs: list) -> list:
-        """Remove filler paragraphs and validate quality. Returns cleaned list or empty."""
+        """Remove filler paragraphs, strip markdown, and validate quality."""
         if not paragraphs:
             return []
-        cleaned = [p for p in paragraphs if isinstance(p, str) and not ScriptGenerator._is_filler(p)]
+        cleaned = [
+            strip_markdown(p)
+            for p in paragraphs
+            if isinstance(p, str) and not ScriptGenerator._is_filler(p)
+        ]
         if len(cleaned) < 3:
             log(
                 f"Validation: {len(paragraphs)} input, {len(cleaned)} after removing filler",

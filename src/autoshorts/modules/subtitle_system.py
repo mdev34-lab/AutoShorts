@@ -31,6 +31,7 @@ from .config import (
     SUBTITLE_MODE,
     SUBTITLE_START_Y_RATIO,
 )
+from .utils import strip_markdown
 
 
 def get_system_font():
@@ -132,7 +133,7 @@ class SubtitleGenerator:
     ) -> str:
         """Generate VTT subtitle file from paragraphs and audio duration."""
         combined_text = " ".join(paragraphs)
-        cleaned_text = combined_text.replace('"', "").replace("\n", " ").strip()
+        cleaned_text = strip_markdown(combined_text.replace('"', "").replace("\n", " ")).strip()
 
         words = cleaned_text.split()
         chunks = []
