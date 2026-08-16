@@ -598,6 +598,137 @@ class TestScriptGenerator:
         assert mock_searcher.format_context.call_count == 2
         assert mock_post.call_count == 5
 
+    def test_validate_paragraphs_strips_markdown(self):
+        """Paragraphs from JSON API paths must have markdown stripped before TTS/subtitles."""
+        paragraphs = [
+            "**O Palmeiras venceu o Corinthians** por 5 a 2.",
+            "*A Neo Qu\u00edmica Arena* recebeu 45 mil torcedores.",
+            "```Recorde hist\u00f3rico``` na temporada.",
+            "O cl\u00e1ssico ~~parou~~ o Brasil.",
+            "Frase com _\u00eanfase_ no meio.",
+        ]
+        cleaned = ScriptGenerator._validate_paragraphs(paragraphs)
+
+        assert isinstance(cleaned, list)
+        assert len(cleaned) == len(paragraphs)
+        joined = " ".join(cleaned)
+        assert "**" not in joined
+        assert "*" not in joined
+        assert "```" not in joined
+        assert "~~" not in joined
+        assert "_" not in joined
+
+    @patch("autoshorts.modules.script_generator.WebSearcher")
+    @patch("autoshorts.modules.script_generator.requests.post")
+    def test_generate_script_json_path_strips_markdown(
+        self, mock_post, mock_searcher_class
+    ):
+        """Fact-verification JSON paragraphs must have markdown stripped."""
+        mock_searcher = Mock()
+        mock_searcher.search_with_queries.return_value = [
+            {
+                "title": "Palmeiras",
+                "url": "https://ex.com/1",
+                "snippet": "Hist\u00f3ria do Palmeiras",
+            }
+        ]
+        mock_searcher.format_context.return_value = "FONTES DA WEB:\n..."
+        mock_searcher_class.return_value = mock_searcher
+
+        query_response = Mock()
+        query_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {"queries": ["palmeiras hist\u00f3ria"]}
+                        )
+                    }
+                }
+            ]
+        }
+        query_response.raise_for_status.return_value = None
+
+        text_response = Mock()
+        text_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            "O Palmeiras venceu o Corinthians por 5 a 2.\n"
+                            "Na Neo Qu\u00edmica Arena, 45 mil torcedores.\n"
+                            "Foi o maior p\u00fablico da temporada.\n"
+                            "O cl\u00e1ssico parou o Brasil.\n"
+                            "Fim da hist\u00f3ria."
+                        )
+                    }
+                }
+            ]
+        }
+        text_response.raise_for_status.return_value = None
+
+        verification_response = Mock()
+        verification_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "verified": False,
+                                "corrections": [
+                                    {
+                                        "claim": "45 mil torcedores",
+                                        "correction": "46 mil torcedores",
+                                    }
+                                ],
+                                "paragraphs": [
+                                    "**O Palmeiras venceu** por 5 a 2.",
+                                    "*Na Neo Qu\u00edmica Arena*, 46 mil torcedores.",
+                                    "```Recorde``` da temporada.",
+                                    "O cl\u00e1ssico ~~parou~~ o Brasil.",
+                                    "Fim com _\u00eanfase_ na conclus\u00e3o.",
+                                ],
+                            }
+                        )
+                    }
+                }
+            ]
+        }
+        verification_response.raise_for_status.return_value = None
+
+        title_response = Mock()
+        title_response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {"title": "Cl\u00e1ssico #palmeiras #corinthians #futebol"}
+                        )
+                    }
+                }
+            ]
+        }
+        title_response.raise_for_status.return_value = None
+
+        mock_post.side_effect = [
+            query_response,
+            text_response,
+            verification_response,
+            title_response,
+        ]
+
+        generator = ScriptGenerator(web_search=True)
+        result = generator.generate_script("Palmeiras x Corinthians")
+
+        assert isinstance(result, list)
+        assert len(result) == 5
+        joined = " ".join(result)
+        assert "**" not in joined
+        assert "*" not in joined
+        assert "```" not in joined
+        assert "~~" not in joined
+        assert "_" not in joined
+
     @patch("autoshorts.modules.script_generator.WebSearcher")
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_with_prompts_web_search_success(

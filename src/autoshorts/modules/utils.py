@@ -6,6 +6,7 @@ Common utility functions for directory management, cleanup, and system operation
 
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -23,6 +24,17 @@ from .config import (
     TEMP_DIR_PREFIX,
 )
 from .logging_system import log
+
+
+def strip_markdown(text: str) -> str:
+    """Remove markdown formatting markers that would break TTS and subtitles."""
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    text = re.sub(r"\*(.+?)\*", r"\1", text)
+    text = re.sub(r"__(.+?)__", r"\1", text)
+    text = re.sub(r"_(.+?)_", r"\1", text)
+    text = re.sub(r"~~(.+?)~~", r"\1", text)
+    text = text.replace("```", "")
+    return text
 
 
 def setup_directories():

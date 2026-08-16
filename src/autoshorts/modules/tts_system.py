@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from .config import FFPROBE_TIMEOUT, TTS_RATE, VOICE
 from .logging_system import log
 from .subtitle_system import SubtitleSystem
+from .utils import strip_markdown
 
 
 class TTSSystem:
@@ -34,7 +35,7 @@ class TTSSystem:
         combined_text = " ".join(paragraphs)
         audio_file = output_dir / "narration.mp3"
 
-        cleaned_text = combined_text.replace('"', "").replace("\n", " ").strip()
+        cleaned_text = strip_markdown(combined_text.replace('"', "").replace("\n", " ")).strip()
 
         log(f"Generating TTS Audio ({len(cleaned_text)} chars)...")
         communicate = edge_tts.Communicate(cleaned_text, self.voice, rate=self.rate)
