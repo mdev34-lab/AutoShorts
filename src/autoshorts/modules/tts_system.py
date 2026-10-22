@@ -109,9 +109,17 @@ class TTSSystem:
 
         return str(audio_file), vtt_file, duration
 
-    async def generate_audio_only(self, paragraphs: list, temp_dir: Path) -> str:
-        """Generate only audio without subtitles."""
+    async def generate_audio_only(self, paragraphs: list, temp_dir: Path,
+                                  text_transform=None) -> str:
+        """Generate only audio without subtitles.
+
+        text_transform: optional callable applied to the joined narration
+        before synthesis (e.g. TTS-only pronunciation respellings). It never
+        affects subtitles or metadata.
+        """
         text = " ".join(paragraphs)
+        if text_transform is not None:
+            text = text_transform(text)
         path = temp_dir / "audio.mp3"
         log(f"Generating TTS audio (engine={self.engine})...")
 
