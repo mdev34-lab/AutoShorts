@@ -42,6 +42,13 @@ autoshorts new explainer --batch "Tópico 1; Tópico 2; Tópico 3"
 autoshorts new explainer "Fenômenos da natureza" --images ai
 ```
 
+## Image text removal
+
+Downloaded web images are cleaned before compositing: overlay text (captions,
+prices, watermarks) is detected and inpainted away. Requires the `tesseract`
+binary; disable with `IMAGE_TEXT_REMOVAL=off`. Text-heavy graphics (tables,
+posters) are detected by coverage and kept untouched. See `.env.example`.
+
 ## Requirements
 
 - Python 3.10+

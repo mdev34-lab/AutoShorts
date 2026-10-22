@@ -10,6 +10,7 @@ from PIL import Image
 from .config import (
     API_KEY,
     API_TIMEOUT_IMAGE,
+    IMAGE_TEXT_REMOVAL,
     IMAGE_CACHE_DIR,
     IMAGE_MIN_HEIGHT,
     IMAGE_MIN_WIDTH,
@@ -108,6 +109,12 @@ class ImageSearcher:
             return False
 
     def resize_to_fill(self, image_path: Path, output_path: Path):
+        if IMAGE_TEXT_REMOVAL:
+            from .text_removal import remove_overlay_text
+
+            cleaned_path = image_path.with_name(image_path.stem + "_notext.jpg")
+            remove_overlay_text(image_path, cleaned_path)
+            image_path = cleaned_path
         img = Image.open(image_path).convert("RGB")
         target_ratio = self.target_width / self.target_height
         img_ratio = img.width / img.height
