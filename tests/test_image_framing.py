@@ -1,6 +1,5 @@
 """Tests for subject-aware framing."""
 import numpy as np
-import pytest
 from PIL import Image
 
 from autoshorts.modules.image_framing import (
