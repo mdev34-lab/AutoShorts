@@ -119,3 +119,49 @@ class TestOverlayAnimationFrameTransform:
 
         assert np.any(at_mid > 0)
         assert np.all(at_end == 0)
+
+
+class TestVerticalCropBox:
+    """Crop math must stay inside the source bounds (smear regression)."""
+
+    def test_wide_source_crops_sides_not_height(self):
+        # 640x338 (wider than 9:16): the old code cropped height to 360,
+        # beyond the 338px frame, yielding an 11-row strip that stretched
+        # into vertical streaks.
+        box = VideoCompositor._vertical_crop_box(640, 338)
+        assert box is not None
+        x1, y1, cw, ch = box
+        assert ch == 338  # height untouched
+        assert cw == int(338 * (9 / 16))
+        assert x1 >= 0 and x1 + cw <= 640
+        assert y1 == 0
+
+    def test_tall_source_crops_height_within_bounds(self):
+        box = VideoCompositor._vertical_crop_box(360, 900)
+        assert box is not None
+        x1, y1, cw, ch = box
+        assert cw == 360
+        assert ch == int(360 * (16 / 9))
+        assert y1 >= 0 and y1 + ch <= 900
+        assert x1 == 0
+
+    def test_exact_vertical_returns_none(self):
+        assert VideoCompositor._vertical_crop_box(720, 1280) is None
+        assert VideoCompositor._vertical_crop_box(1080, 1920) is None
+
+    def test_box_always_within_bounds(self):
+        for w, h in [
+            (640, 338),
+            (3840, 2160),
+            (360, 900),
+            (1000, 1000),
+            (1919, 1080),
+            (50, 4000),
+        ]:
+            box = VideoCompositor._vertical_crop_box(w, h)
+            if box is None:
+                continue
+            x1, y1, cw, ch = box
+            assert x1 >= 0 and y1 >= 0
+            assert x1 + cw <= w
+            assert y1 + ch <= h

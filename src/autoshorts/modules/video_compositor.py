@@ -484,6 +484,22 @@ class VideoCompositor:
 
         return final_video
 
+    @staticmethod
+    def _vertical_crop_box(w: int, h: int) -> tuple[int, int, int, int] | None:
+        """Center-crop box (x1, y1, width, height) bringing (w, h) to 9:16.
+
+        Always inside the source bounds: cropping beyond them wraps around
+        and returns a strip a few pixels tall, which later stretches into
+        vertical streaks (the "smeared foreground" bug).
+        """
+        if w / h > 9 / 16:  # too wide: crop the sides
+            new_w = int(h * (9 / 16))
+            return ((w - new_w) // 2, 0, new_w, h)
+        if w / h < 9 / 16:  # too tall: crop top/bottom
+            new_h = int(w * (16 / 9))
+            return (0, (h - new_h) // 2, w, new_h)
+        return None
+
     def create_output_video(
         self,
         video_path: str,
@@ -523,17 +539,18 @@ class VideoCompositor:
             log("Video has zero duration", "ERROR")
             return False
 
-        w, h = video.size
-        crop_start = time.time()
-        if w / h < 9 / 16:
-            new_w = int(h * (16 / 9))
-            video = video.cropped(x1=(w - new_w) // 2, width=new_w)
-        elif w / h > 16 / 9:
-            new_h = int(w * (9 / 16))
-            video = video.cropped(y1=(h - new_h) // 2, height=new_h)
-
-        video = video.resized((VIDEO_WIDTH, VIDEO_HEIGHT))
-        log(f"Crop/resize time: {time.time() - crop_start:.2f}s")
+        overlay_mode = bool(image_paths and len(image_paths) >= 3) or use_blurred_bg
+        if not overlay_mode:
+            # Simple mode plays the source full-frame: normalize it to the
+            # output aspect first. Overlay mode keeps the source untouched so
+            # the foreground band can preserve its original aspect.
+            crop_start = time.time()
+            box = self._vertical_crop_box(*video.size)
+            if box is not None:
+                x1, y1, cw, ch = box
+                video = video.cropped(x1=x1, y1=y1, width=cw, height=ch)
+            video = video.resized((VIDEO_WIDTH, VIDEO_HEIGHT))
+            log(f"Crop/resize time: {time.time() - crop_start:.2f}s")
 
         mode_start = time.time()
         if image_paths and len(image_paths) >= 3:
@@ -617,7 +634,10 @@ class VideoCompositor:
         blurred = self._create_blurred_background_from_clip(video)
         blurred = self._ensure_duration(blurred, target_duration)
 
-        content_h = int(VIDEO_HEIGHT * 0.45)
+        # Foreground band keeps the source aspect: full width, proportional
+        # height, instead of a fixed height that distorts the image.
+        content_h = int(round(video.h * (VIDEO_WIDTH / video.w)))
+        content_h -= content_h % 2  # even height keeps yuv420p encoders happy
         fg = video.resized((VIDEO_WIDTH, content_h)).with_position(("center", "center"))
         fg = self._ensure_duration(fg, target_duration)
 
