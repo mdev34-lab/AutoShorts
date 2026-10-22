@@ -15,6 +15,7 @@ from .config import (
     IMAGE_MIN_WIDTH,
     IMAGE_SEARCH_PER_QUERY,
     IMAGE_SEARCH_SAFE,
+    IMAGE_TEXT_REMOVAL,
     IMG_URL,
     MODEL_IMAGE,
     TARGET_IMAGE_HEIGHT,
@@ -64,7 +65,9 @@ class ImageSearcher:
             if re.search(rf"(?:^|[\W_]){re.escape(d)}(?:$|[\W_])", text, re.IGNORECASE):
                 return True
         for kw in BLOCKED_KEYWORDS:
-            if re.search(rf"(?:^|[\W_]){re.escape(kw)}(?:$|[\W_])", text, re.IGNORECASE):
+            if re.search(
+                rf"(?:^|[\W_]){re.escape(kw)}(?:$|[\W_])", text, re.IGNORECASE
+            ):
                 return True
         return False
 
@@ -108,6 +111,12 @@ class ImageSearcher:
             return False
 
     def resize_to_fill(self, image_path: Path, output_path: Path):
+        if IMAGE_TEXT_REMOVAL:
+            from .text_removal import remove_overlay_text
+
+            cleaned_path = image_path.with_name(image_path.stem + "_notext.jpg")
+            remove_overlay_text(image_path, cleaned_path)
+            image_path = cleaned_path
         img = Image.open(image_path).convert("RGB")
         target_ratio = self.target_width / self.target_height
         img_ratio = img.width / img.height
