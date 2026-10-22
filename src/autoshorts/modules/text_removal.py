@@ -36,6 +36,12 @@ from .config import (
 from .logging_system import log
 
 _MAX_CANDIDATES = 25
+# A real overlay text line is a thin strip. Candidates taller than this
+# fraction of the image, or covering more than this fraction of its area,
+# are merged background blobs (faces, bodies, scenery crossed by texture)
+# and erasing them does more damage than the text ever did.
+_MAX_BOX_HEIGHT_FRAC = 0.15
+_MAX_BOX_AREA_FRAC = 0.10
 
 
 def _dependencies_available() -> bool:
@@ -64,10 +70,13 @@ def _candidate_boxes(img_rgb: np.ndarray) -> list[tuple[int, int, int, int]]:
     closed = cv2.erode(closed, None, iterations=2)
     closed = cv2.dilate(closed, None, iterations=2)
     contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    img_h, img_w = gray.shape[:2]
     boxes = []
     for c in contours:
         x, y, w, h = cv2.boundingRect(c)
         if h < 8 or w < 12 or w / float(h) < 0.5:
+            continue
+        if h > _MAX_BOX_HEIGHT_FRAC * img_h or (w * h) > _MAX_BOX_AREA_FRAC * (img_w * img_h):
             continue
         if cv2.contourArea(c) / float(w * h) < 0.2:
             continue
