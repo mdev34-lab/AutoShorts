@@ -176,3 +176,42 @@ def test_framing_error_falls_back_to_legacy_center_crop(tmp_path, monkeypatch):
     expected = tmp_path / "expected.jpg"
     image_framing._center_crop(src, expected, TW, TH)
     assert out.read_bytes() == expected.read_bytes()
+
+
+def test_largest_face_wins_among_multiple(monkeypatch):
+    from autoshorts.modules import image_framing
+
+    # 640x800 (ratio 0.8) into 9:16: cover-crop path, horizontal window of
+    # 450px. Center crop would be x in [95, 545).
+    img = np.full((800, 640, 3), 30, np.uint8)
+    small = (150.0, 300.0, 60.0)  # inside the center window
+    medium = (350.0, 500.0, 90.0)  # inside the center window
+    large = (600.0, 550.0, 150.0)  # OUTSIDE the center window (x > 545)
+    for fx, fy, _ in (small, medium, large):
+        img[int(fy) - 25 : int(fy) + 25, int(fx) - 25 : int(fx) + 25] = 255
+
+    faces = [small, medium, large]
+    monkeypatch.setattr(image_framing, "_face_centers", lambda gray: faces)
+
+    # subject_point picks the LARGEST face (biased slightly above center).
+    px, py = image_framing.subject_point(img)
+    lfx, lfy, lsize = large
+    assert abs(px - lfx / img.shape[1]) < 0.01
+    assert abs(py - (lfy - lsize * 0.15) / img.shape[0]) < 0.01
+
+    # The crop window follows the largest face: its marker survives on the
+    # right of the frame, while the small-face marker (left of the shifted
+    # window) is gone. A center crop would show the opposite.
+    framed = frame_subject(img, TW, TH)
+    assert framed.shape == (TH, TW, 3)
+    ys, xs = np.nonzero(framed.mean(axis=2) > 200)
+    assert len(xs) > 100
+    assert xs.mean() > TW / 2  # bright content sits right of center
+    assert xs.min() > 80  # the small-face marker did not survive
+
+    # Detection order must not matter.
+    monkeypatch.setattr(
+        image_framing, "_face_centers", lambda gray: list(reversed(faces))
+    )
+    framed_rev = frame_subject(img, TW, TH)
+    assert (framed_rev == framed).all()
