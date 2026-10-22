@@ -10,12 +10,12 @@ from PIL import Image
 from .config import (
     API_KEY,
     API_TIMEOUT_IMAGE,
-    IMAGE_TEXT_REMOVAL,
     IMAGE_CACHE_DIR,
     IMAGE_MIN_HEIGHT,
     IMAGE_MIN_WIDTH,
     IMAGE_SEARCH_PER_QUERY,
     IMAGE_SEARCH_SAFE,
+    IMAGE_TEXT_REMOVAL,
     IMG_URL,
     MODEL_IMAGE,
     TARGET_IMAGE_HEIGHT,
@@ -65,7 +65,9 @@ class ImageSearcher:
             if re.search(rf"(?:^|[\W_]){re.escape(d)}(?:$|[\W_])", text, re.IGNORECASE):
                 return True
         for kw in BLOCKED_KEYWORDS:
-            if re.search(rf"(?:^|[\W_]){re.escape(kw)}(?:$|[\W_])", text, re.IGNORECASE):
+            if re.search(
+                rf"(?:^|[\W_]){re.escape(kw)}(?:$|[\W_])", text, re.IGNORECASE
+            ):
                 return True
         return False
 

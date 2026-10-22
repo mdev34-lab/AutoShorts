@@ -19,8 +19,10 @@ with an overlay, and the original is kept untouched.
 Best-effort and dependency-tolerant: if OpenCV, pytesseract or the tesseract
 binary are unavailable, images pass through untouched.
 """
+
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -67,8 +69,9 @@ def _candidate_boxes(img_rgb: np.ndarray) -> list[tuple[int, int, int, int]]:
     grad_x = cv2.threshold(grad_x, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
     rect = cv2.getStructuringElement(cv2.MORPH_RECT, (max(9, width // 40), 3))
     closed = cv2.morphologyEx(grad_x, cv2.MORPH_CLOSE, rect)
-    closed = cv2.erode(closed, None, iterations=2)
-    closed = cv2.dilate(closed, None, iterations=2)
+    kernel3 = np.ones((3, 3), np.uint8)
+    closed = cv2.erode(closed, kernel3, iterations=2)
+    closed = cv2.dilate(closed, kernel3, iterations=2)
     contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     img_h, img_w = gray.shape[:2]
     boxes = []
@@ -76,7 +79,9 @@ def _candidate_boxes(img_rgb: np.ndarray) -> list[tuple[int, int, int, int]]:
         x, y, w, h = cv2.boundingRect(c)
         if h < 8 or w < 12 or w / float(h) < 0.5:
             continue
-        if h > _MAX_BOX_HEIGHT_FRAC * img_h or (w * h) > _MAX_BOX_AREA_FRAC * (img_w * img_h):
+        if h > _MAX_BOX_HEIGHT_FRAC * img_h or (w * h) > _MAX_BOX_AREA_FRAC * (
+            img_w * img_h
+        ):
             continue
         if cv2.contourArea(c) / float(w * h) < 0.2:
             continue
@@ -91,12 +96,19 @@ def _ocr_confirms(img_rgb: np.ndarray, box: tuple[int, int, int, int]) -> bool:
     import pytesseract
 
     x, y, w, h = box
-    crop = img_rgb[max(0, y - 4): y + h + 4, max(0, x - 4): x + w + 4]
+    # Generous padding: tesseract reads tight crops poorly.
+    pad = max(10, h // 3)
+    crop = img_rgb[max(0, y - pad) : y + h + pad, max(0, x - pad) : x + w + pad]
     if crop.size == 0:
         return False
     gray = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
     border = np.concatenate(
-        [gray[0, :].ravel(), gray[-1, :].ravel(), gray[:, 0].ravel(), gray[:, -1].ravel()]
+        [
+            gray[0, :].ravel(),
+            gray[-1, :].ravel(),
+            gray[:, 0].ravel(),
+            gray[:, -1].ravel(),
+        ]
     )
     # Dark border hints light-on-dark text; tesseract prefers dark-on-light.
     # When the hint polarity reads nothing, try the other one.
@@ -108,7 +120,7 @@ def _ocr_confirms(img_rgb: np.ndarray, box: tuple[int, int, int, int]) -> bool:
             config="--psm 6",
             output_type=pytesseract.Output.DICT,
         )
-        for text, conf in zip(data["text"], data["conf"]):
+        for text, conf in zip(data["text"], data["conf"], strict=False):
             try:
                 confidence = float(conf)
             except (TypeError, ValueError):
@@ -143,9 +155,19 @@ def _has_line_neighbor(
     return False
 
 
+def _atomic_jpeg_write(img: Image.Image, output_path: Path) -> None:
+    """Write via a unique sibling temp file + atomic replace (no torn sidecars)."""
+    tmp = output_path.with_name(f"{output_path.name}.{os.getpid()}.part")
+    try:
+        img.save(tmp, "JPEG", quality=95)
+        os.replace(tmp, output_path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def _passthrough(image_path: Path, output_path: Path) -> None:
     with Image.open(image_path) as img:
-        img.convert("RGB").save(output_path, "JPEG", quality=95)
+        _atomic_jpeg_write(img.convert("RGB"), output_path)
 
 
 def remove_overlay_text(image_path: Path, output_path: Path) -> bool:
@@ -155,14 +177,17 @@ def remove_overlay_text(image_path: Path, output_path: Path) -> bool:
     the original image is copied through and False is returned, so the video
     pipeline never breaks because of text removal.
     """
-    import cv2
-
     image_path = Path(image_path)
     output_path = Path(output_path)
     if not _dependencies_available():
-        log("Text removal unavailable (cv2/pytesseract/tesseract missing), skipping", "WARNING")
+        log(
+            "Text removal unavailable (cv2/pytesseract/tesseract missing), skipping",
+            "WARNING",
+        )
         _passthrough(image_path, output_path)
         return False
+    import cv2  # safe: _dependencies_available() just verified it
+
     try:
         with Image.open(image_path) as img:
             rgb = np.array(img.convert("RGB"))
@@ -170,15 +195,17 @@ def remove_overlay_text(image_path: Path, output_path: Path) -> bool:
         confirmed = [b for b in candidates if _ocr_confirms(rgb, b)]
         # Real overlays form lines: a confirmed box with no other candidate
         # nearby is almost always an OCR hallucination on texture.
-        confirmed = [
-            b for b in confirmed if _has_line_neighbor(b, candidates)
-        ]
+        confirmed = [b for b in confirmed if _has_line_neighbor(b, candidates)]
         if not confirmed:
             _passthrough(image_path, output_path)
             return False
-        coverage = sum(w * h for _, _, w, h in confirmed) / float(
-            rgb.shape[0] * rgb.shape[1]
-        )
+        mask = np.zeros(rgb.shape[:2], dtype=np.uint8)
+        for x, y, w, h in confirmed:
+            cv2.rectangle(mask, (x, y), (x + w, y + h), 255, thickness=-1)
+        kernel = np.ones((3, 3), np.uint8)
+        dilated = cv2.dilate(mask, kernel, iterations=3)
+        # Guard AFTER dilation: it measures what would actually be erased.
+        coverage = float(np.count_nonzero(dilated)) / float(dilated.size)
         if coverage > TEXT_REMOVAL_MAX_COVERAGE:
             log(
                 f"  Text removal: {coverage:.0%} of the image is text (graphic, not a"
@@ -187,16 +214,14 @@ def remove_overlay_text(image_path: Path, output_path: Path) -> bool:
             )
             _passthrough(image_path, output_path)
             return False
-        mask = np.zeros(rgb.shape[:2], dtype=np.uint8)
-        for x, y, w, h in confirmed:
-            cv2.rectangle(mask, (x, y), (x + w, y + h), 255, thickness=-1)
-        kernel = np.ones((3, 3), np.uint8)
-        mask = cv2.dilate(mask, kernel, iterations=3)
         cleaned = cv2.inpaint(
-            cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), mask, TEXT_REMOVAL_INPAINT_RADIUS, cv2.INPAINT_TELEA
+            cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR),
+            mask,
+            TEXT_REMOVAL_INPAINT_RADIUS,
+            cv2.INPAINT_TELEA,
         )
-        Image.fromarray(cv2.cvtColor(cleaned, cv2.COLOR_BGR2RGB)).save(
-            output_path, "JPEG", quality=95
+        _atomic_jpeg_write(
+            Image.fromarray(cv2.cvtColor(cleaned, cv2.COLOR_BGR2RGB)), output_path
         )
         log(f"  Text removal: inpainted {len(confirmed)} text region(s)", "INFO")
         return True
