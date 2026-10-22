@@ -48,6 +48,9 @@ Downloaded web images are cleaned before compositing: overlay text (captions,
 prices, watermarks) is detected and inpainted away. Requires the `tesseract`
 binary; disable with `IMAGE_TEXT_REMOVAL=off`. Text-heavy graphics (tables,
 posters) are detected by coverage and kept untouched. See `.env.example`.
+## Image framing
+
+Downloaded web images are reframed to the video aspect ratio around their subject: faces are located with OpenCV's bundled Haar cascade, otherwise a spectral-residual saliency centroid picks the interesting region. When the aspect mismatch is small the image is cover-cropped around that point; when it is large (e.g. a wide landscape photo in a 9:16 short) the frame is filled with a blurred cover-scaled copy and the sharp image is placed on top, so nothing of the subject is cut out. Disable with `SUBJECT_FRAMING=false`; tune with `SUBJECT_FILL_ZOOM_THRESHOLD` and `SUBJECT_FILL_BLUR_RADIUS`.
 
 ## Requirements
 

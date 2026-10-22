@@ -12,6 +12,7 @@ AI-powered tool for generating YouTube Shorts / TikTok videos with script genera
 - **Text-to-Speech** — natural audio via Edge TTS
 - **Subtitle System** — VTT generation + word-level highlight rendering
 - **Video Composition** — blurred YouTube background or AI/web images with smooth overlay animation
+- **Subject-aware image framing** — web images are framed around faces/salient regions; wide photos get a blurred-fill background instead of a hard center crop
 - **YouTube Integration** — download any video as background footage
 - **Two pipelines**: normal (YouTube bg + optional image overlays) and images-only (AI/web images + overlay animation, no YouTube bg)
 - **Typer CLI** — nested subcommands, auto-generated `--help`, shell completion
