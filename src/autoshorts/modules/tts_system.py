@@ -63,7 +63,9 @@ class TTSSystem:
         combined_text = " ".join(paragraphs)
         audio_file = output_dir / "narration.mp3"
 
-        cleaned_text = strip_markdown(combined_text.replace('"', "").replace("\n", " ")).strip()
+        cleaned_text = strip_markdown(
+            combined_text.replace('"', "").replace("\n", " ")
+        ).strip()
 
         log(
             f"Generating TTS Audio ({len(cleaned_text)} chars, engine={self.engine})..."
@@ -109,8 +111,9 @@ class TTSSystem:
 
         return str(audio_file), vtt_file, duration
 
-    async def generate_audio_only(self, paragraphs: list, temp_dir: Path,
-                                  text_transform=None) -> str:
+    async def generate_audio_only(
+        self, paragraphs: list, temp_dir: Path, text_transform=None
+    ) -> str:
         """Generate only audio without subtitles.
 
         text_transform: optional callable applied to the joined narration

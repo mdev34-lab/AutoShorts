@@ -6,24 +6,24 @@ pronunciation respellings, then collect product photos from public
 sources that prove the exact model code, and compose the standard
 images-only video.
 """
+
 from __future__ import annotations
 
 import time
 import traceback
-from pathlib import Path
 
 from moviepy import AudioFileClip
 
 from ..modules.config import OUTPUT_DIR, SCENE_DURATION_SECONDS
-from ..modules.utils import setup_directories
 from ..modules.image_searcher import ImageSearcher
 from ..modules.logging_system import log
 from ..modules.product.discovery import search_image_candidates
-from ..modules.product.errors import ProductNotFound, ProductPipelineError
+from ..modules.product.errors import ProductPipelineError
 from ..modules.product.network import safe_get
 from ..modules.product.product import parse_product_link
 from ..modules.product.pronunciation import load_dictionary, prepare_for_tts
 from ..modules.product.provenance import verify_image_sources
+from ..modules.utils import setup_directories
 from .explainer import ExplainerGenerator
 
 PRODUCT_SCRIPT_INSTRUCTIONS = (
@@ -41,7 +41,9 @@ MAX_IMAGE_BYTES = 20 * 1024 * 1024
 class ProductGenerator(ExplainerGenerator):
     """`autoshorts new product <link>` generator."""
 
-    def __init__(self, *, product_url: str, pronunciation_file: str | None = None, **kwargs):
+    def __init__(
+        self, *, product_url: str, pronunciation_file: str | None = None, **kwargs
+    ):
         kwargs.setdefault("web_search", False)
         kwargs.setdefault("images_only", True)
         kwargs.setdefault("no_images", True)
@@ -64,14 +66,18 @@ class ProductGenerator(ExplainerGenerator):
             log("Step 2: Generating showcase script...")
             paragraphs = self.script_generator.generate_script(product.name)
             if not paragraphs or len(paragraphs) < 3:
-                log(f"Script generation failed: got {len(paragraphs)} paragraphs, need >= 3", "ERROR")
+                log(
+                    f"Script generation failed: got {len(paragraphs)} paragraphs, need >= 3",
+                    "ERROR",
+                )
                 return False
             self.metadata.description = " ".join(paragraphs)
 
             log("Step 3: Generating TTS audio (with pronunciation respellings)...")
             pron_dict = load_dictionary(self.pronunciation_file)
             audio_path = await self.tts_system.generate_audio_only(
-                paragraphs, self.temp_dir,
+                paragraphs,
+                self.temp_dir,
                 text_transform=lambda text: prepare_for_tts(text, pron_dict),
             )
 
@@ -87,7 +93,7 @@ class ProductGenerator(ExplainerGenerator):
                 return False
 
             log("Step 5: Verifying sources (fail-closed model match)...")
-            verified = []
+            verified: list = []
             for candidate in candidates[:MAX_CANDIDATES_TO_TRY]:
                 if len(verified) >= num_images:
                     break
@@ -112,11 +118,16 @@ class ProductGenerator(ExplainerGenerator):
             for i, (candidate, _evidence) in enumerate(verified):
                 try:
                     data, _ = safe_get(
-                        candidate.image_url, operation="product_image_download",
-                        max_bytes=MAX_IMAGE_BYTES, expected_content_prefix="image/",
+                        candidate.image_url,
+                        operation="product_image_download",
+                        max_bytes=MAX_IMAGE_BYTES,
+                        expected_content_prefix="image/",
                     )
                 except ProductPipelineError as e:
-                    log(f"Download failed for {candidate.image_url[:60]}...: {e}", "WARNING")
+                    log(
+                        f"Download failed for {candidate.image_url[:60]}...: {e}",
+                        "WARNING",
+                    )
                     continue
                 raw = self.temp_dir / f"product_raw_{i}.img"
                 raw.write_bytes(data)
@@ -130,11 +141,16 @@ class ProductGenerator(ExplainerGenerator):
                 raw.unlink(missing_ok=True)
                 img_paths.append(str(final))
             if len(img_paths) < MIN_IMAGES:
-                log(f"Only {len(img_paths)} usable images, need >= {MIN_IMAGES}", "ERROR")
+                log(
+                    f"Only {len(img_paths)} usable images, need >= {MIN_IMAGES}",
+                    "ERROR",
+                )
                 return False
 
             log("Step 7: Composing video...")
-            self._create_flux_video(img_paths, audio_path, paragraphs, self.output, self.metadata)
+            self._create_flux_video(
+                img_paths, audio_path, paragraphs, self.output, self.metadata
+            )
 
             elapsed = time.time() - start_time
             log(f"Video completed in {elapsed:.2f}s", "SUCCESS")

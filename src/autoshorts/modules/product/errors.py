@@ -5,15 +5,15 @@ class ProductPipelineError(Exception):
     exit_code = 1
 
 
-class InvalidProductLink(ProductPipelineError):
+class InvalidProductLinkError(ProductPipelineError):
     exit_code = 2
 
 
-class SourceBlocked(ProductPipelineError):
+class SourceBlockedError(ProductPipelineError):
     exit_code = 3
 
 
-class ProductNotFound(ProductPipelineError):
+class ProductNotFoundError(ProductPipelineError):
     exit_code = 4
 
 

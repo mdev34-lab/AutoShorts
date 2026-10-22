@@ -14,9 +14,7 @@ from ..new import new_app
 @new_app.command(name="product")
 def product_command(
     link: str = typer.Argument(..., help="Shopee product link (or shp.ee short link)"),
-    output: str = typer.Option(
-        "output", "--output", "-o", help="Output directory"
-    ),
+    output: str = typer.Option("output", "--output", "-o", help="Output directory"),
     pronunciation_file: str = typer.Option(
         None,
         "--pronunciation-file",
@@ -34,18 +32,23 @@ def product_command(
 
     metadata = VideoMetadata(
         title=None,
-        comment=json.dumps({
-            "product_link": link,
-            "type": "product",
-        }, ensure_ascii=False),
+        comment=json.dumps(
+            {
+                "product_link": link,
+                "type": "product",
+            },
+            ensure_ascii=False,
+        ),
     )
 
-    pronunciation_file = pronunciation_file or os.getenv("AUTOSHORTS_PRONUNCIATION_FILE")
+    pronunciation_path: str | None = pronunciation_file or os.getenv(
+        "AUTOSHORTS_PRONUNCIATION_FILE"
+    )
 
     gen = ProductGenerator(
         product_url=link,
         output=str(out_file),
-        pronunciation_file=pronunciation_file,
+        pronunciation_file=pronunciation_path,
         metadata=metadata,
     )
     success = asyncio.run(gen.generate())

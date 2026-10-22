@@ -4,6 +4,7 @@ Each non-empty script line is ONE scene unit (one narration sentence per
 scene). Punctuation splitting only happens WITHIN a line; sentences are
 never merged across lines.
 """
+
 from __future__ import annotations
 
 import re

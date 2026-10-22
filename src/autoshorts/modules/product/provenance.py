@@ -3,8 +3,9 @@
 Every image must come from a public page that proves the exact model code
 from the product slug in its title/H1, and the image URL must appear in
 that page's gallery with alt text labelled with the same model code. Any
-doubt raises ProductNotFound and nothing is downloaded.
+doubt raises ProductNotFoundError and nothing is downloaded.
 """
+
 from __future__ import annotations
 
 import html
@@ -16,12 +17,34 @@ from urllib.parse import urljoin, urlsplit
 
 import requests
 
-from .errors import MediaProcessingError, ProductNotFound
-from .network import normalized_host, safe_request
+from .errors import MediaProcessingError, ProductNotFoundError
+from .network import safe_request
 
 _MAX_PAGE_BYTES = 4 * 1024 * 1024
-_MODEL_SUFFIXES = {"pro", "plus", "max", "ultra", "gt", "neo", "lite", "mini", "bt", "se", "fe"}
-_PREFIX_STOPWORDS = {"the", "for", "with", "model", "series", "product", "projector", "jbl", "magcubic"}
+_MODEL_SUFFIXES = {
+    "pro",
+    "plus",
+    "max",
+    "ultra",
+    "gt",
+    "neo",
+    "lite",
+    "mini",
+    "bt",
+    "se",
+    "fe",
+}
+_PREFIX_STOPWORDS = {
+    "the",
+    "for",
+    "with",
+    "model",
+    "series",
+    "product",
+    "projector",
+    "jbl",
+    "magcubic",
+}
 _URL_RE = re.compile(r"(?:https?:)?//[^\s,]+|/[^\s,]+", re.IGNORECASE)
 # Numeric listing IDs embedded in the slug (-i.<shop>.<item>) are not product
 # model codes and must never be required from the source page.
@@ -47,10 +70,18 @@ def model_codes(text: str) -> list[str]:
         code = token
         following = index + 1
         # 'mini' is a category descriptor ("mini projector"), not a variant suffix.
-        while following < len(tokens) and tokens[following] in _MODEL_SUFFIXES and tokens[following] != "mini":
+        while (
+            following < len(tokens)
+            and tokens[following] in _MODEL_SUFFIXES
+            and tokens[following] != "mini"
+        ):
             code += tokens[following]
             following += 1
-        if index > 0 and tokens[index - 1].isalpha() and tokens[index - 1] not in _PREFIX_STOPWORDS:
+        if (
+            index > 0
+            and tokens[index - 1].isalpha()
+            and tokens[index - 1] not in _PREFIX_STOPWORDS
+        ):
             prefix = tokens[index - 1]
             if len(prefix) <= 8:
                 codes.append(prefix + code)
@@ -75,7 +106,7 @@ def model_codes(text: str) -> list[str]:
 def primary_model_code(product_name: str) -> str:
     codes = model_codes(product_name)
     if not codes:
-        raise ProductNotFound(
+        raise ProductNotFoundError(
             "No verifiable model identifier found in the product slug; "
             "media is not approved without an exact match in an external source."
         )
@@ -87,13 +118,15 @@ def primary_model_code(product_name: str) -> str:
     candidates = [code for code in codes if len(code) == longest]
     if len(candidates) > 1:
         brand_words = {w for w in _words(product_name) if w.isalpha() and len(w) >= 4}
+
         def _prefix_len(code: str) -> int:
             for brand in sorted(brand_words, key=len, reverse=True):
                 if code.startswith(brand) and len(code) > len(brand):
-                    rest = code[len(brand):]
+                    rest = code[len(brand) :]
                     if any(ch.isdigit() for ch in rest):
                         return len(brand)
             return 0
+
         min_prefix = min(_prefix_len(code) for code in candidates)
         candidates = [code for code in candidates if _prefix_len(code) == min_prefix]
     return min(candidates)
@@ -135,7 +168,9 @@ class _PageParser(HTMLParser):
         if tag.lower() == "h1":
             self.h1_depth += 1
         if tag.lower() == "meta":
-            key = (attributes.get("property") or attributes.get("name") or "").casefold()
+            key = (
+                attributes.get("property") or attributes.get("name") or ""
+            ).casefold()
             content = attributes.get("content", "")
             if key in {"og:title", "twitter:title"} and content and not self.meta_title:
                 self.meta_title = content
@@ -147,7 +182,9 @@ class _PageParser(HTMLParser):
                 if attributes.get(key):
                     sources.extend(_URL_RE.findall(attributes[key]))
             if sources:
-                self.images.append({"alt": attributes.get("alt", ""), "sources": "\n".join(sources)})
+                self.images.append(
+                    {"alt": attributes.get("alt", ""), "sources": "\n".join(sources)}
+                )
         if tag.lower() == "a" and attributes.get("href"):
             self.links.append(attributes["href"])
         if tag.lower() in {"iframe", "video", "source"}:
@@ -181,7 +218,9 @@ def _parse_page_html(raw: str, url: str, status: int) -> PageEvidence:
     title = re.sub(r"\s+", " ", html.unescape(parser.meta_title or raw_title)).strip()
     if parser.meta_images:
         alt = " ".join(x for x in (parser.meta_title, title, h1) if x)
-        parser.images.extend({"alt": alt, "sources": item} for item in parser.meta_images)
+        parser.images.extend(
+            {"alt": alt, "sources": item} for item in parser.meta_images
+        )
     identity = " ".join(x for x in (title, h1, parser.meta_title) if x)
     return PageEvidence(
         url=url,
@@ -196,23 +235,30 @@ def _parse_page_html(raw: str, url: str, status: int) -> PageEvidence:
     )
 
 
-def fetch_page_evidence(url: str, *,
-                        operation: str = "verify_product_source_page") -> PageEvidence:
+def fetch_page_evidence(
+    url: str, *, operation: str = "verify_product_source_page"
+) -> PageEvidence:
     session = requests.Session()
     session.trust_env = False
     response = safe_request(
-        session, "GET", url, operation=operation,
-        timeout=(12, 45), stream=True,
-        headers={"User-Agent": "autoshorts/1.0 (public-source identity check; no Shopee fetch)"},
+        session,
+        "GET",
+        url,
+        operation=operation,
+        timeout=(12, 45),
+        stream=True,
+        headers={
+            "User-Agent": "autoshorts/1.0 (public-source identity check; no Shopee fetch)"
+        },
     )
     if response.status_code >= 400:
-        raise ProductNotFound(
+        raise ProductNotFoundError(
             f"The evidence page answered HTTP {response.status_code}; "
             "no image was downloaded or used without product verification."
         )
     content_type = (response.headers.get("content-type") or "").casefold()
     if "text/html" not in content_type:
-        raise ProductNotFound(
+        raise ProductNotFoundError(
             f"The evidence URL did not return HTML ({content_type or 'missing MIME'}); "
             "cannot verify the model and the image association."
         )
@@ -223,16 +269,20 @@ def fetch_page_evidence(url: str, *,
             continue
         size += len(chunk)
         if size > _MAX_PAGE_BYTES:
-            raise MediaProcessingError("Evidence page exceeded 4 MiB; failing without accepting unverified media.")
+            raise MediaProcessingError(
+                "Evidence page exceeded 4 MiB; failing without accepting unverified media."
+            )
         chunks.append(chunk)
     raw = b"".join(chunks).decode(response.encoding or "utf-8", errors="replace")
     return _parse_page_html(raw, url=response.url, status=response.status_code)
 
 
-def verify_product_identity(product_name: str, page: PageEvidence, *, label: str) -> dict:
+def verify_product_identity(
+    product_name: str, page: PageEvidence, *, label: str
+) -> dict:
     expected = primary_model_code(product_name)
     if expected not in page.identity_codes:
-        raise ProductNotFound(
+        raise ProductNotFoundError(
             f"Match rejected for {label}: the slug requires the exact model {expected!r}, "
             f"but the page title/H1 does not prove it (codes seen: {page.identity_codes or 'none'}). "
             "No media will be downloaded."
@@ -255,15 +305,16 @@ def _resource_key(url: str, page_url: str) -> tuple[str, str]:
     return host, path
 
 
-def verify_image_sources(candidates, product_name: str, *,
-                         prefetched_page: PageEvidence | None = None) -> list[dict]:
+def verify_image_sources(
+    candidates, product_name: str, *, prefetched_page: PageEvidence | None = None
+) -> list[dict]:
     """Require an exact model in the source page and a matching, model-labelled gallery image.
 
     prefetched_page: evidence of a page already fetched and validated in this same
     operation; the same fail-closed checks run over it with no new request.
     """
     if not candidates:
-        raise ProductNotFound("No images can be validated: empty list.")
+        raise ProductNotFoundError("No images can be validated: empty list.")
     expected = primary_model_code(product_name)
     page_cache: dict[str, PageEvidence] = {}
     if prefetched_page is not None:
@@ -272,7 +323,7 @@ def verify_image_sources(candidates, product_name: str, *,
     for candidate in candidates:
         page_url = candidate.page_url
         if not page_url:
-            raise ProductNotFound(
+            raise ProductNotFoundError(
                 "Image without a verifiable source page/URL; failing without rendering. "
                 "Use images from a public page that identifies the exact model."
             )
@@ -291,16 +342,18 @@ def verify_image_sources(candidates, product_name: str, *,
                 matched_alt = image.get("alt", "")
                 break
         if matched_alt is None:
-            raise ProductNotFound(
+            raise ProductNotFoundError(
                 f"Match rejected for photo {candidate.title!r}: the image does not appear in "
                 f"the page gallery with alt/model {expected!r}. No photos will be downloaded."
             )
-        evidence.append({
-            **identity_evidence,
-            "image_url": candidate.image_url,
-            "image_host": urlsplit(candidate.image_url).hostname,
-            "image_gallery_alt": matched_alt,
-            "image_bound_to_page": True,
-            "verification_method": "exact model in title/H1 and image URL bound to a model-labelled img alt",
-        })
+        evidence.append(
+            {
+                **identity_evidence,
+                "image_url": candidate.image_url,
+                "image_host": urlsplit(candidate.image_url).hostname,
+                "image_gallery_alt": matched_alt,
+                "image_bound_to_page": True,
+                "verification_method": "exact model in title/H1 and image URL bound to a model-labelled img alt",
+            }
+        )
     return evidence
