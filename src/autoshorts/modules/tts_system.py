@@ -14,7 +14,7 @@ import edge_tts
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from .config import FFPROBE_TIMEOUT, TTS_RATE, VOICE
+from .config import FFPROBE_TIMEOUT, TTS_ENGINE, TTS_RATE, VOICE
 from .logging_system import log
 from .subtitle_system import SubtitleSystem
 from .utils import strip_markdown
@@ -37,9 +37,12 @@ class TTSSystem:
 
         cleaned_text = strip_markdown(combined_text.replace('"', "").replace("\n", " ")).strip()
 
-        log(f"Generating TTS Audio ({len(cleaned_text)} chars)...")
-        communicate = edge_tts.Communicate(cleaned_text, self.voice, rate=self.rate)
-        await communicate.save(str(audio_file))
+        log(f"Generating TTS Audio ({len(cleaned_text)} chars, engine={TTS_ENGINE})...")
+        if TTS_ENGINE == "piper":
+            self._piper_to_mp3(cleaned_text, audio_file)
+        else:
+            communicate = edge_tts.Communicate(cleaned_text, self.voice, rate=self.rate)
+            await communicate.save(str(audio_file))
 
         # Get audio duration
         cmd = [
@@ -73,8 +76,31 @@ class TTSSystem:
         """Generate only audio without subtitles."""
         text = " ".join(paragraphs)
         path = temp_dir / "audio.mp3"
-        log("Generating TTS audio...")
+        log(f"Generating TTS audio (engine={TTS_ENGINE})...")
 
-        communicate = edge_tts.Communicate(text, self.voice, rate=self.rate)
-        await communicate.save(str(path))
+        if TTS_ENGINE == "piper":
+            self._piper_to_mp3(text, path)
+        else:
+            communicate = edge_tts.Communicate(text, self.voice, rate=self.rate)
+            await communicate.save(str(path))
         return str(path)
+
+    @staticmethod
+    def _piper_to_mp3(text: str, output_mp3: Path) -> None:
+        """Synthesize with local Piper (WAV) and convert to mp3 via ffmpeg."""
+        from .piper_tts import synthesize
+
+        wav_path = output_mp3.with_suffix(".wav")
+        synthesize(text, wav_path)
+        cmd = [
+            "ffmpeg", "-y", "-i", str(wav_path),
+            "-codec:a", "libmp3lame", "-q:a", "4", str(output_mp3),
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        finally:
+            wav_path.unlink(missing_ok=True)
+        if result.returncode != 0 or not output_mp3.exists():
+            raise RuntimeError(
+                f"ffmpeg failed converting Piper WAV to mp3: {result.stderr[-500:]}"
+            )

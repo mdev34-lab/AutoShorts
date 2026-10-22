@@ -135,6 +135,12 @@ MODEL_IMAGE = os.getenv("MODEL_IMAGE", "flux")
 VOICE = os.getenv("VOICE", "en-US-BrianMultilingualNeural")
 TTS_RATE = os.getenv("TTS_RATE", "+20%")
 
+# TTS engine: "edge" (cloud, default) or "piper" (local neural, offline)
+TTS_ENGINE = os.getenv("TTS_ENGINE", "edge").strip().lower()
+PIPER_VOICE_ID = os.getenv("PIPER_VOICE_ID", "pt_BR-faber-medium")
+PIPER_VOICE_URL = os.getenv("PIPER_VOICE_URL", "")  # optional full .onnx URL override
+PIPER_CACHE_DIR = Path(os.getenv("PIPER_CACHE_DIR", str(Path.home() / ".cache" / "autoshorts" / "piper")))
+
 # Background Processing Mode
 BG_MODE = os.getenv("BG_MODE", "jumpcut")  # jumpcut or speed
 JUMPCUT_SEG_DUR = _get_env_float("JUMPCUT_SEG_DUR", 4.0)

@@ -9,7 +9,7 @@ AI-powered tool for generating YouTube Shorts / TikTok videos with script genera
 - **Title Validation** — auto-validates hashtag count (3+), length (≤ 100 chars), and lowercases tags
 - **AI Image Generation** — background images via Pollinations AI or **real web images** via DuckDuckGo search (default), with NSFW domain/keyword filter
 - **Overlay Text Removal** — captions/watermarks on downloaded images are detected (morphology + OCR confirmation) and erased with OpenCV inpainting; text-heavy graphics pass through untouched
-- **Text-to-Speech** — natural audio via Edge TTS
+- **Text-to-Speech** — natural audio via Edge TTS, or a local neural pt-BR voice via Piper (offline, no API key; `TTS_ENGINE=piper`)
 - **Subtitle System** — VTT generation + word-level highlight rendering
 - **Video Composition** — blurred YouTube background or AI/web images with smooth overlay animation
 - **Subject-aware image framing** — web images are framed around faces/salient regions; wide photos get a blurred-fill background instead of a hard center crop

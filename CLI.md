@@ -51,6 +51,9 @@ posters) are detected by coverage and kept untouched. See `.env.example`.
 ## Image framing
 
 Downloaded web images are reframed to the video aspect ratio around their subject: faces are located with OpenCV's bundled Haar cascade, otherwise a spectral-residual saliency centroid picks the interesting region. When the aspect mismatch is small the image is cover-cropped around that point; when it is large (e.g. a wide landscape photo in a 9:16 short) the frame is filled with a blurred cover-scaled copy and the sharp image is placed on top, so nothing of the subject is cut out. Disable with `SUBJECT_FRAMING=false`; tune with `SUBJECT_FILL_ZOOM_THRESHOLD` and `SUBJECT_FILL_BLUR_RADIUS`.
+## TTS engines
+
+Edge TTS (cloud) is the default. For a fully offline local neural voice, use Piper: install the optional dependency with `pip install "autoshorts[piper]"` and set `TTS_ENGINE=piper`. The configured voice (default `PIPER_VOICE_ID=pt_BR-faber-medium`) downloads once from Hugging Face into `PIPER_CACHE_DIR` (`~/.cache/autoshorts/piper`). Narration is synthesized to WAV and converted to mp3 with ffmpeg, so subtitles, timing and composition behave exactly as with Edge TTS.
 
 ## Requirements
 
