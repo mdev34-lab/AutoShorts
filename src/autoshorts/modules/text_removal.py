@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -156,10 +157,20 @@ def _has_line_neighbor(
 
 
 def _atomic_jpeg_write(img: Image.Image, output_path: Path) -> None:
-    """Write via a unique sibling temp file + atomic replace (no torn sidecars)."""
-    tmp = output_path.with_name(f"{output_path.name}.{os.getpid()}.part")
+    """Write via a unique sibling temp file + atomic replace (no torn sidecars).
+
+    The temp file comes from tempfile.mkstemp in the destination directory,
+    so concurrent calls - even in the same process on the same output path -
+    never share a temp name, and os.replace stays atomic on the same
+    filesystem.
+    """
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f"{output_path.name}.", suffix=".part", dir=output_path.parent
+    )
+    tmp = Path(tmp_name)
     try:
-        img.save(tmp, "JPEG", quality=95)
+        with os.fdopen(fd, "wb") as fh:
+            img.save(fh, "JPEG", quality=95)
         os.replace(tmp, output_path)
     finally:
         tmp.unlink(missing_ok=True)
