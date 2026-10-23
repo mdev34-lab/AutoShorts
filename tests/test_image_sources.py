@@ -230,12 +230,12 @@ class TestEntityDisambiguation:
     @pytest.mark.parametrize(
         "query,good_title,good_context",
         [
-            ("Apple iPhone lançamento", "Apple iPhone event photo", ""),
-            ("Giants Mets baseball", "Giants Mets game at the stadium", ""),
+            ("Apple iPhone lançamento", "Apple iPhone lançamento event", ""),
+            ("Giants Mets baseball", "Giants Mets baseball game at the stadium", ""),
             (
                 "Seedorf estreia no Corinthians em crise",
                 "Seedorf Corinthians",
-                "midfielder presentation at the club",
+                "estreia crise presentation at the club",
             ),
         ],
     )
@@ -357,3 +357,28 @@ class TestCacheProvenance:
         import hashlib
 
         assert k1 != hashlib.sha256(b"prompt x").hexdigest()[:16]
+
+
+@pytest.mark.parametrize(
+    "query,title",
+    [
+        ("Jaguar electric car launch", "Jaguar and electric eel wildlife"),
+        (
+            "Seedorf Corinthians 2012 third 42 points",
+            "Seedorf Corinthians table 2013 sixth 17 points",
+        ),
+        (
+            "Seedorf Corinthians 2012 third 42 points",
+            "Corinthians football 2013 sixth 17 points",
+        ),
+        ("Seedorf Corinthians 2012", "Seedorf Corinthians 2013 portrait"),
+    ],
+)
+def test_reviewer_probes_are_rejected(query, title):
+    assert image_sources.fit_evidence(query, title) is None
+
+
+def test_full_entity_coverage_still_admits_a_real_match():
+    assert image_sources.fit_evidence(
+        "Seedorf Corinthians 2012", "Seedorf in Corinthians shirt, 2012"
+    )

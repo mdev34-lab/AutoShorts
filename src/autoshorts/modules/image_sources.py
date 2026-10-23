@@ -161,47 +161,76 @@ _DATA_GRAPHIC_WORDS = {
     "bracket",
     "mapa",
     "map",
+    "table",
+    "tabelas",
+    "points",
+    "pontos",
+    "ranking",
+    "scoreboard",
+    "statistics",
+    "stats",
+    "season",
+    "temporada",
     "logo",
     "crest",
     "escudo",
 }
 
 
+_GENERIC_QUERY_WORDS = {
+    "photo",
+    "image",
+    "picture",
+    "pic",
+    "new",
+    "old",
+    "official",
+    "best",
+    "top",
+}
+_NUM_RE = re.compile(r"\d+")
+
+
+def _entity_tokens(text: str) -> set[str]:
+    """Every content token incl. short words and numbers (42, 2012, car)."""
+    return {
+        tok
+        for tok in _WORD_RE.findall(_normalize(text))
+        if tok not in _FIT_STOPWORDS
+        and tok not in _GENERIC_QUERY_WORDS
+        and (len(tok) >= 3 or tok.isdigit())
+    }
+
+
 def fit_evidence(query: str, title: str, context: str = "") -> str | None:
     """Proof of contextual fit, or None when the candidate is ambiguous.
 
-    Entity disambiguation: a single shared token proves nothing
-    (Apple iPhone vs apple pie, Jaguar car vs animal, Corinthians
-    football vs basketball). With several distinctive query tokens the
-    candidate must cover ALL of them; a one-token query needs the token
-    anchored in the candidate's TITLE. URL text is never evidence - a
-    page path can carry query tokens under a completely unrelated image.
+    The candidate must cover EVERY entity token of the query (short words and
+    numbers included): two shared words never admit a different subject
+    (Jaguar car vs jaguar eel). Any number in the candidate that the query
+    does not contain is a contradictory attribute (season, rank, score) and
+    rejects it. A one-token query needs the token in the TITLE. URL text is
+    never evidence. Text alone cannot prove what the pixels show; the
+    searcher still keeps unverified images behind the rights/verification gate.
     """
     title_and_context = f"{title} {context}"
     if distinctive_tokens(title_and_context) & _DATA_GRAPHIC_WORDS:
         return None
-    query_tokens = distinctive_tokens(query)
+    query_tokens = _entity_tokens(query)
     if not query_tokens:
         return None
-    candidate_tokens = distinctive_tokens(title_and_context)
-    covered = query_tokens & candidate_tokens
+    candidate_tokens = _entity_tokens(title_and_context)
+    if not query_tokens <= candidate_tokens:
+        return None
+    query_numbers = set(_NUM_RE.findall(_normalize(query)))
+    candidate_numbers = set(_NUM_RE.findall(_normalize(title_and_context)))
+    if query_numbers and candidate_numbers - query_numbers:
+        return None
     if len(query_tokens) == 1:
         token = next(iter(query_tokens))
-        if token in distinctive_tokens(title):
-            return token
-        return None
-    if len(query_tokens) == 2:
-        # Two-token entities (Apple iPhone, Table Mountain, Giants vs Mets):
-        # partial coverage is exactly the contradiction case - fail closed.
-        if covered == query_tokens:
-            return ",".join(sorted(covered))
-        return None
-    # Longer queries: require at least two distinctive anchors, so no
-    # single shared token (a surname, a club name) can admit a
-    # contradictory subject.
-    if len(covered) >= 2:
-        return ",".join(sorted(covered))
-    return None
+        if token not in _entity_tokens(title):
+            return None
+    return ",".join(sorted(query_tokens))
 
 
 def is_agency_host(url: str) -> bool:
