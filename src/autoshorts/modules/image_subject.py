@@ -1,14 +1,24 @@
-"""Zero-shot pictured-subject check (CLIP, local ONNX, no API, no cost).
+"""Zero-shot pictured-subject CLASS check (CLIP, local ONNX, no API, no cost).
 
-Metadata and OCR cannot say what a picture SHOWS. This scores the real pixels
-of a downloaded image: P("a photo of <subject>") against a fixed set of
-generic distractors (food, animal, landscape, text screenshot, chart, logo...).
-The image passes only when that probability is at least MIN_PROBABILITY.
+SCOPE: this is broad visual-class similarity, NOT verification of the full
+query. Measured on Commons photos with the query "Clarence Seedorf Corinthians
+2012": real Seedorf photos scored 0.93-0.96, but photos of OTHER footballers
+(Kaka, Cristiano Ronaldo) scored 0.62-0.85 and Corinthians match photos
+0.75-0.83, so they pass too. For "Apple iPhone launch": iPhone photos 0.92-0.95
+pass, an old iPhone 0.68 passes, Samsung Galaxy 0.04-0.34 and a fruit bowl
+0.01-0.32 fail. So it can reject a clearly wrong CLASS (fruit for a phone, a
+chart for a photo) but cannot tell a specific person, team, phone model, year,
+launch or event apart from look-alikes. A photo of an iPhone does not establish
+"launch"; a photo of a footballer does not establish "Corinthians 2012".
 
-It is a probabilistic similarity model, not proof: it can confuse look-alike
-entities (two footballers, two phone models) and famous-person recognition is
-imperfect. It fails CLOSED: missing model, missing onnxruntime/tokenizers or
-any error means "not verified".
+The score is the softmax weight of the prompt among the prompt and nine generic
+distractors (food, animal, landscape, building, vehicle, people, text
+screenshot, chart/table, logo). It is NOT a calibrated probability and 0.5 is
+not a confidence level. Acceptance therefore only means "no clearly wrong
+class"; entity/date/event fit rests on source metadata, and the result is
+recorded as VERIFICATION_SCOPE in the provenance sidecar. Fails CLOSED:
+missing model, missing onnxruntime/tokenizers or any error means "not
+verified".
 
 Model: Xenova/clip-vit-base-patch32 (ONNX, quantized), directory from
 AUTOSHORTS_CLIP_DIR (default ~/.cache/autoshorts/clip) holding
@@ -22,7 +32,8 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
-MIN_PROBABILITY = 0.5
+MIN_PROBABILITY = 0.5  # softmax share, not a confidence level
+VERIFICATION_SCOPE = "clip-broad-class-similarity (entity, date and event NOT verified)"
 _FILES = ("text_model_quantized.onnx", "vision_model_quantized.onnx", "tokenizer.json")
 _BASE = "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/"
 _REMOTE = {
@@ -142,5 +153,5 @@ def check_subject(path: Path, subject: str) -> str | None:
     except Exception as exc:
         raise SubjectUnavailableError(f"subject check failed: {exc}") from exc
     if p < MIN_PROBABILITY:
-        return f"image does not look like {subject!r} (p={p:.2f})"
+        return f"image does not look like {subject!r} (class score {p:.2f})"
     return None

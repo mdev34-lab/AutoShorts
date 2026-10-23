@@ -229,6 +229,7 @@ class ImageSearcher:
         if reason or ALLOW_UNVERIFIED_IMAGES:
             return reason
         try:
+            # Broad-class similarity only (see image_subject.VERIFICATION_SCOPE).
             return image_subject.check_subject(path, prompt)
         except image_subject.SubjectUnavailableError as exc:
             return f"pictured subject could not be verified ({exc})"
@@ -346,6 +347,10 @@ class ImageSearcher:
                 "license_url": extra.get("license_url") or "",
                 "license_verified": bool(candidate.license) and not is_ai,
                 "fit": candidate.fit_evidence,
+                # Say exactly what was (not) verified; never "subject verified".
+                "pictured_subject_check": (
+                    "not-run" if is_ai else image_subject.VERIFICATION_SCOPE
+                ),
                 "modification": (
                     "Resized and cropped to the video frame; overlay text may "
                     "have been removed and framing adjusted."

@@ -30,3 +30,28 @@ def test_real_model_rejects_a_plain_non_matching_image(tmp_path):
     p = tmp_path / "gray.jpg"
     Image.new("RGB", (400, 300), (120, 120, 120)).save(p)
     assert image_subject.check_subject(p, "Apple iPhone launch") is not None
+
+
+def test_scope_is_recorded_and_never_claims_entity_verification():
+    assert "NOT verified" in image_subject.VERIFICATION_SCOPE
+    assert "entity" in image_subject.VERIFICATION_SCOPE
+
+
+def test_sidecar_records_the_class_level_scope(tmp_path):
+    import json
+
+    from autoshorts.modules import image_sources
+    from autoshorts.modules.image_searcher import ImageSearcher
+
+    cand = image_sources.SourceCandidate(
+        url="https://upload.wikimedia.org/p.jpg",
+        provider="commons",
+        license="CC BY-SA 4.0",
+        fit_evidence="a,b",
+        title="t",
+    )
+    img = tmp_path / "x.jpg"
+    img.write_bytes(b"jpg")
+    ImageSearcher._write_provenance_sidecar(img, cand, "q")
+    record = json.loads(ImageSearcher._sidecar_path(img).read_text())
+    assert "NOT verified" in record["pictured_subject_check"]
