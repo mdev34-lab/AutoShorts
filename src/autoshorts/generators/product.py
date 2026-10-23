@@ -1,10 +1,11 @@
 """Product-link video generator (images-only, fail-closed sources).
 
 Pipeline: parse the product link (slug only, never the Shopee page),
-generate a showcase script, synthesize narration with TTS-only
-pronunciation respellings, then collect product photos from public
-sources that prove the exact model code, and compose the standard
-images-only video.
+compose the showcase script deterministically from facts verified in the
+product name (no free text generation, so narration cannot fabricate
+specs), synthesize narration with TTS-only pronunciation respellings,
+then collect product photos from public sources that prove the exact
+model code, and compose the standard images-only video.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from ..modules.image_searcher import ImageSearcher
 from ..modules.logging_system import log
 from ..modules.product.discovery import search_image_candidates
 from ..modules.product.errors import ProductPipelineError
+from ..modules.product.narration import compose_showcase_script
 from ..modules.product.network import safe_get
 from ..modules.product.product import parse_product_link
 from ..modules.product.pronunciation import load_dictionary, prepare_for_tts
@@ -26,13 +28,6 @@ from ..modules.product.provenance import verify_image_sources
 from ..modules.product.script_guard import assert_script_within_verified_facts
 from ..modules.utils import setup_directories
 from .explainer import ExplainerGenerator
-
-PRODUCT_SCRIPT_INSTRUCTIONS = (
-    "Crie o roteiro de um short de vitrine de produto em português brasileiro. "
-    "Tom de apresentador animado, destacando benefícios concretos do produto, "
-    "sem inventar especificações que não estejam no nome/tema informado, sem "
-    "preços e sem promessas de desconto."
-)
 
 MIN_IMAGES = 3
 MAX_CANDIDATES_TO_TRY = 8
@@ -48,7 +43,6 @@ class ProductGenerator(ExplainerGenerator):
         kwargs.setdefault("web_search", False)
         kwargs.setdefault("images_only", True)
         kwargs.setdefault("no_images", True)
-        kwargs.setdefault("custom_instructions", PRODUCT_SCRIPT_INSTRUCTIONS)
         super().__init__(**kwargs)
         self.product_url = product_url
         self.pronunciation_file = pronunciation_file
@@ -64,11 +58,11 @@ class ProductGenerator(ExplainerGenerator):
             product = parse_product_link(self.product_url)
             log(f"Product: {product.name}", "SUCCESS")
 
-            log("Step 2: Generating showcase script...")
-            paragraphs = self.script_generator.generate_script(product.name)
+            log("Step 2: Composing showcase script from verified name facts...")
+            paragraphs = compose_showcase_script(product.name)
             if not paragraphs or len(paragraphs) < 3:
                 log(
-                    f"Script generation failed: got {len(paragraphs)} paragraphs, need >= 3",
+                    f"Script composition failed: got {len(paragraphs)} paragraphs, need >= 3",
                     "ERROR",
                 )
                 return False

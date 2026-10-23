@@ -34,12 +34,6 @@ def _make_generator(tmp_path):
     gen = ProductGenerator(
         product_url="https://shopee.com.br/X-i.1.2", output=str(tmp_path / "out.mp4")
     )
-    gen.script_generator = mock.MagicMock()
-    gen.script_generator.generate_script.return_value = [
-        "Uma frase.",
-        "Outra frase.",
-        "Mais uma.",
-    ]
     gen.tts_system = mock.MagicMock()
 
     async def fake_audio(paragraphs, temp_dir, text_transform=None):
