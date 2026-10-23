@@ -2,6 +2,8 @@
 
 from unittest.mock import Mock, patch
 
+import pytest
+
 from autoshorts.modules import image_sources
 
 
@@ -42,7 +44,11 @@ def _mock_commons(pages):
 
 def test_commons_rejects_unverified_license():
     pages = [
-        _commons_page("File:Seedorf 2012.jpg", "CC BY-SA 4.0", description="Seedorf"),
+        _commons_page(
+            "File:Seedorf Corinthians 2012.jpg",
+            "CC BY-SA 4.0",
+            description="Seedorf no Corinthians",
+        ),
         _commons_page("File:Seedorf Getty.jpg", "Getty Images licensing"),
         _commons_page("File:Seedorf gfdl.jpg", "GFDL"),
     ]
@@ -51,7 +57,7 @@ def test_commons_rejects_unverified_license():
     assert [c.url for c in out] == ["https://upload.wikimedia.org/x.jpg"]
     assert out[0].license == "CC BY-SA 4.0"
     assert "Some Photographer" in out[0].attribution
-    assert out[0].fit_evidence == "seedorf"
+    assert out[0].fit_evidence == "corinthians,seedorf"
 
 
 def test_commons_rejects_ambiguous_fit():
@@ -85,7 +91,10 @@ def test_ddg_blocks_watermarked_agencies():
     results = [
         {"image": "https://c8.alamy.com/comp/seedorf.jpg", "title": "Seedorf photo"},
         {"image": "https://www.shutterstock.com/x.jpg", "title": "Seedorf"},
-        {"image": "https://clubesite.com/seedorf.jpg", "title": "Seedorf no clube"},
+        {
+            "image": "https://clubesite.com/seedorf.jpg",
+            "title": "Seedorf no Corinthians",
+        },
     ]
     out = image_sources.filter_ddg_results("Seedorf Corinthians", results)
     assert [c.url for c in out] == ["https://clubesite.com/seedorf.jpg"]
@@ -116,7 +125,9 @@ def test_searcher_candidates_provider_order():
         patch.object(
             searcher,
             "search_images",
-            return_value=[{"image": "https://y.com/s.jpg", "title": "seedorf foto"}],
+            return_value=[
+                {"image": "https://y.com/s.jpg", "title": "seedorf corinthians foto"}
+            ],
         ),
     ):
         out = searcher._candidates("Seedorf Corinthians")
@@ -178,3 +189,101 @@ def test_provenance_sidecar_and_credits_delivery(tmp_path):
         credits = (tmp_path / "out" / "image_credits.txt").read_text()
     assert "Jane Doe" in credits
     assert "UNVERIFIED" in credits  # orphan never reported as licensed/safe
+
+
+class TestEntityDisambiguation:
+    """A single shared token never proves fit - the contradiction cases."""
+
+    @pytest.mark.parametrize(
+        "query,bad_title",
+        [
+            ("Apple iPhone lançamento", "Torta de maçã apple pie receita"),
+            ("Jaguar car new model", "Jaguar animal no Pantanal"),
+            ("Table Mountain hiking", "Dining table madeira rústica"),
+            ("Giants Mets baseball", "New York Mets victory photo"),
+            ("Corinthians football crise", "Corinthians basketball quarter"),
+            ("Seedorf Corinthians estreia", "Clarence Seedorf Botafogo 2013"),
+        ],
+    )
+    def test_single_token_contradictions_rejected(self, query, bad_title):
+        assert image_sources.fit_evidence(query, bad_title) is None
+
+    @pytest.mark.parametrize(
+        "query,good_title,good_context",
+        [
+            ("Apple iPhone lançamento", "Apple iPhone event photo", ""),
+            ("Giants Mets baseball", "Giants Mets game at the stadium", ""),
+            (
+                "Seedorf estreia no Corinthians em crise",
+                "Seedorf Corinthians",
+                "midfielder presentation at the club",
+            ),
+        ],
+    )
+    def test_multi_token_coverage_accepted(self, query, good_title, good_context):
+        assert image_sources.fit_evidence(query, good_title, good_context) is not None
+
+    def test_one_token_query_needs_title_anchor(self):
+        # token only in description context, not the title: ambiguous
+        assert image_sources.fit_evidence("Seedorf", "Match photo", "Seedorf") is None
+        assert image_sources.fit_evidence("Seedorf", "Seedorf portrait") == "seedorf"
+
+    def test_data_graphics_fail_closed_even_with_full_coverage(self):
+        # a standings table can share every token yet contradict the subject
+        assert (
+            image_sources.fit_evidence(
+                "Corinthians tabela", "Corinthians tabela classificação 2013"
+            )
+            is None
+        )
+        assert (
+            image_sources.fit_evidence(
+                "Brasileirão standings", "Brasileirão standings chart"
+            )
+            is None
+        )
+
+    def test_ddg_url_tokens_are_not_fit_evidence(self):
+        # the page path carries query tokens under an unrelated image
+        results = [
+            {
+                "image": "https://blog.com/seedorf/corinthians/img7.jpg",
+                "url": "https://blog.com/seedorf-corinthians-post",
+                "title": "cute kitten of the day",
+            }
+        ]
+        assert image_sources.filter_ddg_results("Seedorf Corinthians", results) == []
+
+    def test_ftcdn_adobe_cdn_blocked(self):
+        results = [
+            {"image": "https://as1.ftcdn.net/x.jpg", "title": "Seedorf Corinthians"}
+        ]
+        assert image_sources.filter_ddg_results("Seedorf Corinthians", results) == []
+
+
+class TestCacheProvenance:
+    def test_legacy_cache_without_sidecar_is_not_reused(self, tmp_path, monkeypatch):
+        from autoshorts.modules import image_searcher as mod
+        from autoshorts.modules.image_searcher import ImageSearcher
+
+        monkeypatch.setattr(mod, "IMAGE_CACHE_DIR", tmp_path)
+        key = ImageSearcher._cache_key("qualquer prompt")
+        legacy = tmp_path / f"{key}.jpg"
+        legacy.write_bytes(b"old-stock")
+        assert ImageSearcher._usable_cache(legacy) is False
+        legacy.with_suffix(".credits.txt").write_text("provider: commons\n")
+        assert ImageSearcher._usable_cache(legacy) is True
+
+    def test_cache_key_versioned_by_providers(self, monkeypatch):
+        from autoshorts.modules import image_searcher as mod
+        from autoshorts.modules.image_searcher import ImageSearcher
+
+        monkeypatch.setattr(mod, "IMAGE_PROVIDERS", ["commons"])
+        k1 = ImageSearcher._cache_key("prompt x")
+        monkeypatch.setattr(mod, "IMAGE_PROVIDERS", ["commons", "ddg"])
+        k2 = ImageSearcher._cache_key("prompt x")
+        assert k1 != k2
+        # and neither collides with the legacy raw-prompt hash
+        import hashlib
+
+        assert k1 != hashlib.sha256(b"prompt x").hexdigest()[:16]

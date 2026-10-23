@@ -45,6 +45,7 @@ WATERMARKED_AGENCY_DOMAINS: set[str] = {
     "adobe.stock",
     "canstockphoto",
     "pinterest",
+    "ftcdn",  # Adobe Stock's CDN (as1.ftcdn.net etc.)
 }
 
 # Reusable licenses accepted from Commons (normalized, see _normalize_license).
@@ -136,14 +137,61 @@ def distinctive_tokens(text: str) -> set[str]:
     }
 
 
-def fit_evidence(query: str, candidate_text: str) -> str | None:
-    """The shared distinctive token proving fit, or None when ambiguous."""
+# Words marking data graphics, not photos: a standings table or infographic
+# can share every query token yet contradict the subject (wrong season,
+# wrong entity) - fail closed on them from every provider.
+_DATA_GRAPHIC_WORDS = {
+    "tabela",
+    "classificacao",
+    "standings",
+    "infographic",
+    "infografico",
+    "chart",
+    "diagram",
+    "bracket",
+    "mapa",
+    "map",
+    "logo",
+    "crest",
+    "escudo",
+}
+
+
+def fit_evidence(query: str, title: str, context: str = "") -> str | None:
+    """Proof of contextual fit, or None when the candidate is ambiguous.
+
+    Entity disambiguation: a single shared token proves nothing
+    (Apple iPhone vs apple pie, Jaguar car vs animal, Corinthians
+    football vs basketball). With several distinctive query tokens the
+    candidate must cover ALL of them; a one-token query needs the token
+    anchored in the candidate's TITLE. URL text is never evidence - a
+    page path can carry query tokens under a completely unrelated image.
+    """
+    title_and_context = f"{title} {context}"
+    if distinctive_tokens(title_and_context) & _DATA_GRAPHIC_WORDS:
+        return None
     query_tokens = distinctive_tokens(query)
     if not query_tokens:
         return None
-    candidate_tokens = distinctive_tokens(candidate_text)
-    shared = sorted(query_tokens & candidate_tokens)
-    return shared[0] if shared else None
+    candidate_tokens = distinctive_tokens(title_and_context)
+    covered = query_tokens & candidate_tokens
+    if len(query_tokens) == 1:
+        token = next(iter(query_tokens))
+        if token in distinctive_tokens(title):
+            return token
+        return None
+    if len(query_tokens) == 2:
+        # Two-token entities (Apple iPhone, Table Mountain, Giants vs Mets):
+        # partial coverage is exactly the contradiction case - fail closed.
+        if covered == query_tokens:
+            return ",".join(sorted(covered))
+        return None
+    # Longer queries: require at least two distinctive anchors, so no
+    # single shared token (a surname, a club name) can admit a
+    # contradictory subject.
+    if len(covered) >= 2:
+        return ",".join(sorted(covered))
+    return None
 
 
 def is_agency_host(url: str) -> bool:
@@ -198,7 +246,7 @@ def search_commons(
         categories = _TAG_RE.sub(
             " ", html.unescape((meta.get("Categories") or {}).get("value") or "")
         )
-        evidence = fit_evidence(query, f"{title} {description} {categories}")
+        evidence = fit_evidence(query, title, f"{description} {categories}")
         if evidence is None:
             continue
         artist = _TAG_RE.sub(
@@ -232,7 +280,9 @@ def filter_ddg_results(query: str, results: list[dict]) -> list[SourceCandidate]
             continue
         if is_agency_host(url) or is_agency_host(page):
             continue
-        evidence = fit_evidence(query, f"{title} {url} {page}")
+        # Fit from the title only: URL/path tokens are not evidence (a page
+        # about the query can host a completely unrelated image).
+        evidence = fit_evidence(query, title)
         if evidence is None:
             continue
         candidates.append(

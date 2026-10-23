@@ -179,6 +179,19 @@ class ImageSearcher:
         img.save(output_path, "JPEG", quality=85)
         img.close()
 
+    @staticmethod
+    def _cache_key(prompt: str) -> str:
+        # Versioned by provider config: legacy hashes predate provenance/fit
+        # gating and must never be reused, and a provider change invalidates.
+        scheme = f"img2|{','.join(IMAGE_PROVIDERS)}|{prompt}"
+        return hashlib.sha256(scheme.encode()).hexdigest()[:16]
+
+    @classmethod
+    def _usable_cache(cls, cached_path: Path) -> bool:
+        """A cached web image is reusable only with its provenance sidecar -
+        anything else (legacy stock, interrupted runs) is refetched."""
+        return cached_path.exists() and cached_path.with_suffix(".credits.txt").exists()
+
     def get_images(self, prompts: list[str]) -> list[str]:
         img_paths = []
         total = len(prompts)
@@ -186,9 +199,9 @@ class ImageSearcher:
         for i, prompt in enumerate(prompts):
             log(f"Searching web image {i + 1}/{total}: '{prompt[:60]}...'", "INFO")
 
-            cache_key = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+            cache_key = self._cache_key(prompt)
             cached_path = IMAGE_CACHE_DIR / f"{cache_key}.jpg"
-            if cached_path.exists():
+            if self._usable_cache(cached_path):
                 img_paths.append(str(cached_path))
                 log(f"  Using cached: {cached_path.name}", "INFO")
                 continue
@@ -322,9 +335,9 @@ class ImageSearcher:
         headers = {"Authorization": f"Bearer {API_KEY}"}
 
         for prompt in remaining_prompts:
-            cache_key = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+            cache_key = self._cache_key(prompt)
             cached_path = IMAGE_CACHE_DIR / f"{cache_key}.jpg"
-            if cached_path.exists():
+            if self._usable_cache(cached_path):
                 collected_paths.append(str(cached_path))
                 continue
 
@@ -337,6 +350,17 @@ class ImageSearcher:
                 if resp.status_code == 200:
                     with open(cached_path, "wb") as f:
                         f.write(resp.content)
+                    self._write_provenance_sidecar(
+                        cached_path,
+                        image_sources.SourceCandidate(
+                            url=url.split("?")[0],
+                            provider="ai",
+                            license="AI-generated - no source license",
+                            attribution=None,
+                            fit_evidence="generated-for-prompt",
+                        ),
+                        prompt,
+                    )
                     collected_paths.append(str(cached_path))
                 else:
                     raise Exception(f"HTTP {resp.status_code}")

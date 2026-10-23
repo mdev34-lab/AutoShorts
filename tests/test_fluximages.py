@@ -2,7 +2,6 @@
 Test FluxImages module functionality
 """
 
-import hashlib
 import tempfile
 import warnings
 from pathlib import Path
@@ -723,10 +722,13 @@ class TestImageSearcher:
         mock_download.return_value = True
 
         prompt = "cached prompt"
-        cache_key = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+        cache_key = ImageSearcher._cache_key(prompt)
         cached_path = IMAGE_CACHE_DIR / f"{cache_key}.jpg"
         cached_path.parent.mkdir(parents=True, exist_ok=True)
         cached_path.write_bytes(b"cached_data")
+        cached_path.with_suffix(".credits.txt").write_text(
+            "provider: ddg\nlicense: UNVERIFIED\n"
+        )
 
         with (
             patch("autoshorts.modules.image_searcher.Image.open") as mock_open,
@@ -740,6 +742,7 @@ class TestImageSearcher:
         assert mock_search.call_count == 2  # cached prompt doesn't search
 
         cached_path.unlink(missing_ok=True)
+        cached_path.with_suffix(".credits.txt").unlink(missing_ok=True)
 
     @patch("autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["commons", "ddg"])
     @patch(
