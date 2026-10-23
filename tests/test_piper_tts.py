@@ -306,3 +306,103 @@ async def test_tts_system_piper_subtitles_follow_sentence_timings(
     assert "00:00:00.000" in cues[0]
     assert cues[1].startswith("00:00:01.")  # ~1.43s into a 2s span, not 1.5s even-split
     assert "00:00:02.160" in cues[2]
+
+
+def test_load_failure_invalidates_cache_and_retries_once(tmp_path):
+    """A corrupt-but-plausibly-sized cached model is dropped and re-downloaded."""
+    model = tmp_path / "m.onnx"
+    config = tmp_path / "c.json"
+    model.write_bytes(b"corrupt")
+    config.write_bytes(b"{}")
+
+    calls = {"load": 0, "ensure": 0}
+
+    def fake_ensure(*args, **kwargs):
+        calls["ensure"] += 1
+        # Re-create the files as a fresh download would.
+        model.write_bytes(b"corrupt" if calls["ensure"] == 1 else b"fresh")
+        config.write_bytes(b"{}")
+        return model, config
+
+    fake_piper = mock.MagicMock()
+
+    def fake_load(*args, **kwargs):
+        calls["load"] += 1
+        if calls["load"] == 1:
+            raise RuntimeError("invalid protobuf")
+        return _fake_voice()
+
+    fake_piper.PiperVoice.load.side_effect = fake_load
+    with (
+        mock.patch.dict(
+            "sys.modules", {"piper": fake_piper, "piper.config": mock.MagicMock()}
+        ),
+        mock.patch.object(piper_tts, "ensure_voice", side_effect=fake_ensure),
+    ):
+        out = tmp_path / "out.wav"
+        duration, _ = piper_tts.synthesize("Um gol.", out)
+    assert calls["ensure"] == 2
+    assert calls["load"] == 2
+    assert duration > 0
+
+
+def test_load_failure_persistent_raises_after_single_retry(tmp_path):
+    """Retry is bounded: one cache refresh, then PiperError."""
+    calls = {"ensure": 0}
+
+    def fake_ensure(*args, **kwargs):
+        calls["ensure"] += 1
+        return tmp_path / "m.onnx", tmp_path / "c.json"
+
+    fake_piper = mock.MagicMock()
+    fake_piper.PiperVoice.load.side_effect = RuntimeError("still broken")
+    with (
+        mock.patch.dict(
+            "sys.modules", {"piper": fake_piper, "piper.config": mock.MagicMock()}
+        ),
+        mock.patch.object(piper_tts, "ensure_voice", side_effect=fake_ensure),
+    ):
+        with pytest.raises(PiperError, match="Failed to load Piper voice"):
+            piper_tts.synthesize("Um gol.", tmp_path / "out.wav")
+    assert calls["ensure"] == 2  # initial + one refresh, never more
+
+
+def test_vtt_timings_starting_after_duration_are_dropped(tmp_path):
+    from autoshorts.modules.subtitle_system import SubtitleGenerator
+
+    timings = [
+        ("Primeira frase do vídeo aqui.", 0.0, 2.0),
+        ("Frase que começa depois do fim do áudio.", 5.0, 6.0),
+    ]
+    out = tmp_path / "subs.vtt"
+    SubtitleGenerator.generate_vtt_from_sentence_timings(timings, 3.0, str(out))
+    text = out.read_text(encoding="utf-8-sig")
+    cues = [ln for ln in text.splitlines() if "-->" in ln]
+    assert cues, "first sentence must produce cues"
+    for cue in cues:
+        start = cue.split(" --> ")[0]
+        h, m, rest = start.split(":")
+        seconds = int(h) * 3600 + int(m) * 60 + float(rest)
+        assert seconds < 3.0
+    assert "tardia" not in text
+
+
+def test_vtt_timing_straddling_duration_is_clamped(tmp_path):
+    from autoshorts.modules.subtitle_system import SubtitleGenerator
+
+    timings = [("Uma frase longa o bastante para dividir em partes.", 1.0, 5.0)]
+    out = tmp_path / "subs.vtt"
+    SubtitleGenerator.generate_vtt_from_sentence_timings(timings, 2.0, str(out))
+    text = out.read_text(encoding="utf-8-sig")
+    cues = [ln for ln in text.splitlines() if "-->" in ln]
+    assert len(cues) == 2  # 8 words -> two 5-word chunks
+
+    def to_seconds(ts):
+        h, m, rest = ts.split(":")
+        return int(h) * 3600 + int(m) * 60 + float(rest)
+
+    for cue in cues:
+        start_ts, end_ts = cue.split(" --> ")
+        start_s, end_s = to_seconds(start_ts), to_seconds(end_ts)
+        assert start_s < end_s <= 2.0
+    assert to_seconds(cues[-1].split(" --> ")[1]) == pytest.approx(2.0)

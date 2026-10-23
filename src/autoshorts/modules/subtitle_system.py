@@ -178,8 +178,16 @@ class SubtitleGenerator:
             chunks = [" ".join(words[i : i + 5]) for i in range(0, len(words), 5)]
             counts = [len(c.split()) for c in chunks]
             total = sum(counts)
-            span = max(float(end) - float(start), 0.01)
-            cursor = float(start)
+            start_f, end_f = float(start), float(end)
+            if duration > 0:
+                if start_f >= duration:
+                    # Sentence starts at/after the end of the audio: there is
+                    # no valid cue window, so drop it instead of emitting a
+                    # cue whose start is past its end.
+                    continue
+                end_f = min(end_f, duration)
+            span = max(end_f - start_f, 0.01)
+            cursor = start_f
             for chunk, count in zip(chunks, counts, strict=True):
                 chunk_end = cursor + span * count / total
                 if duration > 0:

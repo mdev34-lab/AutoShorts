@@ -179,8 +179,26 @@ def synthesize(
     )
     try:
         voice = PiperVoice.load(str(model_path), str(config_path))
-    except Exception as e:
-        raise PiperError(f"Failed to load Piper voice {PIPER_VOICE_ID}: {e}") from e
+    except Exception as first_error:
+        # A cached model can pass the size/format checks and still be
+        # corrupt: drop the cache entry, re-download once and retry once.
+        log(
+            f"Piper voice failed to load ({first_error}); "
+            "refreshing the cached voice and retrying once.",
+            "WARNING",
+        )
+        model_path.unlink(missing_ok=True)
+        config_path.unlink(missing_ok=True)
+        model_path, config_path = ensure_voice(
+            PIPER_CACHE_DIR,
+            PIPER_VOICE_ID,
+            PIPER_VOICE_URL or None,
+            sha256=PIPER_VOICE_SHA256 or None,
+        )
+        try:
+            voice = PiperVoice.load(str(model_path), str(config_path))
+        except Exception as e:
+            raise PiperError(f"Failed to load Piper voice {PIPER_VOICE_ID}: {e}") from e
 
     cfg = SynthesisConfig()
     cfg.length_scale = min(2.0, max(0.5, length_scale))
