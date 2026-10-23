@@ -21,6 +21,7 @@ from moviepy import TextClip
 from PIL import Image, ImageDraw, ImageFont
 
 from .config import (
+    BOTTOM_MARGIN,
     COLOR_HIGHLIGHT,
     COLOR_STROKE,
     COLOR_TEXT,
@@ -393,7 +394,10 @@ class SubtitleRenderer:
                 buf.seek(0)
 
                 clip = ImageClip(buf).with_duration(duration)
-                clip = clip.with_position(((width - canvas_w) // 2, base_y))
+                # Vertical-fit clamp: scaled fonts grow the canvas, so shift the
+                # block up instead of letting the frame edge clip it.
+                pos_y = min(base_y, max(0, height - canvas_h - BOTTOM_MARGIN))
+                clip = clip.with_position(((width - canvas_w) // 2, pos_y))
 
                 clips.append(clip.with_start(start_time))
 
@@ -439,13 +443,21 @@ class SubtitleRenderer:
                 word_count = max(len(words), 1)
                 word_duration = duration / word_count
 
-                current_y = max(base_y, int(height * 0.3))
-
                 line_heights = []
                 for line_words in lines:
                     line_text = " ".join(line_words)
                     _, h = _get_line_dimensions_cached(line_text, self.font, font_size)
                     line_heights.append(max(h, font_size))
+
+                # Vertical-fit clamp: keep the whole block above the bottom
+                # margin; scaled fonts must shift the block up, not clip it.
+                total_block_h = sum(line_heights) + LINE_SPACING * max(
+                    0, len(lines) - 1
+                )
+                current_y = min(
+                    max(base_y, int(height * 0.3)),
+                    max(0, height - total_block_h - BOTTOM_MARGIN),
+                )
 
                 for line_idx, line_words in enumerate(lines):
                     line_clips_data: list[dict[str, Any]] = []
