@@ -21,6 +21,7 @@ from ..modules.logging_system import log
 from ..modules.product.discovery import search_image_candidates
 from ..modules.product.errors import ProductPipelineError
 from ..modules.product.evidence import host_label, page_atoms
+from ..modules.product.llm_copy import polish_script
 from ..modules.product.narration import compose_showcase_script
 from ..modules.product.network import safe_get
 from ..modules.product.product import parse_product_link
@@ -39,6 +40,7 @@ from .explainer import ExplainerGenerator
 MIN_IMAGES = 3
 MAX_CANDIDATES_TO_TRY = 8
 MAX_EVIDENCE_PAGES = 3
+MIN_AUDIO_SECONDS = 20.0
 MIN_FACT_ATOMS = 3
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
@@ -126,6 +128,9 @@ class ProductGenerator(ExplainerGenerator):
                     "ERROR",
                 )
                 return False
+            paragraphs = polish_script(
+                paragraphs, atoms, paragraphs[0].removeprefix("Conheça o ").rstrip(".")
+            )
             try:
                 assert_script_within_atoms(paragraphs, atoms)
             except ProductPipelineError as exc:
@@ -154,6 +159,14 @@ class ProductGenerator(ExplainerGenerator):
                 return False
 
             audio = AudioFileClip(audio_path)
+            if audio.duration < MIN_AUDIO_SECONDS:
+                log(
+                    f"Narration is only {audio.duration:.1f}s (need >= "
+                    f"{MIN_AUDIO_SECONDS}s of evidenced content); aborting instead "
+                    "of producing a too-short video",
+                    "ERROR",
+                )
+                return False
             num_images = max(MIN_IMAGES, int(audio.duration / SCENE_DURATION_SECONDS))
             log(f"TTS: {audio.duration:.1f}s -> {num_images} images")
             audio.close()

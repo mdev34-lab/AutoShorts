@@ -90,7 +90,7 @@ def test_pipeline_skips_rejected_candidates(tmp_path, monkeypatch):
     )
     # audio duration probe
     fake_clip = mock.MagicMock()
-    fake_clip.duration = 12.0
+    fake_clip.duration = 25.0
     monkeypatch.setattr(
         "autoshorts.generators.product.AudioFileClip", lambda p: fake_clip
     )
@@ -114,7 +114,7 @@ def test_pipeline_aborts_when_too_few_verified(tmp_path, monkeypatch):
     verify = mock.MagicMock(side_effect=ProductNotFoundError("nope"))
     monkeypatch.setattr("autoshorts.generators.product.verify_image_sources", verify)
     fake_clip = mock.MagicMock()
-    fake_clip.duration = 12.0
+    fake_clip.duration = 25.0
     monkeypatch.setattr(
         "autoshorts.generators.product.AudioFileClip", lambda p: fake_clip
     )
@@ -172,7 +172,7 @@ def _run_ok(gen, monkeypatch):
         lambda: mock.MagicMock(resize_to_fill=lambda src, dst: dst.write_bytes(b"jpg")),
     )
     fake_clip = mock.MagicMock()
-    fake_clip.duration = 12.0
+    fake_clip.duration = 25.0
     monkeypatch.setattr(
         "autoshorts.generators.product.AudioFileClip", lambda p: fake_clip
     )
@@ -244,3 +244,22 @@ def test_no_verifiable_page_aborts_before_narration(tmp_path, monkeypatch):
     gen.tts_system.generate_audio_only = tts_mock
     assert asyncio.run(gen.generate()) is False
     tts_mock.assert_not_called()
+
+
+def test_too_short_narration_aborts_without_a_video(tmp_path, monkeypatch):
+    """The approved showcase is ~25-30s: a short evidenced script must not be
+    shipped as a finished video."""
+    gen = _make_generator(tmp_path)
+    monkeypatch.setattr(
+        "autoshorts.generators.product.parse_product_link", lambda url: _product()
+    )
+    _evidence_mocks(monkeypatch)
+    monkeypatch.setattr(
+        "autoshorts.generators.product.search_image_candidates",
+        lambda name, limit: [_candidate(i) for i in range(5)],
+    )
+    short = mock.MagicMock()
+    short.duration = 8.0
+    monkeypatch.setattr("autoshorts.generators.product.AudioFileClip", lambda p: short)
+    assert asyncio.run(gen.generate()) is False
+    gen._create_flux_video.assert_not_called()
