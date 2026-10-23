@@ -48,3 +48,13 @@ def test_no_facts_means_no_fact_claims():
     joined = " ".join(paragraphs)
     for forbidden in ("bateria", "OLED", "garantia", "Anatel", "horas", "GB"):
         assert forbidden not in joined
+
+
+def test_portuguese_negation_forms_never_narrated_as_features():
+    for name in (
+        "Projetor HY300 Pro não tem Bluetooth",
+        "Projetor HY300 Pro nem Bluetooth",
+        "Projetor HY300 Pro sem Bluetooth",
+    ):
+        joined = " ".join(compose_showcase_script(name)[1:])
+        assert "Com Bluetooth" not in joined

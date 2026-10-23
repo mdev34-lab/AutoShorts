@@ -179,7 +179,19 @@ def _canon_unit(unit: str) -> str:
 _WORD_RE = re.compile(r"[a-z0-9]+")
 
 
-_NEGATION_WORDS = {"sem", "no", "without", "not"}
+_NEGATION_WORDS = {
+    "sem",
+    "no",
+    "without",
+    "not",
+    "nao",
+    "nem",
+    "nunca",
+    "nenhum",
+    "nenhuma",
+    "lacks",
+    "missing",
+}
 
 
 def _is_negated(text: str, start: int, window: int = 3) -> bool:

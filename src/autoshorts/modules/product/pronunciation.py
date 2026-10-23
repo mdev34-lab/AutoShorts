@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from pathlib import Path
 
 DEFAULT_DICTIONARY: dict[str, str] = {
@@ -63,6 +64,41 @@ LETTERS = {
 }
 
 
+def _collapse(text: str) -> str:
+    folded = unicodedata.normalize("NFKD", text)
+    return re.sub(r"[^a-z0-9]", "", folded.lower())
+
+
+def validate_respelling(key: str, value: str) -> None:
+    """Reject a respelling that is not a pure phonetic rewrite of its key.
+
+    A respelling reaches the TTS after the script guard ran, so it must not
+    be able to introduce facts. It must stay close in size to the key
+    (spelled-out letters and numbers still fit), and may not contain a
+    spec, feature or certification claim that the key does not have.
+    """
+    from .script_guard import (
+        _RESOLUTION_PATTERN,
+        _UNGROUNDABLE_PATTERN,
+        _UNIT_PATTERN,
+        _features_in,
+    )
+
+    k, v = _collapse(key), _collapse(value)
+    if not k or not v or len(v) > 3 * len(k) + 2:
+        raise ValueError(
+            f"Pronunciation respelling for {key!r} must be phonetic only "
+            "(too long to be a respelling of the key)."
+        )
+    for probe in (_UNGROUNDABLE_PATTERN, _UNIT_PATTERN, _RESOLUTION_PATTERN):
+        if probe.search(value) and not probe.search(key):
+            raise ValueError(
+                f"Pronunciation respelling for {key!r} adds a factual claim."
+            )
+    if _features_in(value) - _features_in(key):
+        raise ValueError(f"Pronunciation respelling for {key!r} adds a feature.")
+
+
 def load_dictionary(path: str | Path | None = None) -> dict[str, str]:
     merged = dict(DEFAULT_DICTIONARY)
     if path:
@@ -73,6 +109,8 @@ def load_dictionary(path: str | Path | None = None) -> dict[str, str]:
             raise ValueError(
                 "Pronunciation file must be a JSON object {spelling: respelling}."
             )
+        for key, value in data.items():
+            validate_respelling(key, value)
         merged.update(data)
     return merged
 
