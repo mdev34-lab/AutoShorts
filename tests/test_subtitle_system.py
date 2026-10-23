@@ -458,3 +458,12 @@ class TestGetSystemFont:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+def test_font_size_scales_with_frame_width():
+    from autoshorts.modules.subtitle_system import FONT_SIZE, _effective_font_size
+
+    assert _effective_font_size(720) == FONT_SIZE  # calibrated baseline unchanged
+    assert _effective_font_size(1080) == round(FONT_SIZE * 1.5)
+    assert _effective_font_size(360) == max(1, round(FONT_SIZE / 2))
+    assert _effective_font_size(1) >= 1

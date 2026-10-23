@@ -33,6 +33,16 @@ from .config import (
 )
 from .utils import strip_markdown
 
+# SUBTITLE_FONT_SIZE is calibrated for a 720px-wide frame. Scale it with the
+# actual video width so subtitles keep their intended relative size at any
+# output resolution (e.g. 1080px wide -> 1.5x), instead of shrinking relative
+# to the frame as resolution increases.
+_SUBTITLE_BASE_WIDTH = 720
+
+
+def _effective_font_size(frame_width: int) -> int:
+    return max(1, round(FONT_SIZE * frame_width / _SUBTITLE_BASE_WIDTH))
+
 
 def get_system_font():
     """Return a safe font for TextClip by searching Windows font registry."""
@@ -306,7 +316,7 @@ class SubtitleRenderer:
         clips = []
 
         base_y = int(height * SUBTITLE_START_Y_RATIO)
-        font_size = FONT_SIZE
+        font_size = _effective_font_size(width)
         stroke_width = max(STROKE_WIDTH, 1)
         canvas_pad = 60
 
@@ -405,7 +415,7 @@ class SubtitleRenderer:
         clips = []
 
         base_y = int(height * SUBTITLE_START_Y_RATIO)
-        font_size = FONT_SIZE
+        font_size = _effective_font_size(width)
         stroke_width = STROKE_WIDTH
         space_width = int(font_size * 0.25)
 
