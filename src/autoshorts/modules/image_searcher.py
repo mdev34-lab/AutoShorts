@@ -262,6 +262,16 @@ class ImageSearcher:
                 continue
 
             candidates = self._candidates(prompt)
+            if candidates and not ALLOW_UNVERIFIED_IMAGES:
+                # No free local check can verify a specific person, team, model,
+                # year or event in a picture; only broad classes are acceptable.
+                if not image_subject.is_broad_request(prompt):
+                    log(
+                        "  Request names a specific entity/date/event; web images "
+                        "cannot be verified, using the fallback instead",
+                        "WARNING",
+                    )
+                    candidates = []
             downloaded = False
             for candidate in candidates:
                 url = candidate.url

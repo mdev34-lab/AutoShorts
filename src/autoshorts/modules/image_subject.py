@@ -155,3 +155,60 @@ def check_subject(path: Path, subject: str) -> str | None:
     if p < MIN_PROBABILITY:
         return f"image does not look like {subject!r} (class score {p:.2f})"
     return None
+
+
+# Generic scene/object words (en + pt-BR). A request made ONLY of these (plus
+# function words) asks for a broad class, which the class check can meaningfully
+# confirm. Anything else (a name, team, model, year, event, unknown word) is a
+# specific request that no free local check can verify: web images are rejected
+# for it and the pipeline falls back (AI image).
+_FUNCTION_WORDS = frozenset(
+    "a an the of in on at with and or for to from by de da do das dos e em no na "
+    "nos nas com para por um uma o as os ao aos sobre over under near".split()
+)
+_GENERIC_WORDS = frozenset(
+    """
+    bowl cup glass plate up down open closed noite dia manhã manha tarde tigela copo
+    prato photo image picture close closeup view scene background wide aerial night day
+    sunrise sunset morning city street road bridge building house home room kitchen
+    office desk table chair sofa bed window door garden park forest tree trees
+    flower flowers mountain mountains beach sea ocean river lake sky clouds cloud
+    rain snow field farm road car cars bus train plane airplane boat ship bicycle
+    bike motorcycle truck dog dogs cat cats bird birds horse cow fish animal animals
+    people person man woman child children crowd family hands hand team group
+    food fruit fruits vegetables bread coffee tea water fire light lights
+    computer laptop keyboard screen phone smartphone camera book books paper pen
+    money coins chart graph server servers cable cables robot technology science
+    laboratory factory machine machines tool tools work working
+    foto imagem cena fundo cidade rua estrada ponte prédio predio casa quarto
+    cozinha escritório escritorio mesa cadeira janela porta jardim parque floresta
+    árvore arvore árvores arvores flor flores montanha praia mar oceano rio lago
+    céu ceu nuvens chuva neve carro carros ônibus onibus trem avião aviao barco
+    bicicleta moto caminhão caminhao cachorro gato pássaro passaro cavalo vaca peixe
+    animal animais pessoas pessoa homem mulher criança crianca crianças criancas
+    multidão multidao família familia mãos maos mão mao grupo comida fruta frutas
+    legumes pão pao café cafe chá cha água agua fogo luz luzes computador teclado
+    tela telefone celular câmera camera livro livros papel dinheiro moedas gráfico
+    grafico servidor cabos robô robo tecnologia ciência ciencia laboratório
+    laboratorio fábrica fabrica máquina maquina ferramenta trabalho
+    """.split()
+)
+
+
+def is_broad_request(query: str) -> bool:
+    """True only for plainly generic requests (no names, numbers or unknown words)."""
+    import re
+
+    tokens = re.findall(r"[^\W\d_]+|\d+", query or "", re.UNICODE)
+    if not tokens:
+        return False
+    if any(t.isdigit() for t in tokens):
+        return False
+    for word in re.findall(r"[^\W\d_]+", query, re.UNICODE):
+        if word[:1].isupper() and word.lower() not in _FUNCTION_WORDS:
+            return False  # capitalized word: a proper name or title
+        if word.lower() in _FUNCTION_WORDS:
+            continue
+        if word.lower() not in _GENERIC_WORDS:
+            return False
+    return any(w.lower() in _GENERIC_WORDS for w in tokens)

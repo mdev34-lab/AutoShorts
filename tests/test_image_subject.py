@@ -55,3 +55,22 @@ def test_sidecar_records_the_class_level_scope(tmp_path):
     ImageSearcher._write_provenance_sidecar(img, cand, "q")
     record = json.loads(ImageSearcher._sidecar_path(img).read_text())
     assert "NOT verified" in record["pictured_subject_check"]
+
+
+@pytest.mark.parametrize(
+    "query,broad",
+    [
+        ("a bowl of fruit on a table", True),
+        ("close up of a laptop keyboard", True),
+        ("cidade à noite", True),
+        ("Clarence Seedorf Corinthians 2012", False),
+        ("seedorf corinthians", False),  # lowercase names are unknown words
+        ("Apple iPhone launch", False),
+        ("iphone launch keynote", False),
+        ("football league table 2013", False),
+        ("Kaká", False),
+        ("", False),
+    ],
+)
+def test_only_plainly_generic_requests_are_broad(query, broad):
+    assert image_subject.is_broad_request(query) is broad

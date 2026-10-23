@@ -390,20 +390,30 @@ class TestCacheProvenance:
             image_subject.SubjectUnavailableError("no model"),
         )
         with patch.object(mod, "OUTPUT_DIR", tmp_path / "out"):
-            assert searcher.get_images(["some prompt"]) == ["ai.jpg"]
+            assert searcher.get_images(["a bowl of fruit"]) == ["ai.jpg"]
 
     def test_wrong_pictured_subject_is_rejected(self, tmp_path, monkeypatch):
         mod, searcher = self._commons_searcher(
             tmp_path, monkeypatch, "image does not look like 'x' (p=0.01)"
         )
         with patch.object(mod, "OUTPUT_DIR", tmp_path / "out"):
-            assert searcher.get_images(["some prompt"]) == ["ai.jpg"]
+            assert searcher.get_images(["a bowl of fruit"]) == ["ai.jpg"]
 
     def test_verified_license_and_subject_are_used(self, tmp_path, monkeypatch):
         mod, searcher = self._commons_searcher(tmp_path, monkeypatch, None)
         with patch.object(mod, "OUTPUT_DIR", tmp_path / "out"):
-            result = searcher.get_images(["some prompt"])
+            result = searcher.get_images(["a bowl of fruit"])
         assert result and result[0].endswith(".jpg") and result != ["ai.jpg"]
+
+    def test_specific_entity_request_never_uses_web_images(self, tmp_path, monkeypatch):
+        """Wrong footballers/models of the right class pass the class check, so
+        specific person/team/model/year/event requests must fall back."""
+        mod, searcher = self._commons_searcher(tmp_path, monkeypatch, None)
+        downloads = []
+        searcher.download_image = lambda url, path: downloads.append(url) or True
+        with patch.object(mod, "OUTPUT_DIR", tmp_path / "out"):
+            result = searcher.get_images(["Clarence Seedorf Corinthians 2012"])
+        assert downloads == [] and result == ["ai.jpg"]
 
     def test_cache_key_versioned_by_providers(self, monkeypatch):
         from autoshorts.modules import image_searcher as mod
