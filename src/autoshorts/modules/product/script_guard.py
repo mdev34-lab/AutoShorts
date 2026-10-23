@@ -341,3 +341,35 @@ def assert_no_added_facts(original: str, transformed: str) -> None:
             f"Post-guard transform introduced a {ungroundable.group(0)!r} claim; "
             "certification/warranty/grade terms may never be added after the guard."
         )
+
+
+def assert_script_within_atoms(paragraphs: list[str], atoms: list) -> None:
+    """Every spec/feature in the script must be one of the extracted atoms
+    (same number, unit and bound attribute); ungroundable-class words and
+    prices are never allowed."""
+    text = " ".join(paragraphs)
+    norm = _normalize(text)
+    if _UNGROUNDABLE_PATTERN.search(norm) or _PRICE_PATTERN.search(norm):
+        raise ProductPipelineError("Script makes an ungroundable or price claim.")
+    allowed_specs = {a.key[1:] for a in atoms if a.key[0] == "spec"}
+    allowed_feats = {a.key[1] for a in atoms if a.key[0] == "feature"}
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        for number, unit, attribute in _spec_claims(sentence):
+            if (number, unit, attribute) not in allowed_specs and (
+                number,
+                unit,
+                None,
+            ) not in allowed_specs:
+                raise ProductPipelineError(
+                    f"Script states {number}{unit} ({attribute}) that no verified "
+                    "page atom supports."
+                )
+        for feature in _features_in(sentence):
+            if feature.replace("wifi", "wi-fi") not in allowed_feats and (
+                feature not in allowed_feats
+            ):
+                label = {"battery": "bateria"}.get(feature, feature)
+                if label not in allowed_feats:
+                    raise ProductPipelineError(
+                        f"Script claims feature {feature!r} no verified page atom supports."
+                    )

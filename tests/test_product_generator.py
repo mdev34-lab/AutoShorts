@@ -78,17 +78,7 @@ def test_pipeline_skips_rejected_candidates(tmp_path, monkeypatch):
     )
 
     # Evidence-before-narration: the first candidate page verifies the model.
-    def fake_fetch(url, **kw):
-        page = mock.MagicMock()
-        page.url = url
-        page.title = "Projetor HY300 Pro 4K"
-        page.h1 = ""
-        return page
-
-    monkeypatch.setattr("autoshorts.generators.product.fetch_page_evidence", fake_fetch)
-    monkeypatch.setattr(
-        "autoshorts.generators.product.verify_product_identity", lambda *a, **k: {}
-    )
+    _evidence_mocks(monkeypatch)
 
     monkeypatch.setattr(
         "autoshorts.generators.product.safe_get",
@@ -135,13 +125,26 @@ def test_pipeline_aborts_when_too_few_verified(tmp_path, monkeypatch):
     gen._create_flux_video.assert_not_called()
 
 
-def _evidence_mocks(monkeypatch, title="Projetor HY300 Pro 4K"):
+def _page(url, title, body=""):
+    from autoshorts.modules.product.provenance import PageEvidence, model_codes
+
+    return PageEvidence(
+        url=url,
+        status=200,
+        title=title,
+        h1="",
+        meta_title="",
+        identity_codes=model_codes(title),
+        html_text=f"<html><main><ul>{body}</ul></main></html>",
+    )
+
+
+_SPEC_BODY = "<li>Wi-Fi 6</li><li>Bluetooth 5.0</li><li>8GB RAM</li>"
+
+
+def _evidence_mocks(monkeypatch, title="Projetor HY300 Pro 4K", body=_SPEC_BODY):
     def fake_fetch(url, **kw):
-        page = mock.MagicMock()
-        page.url = url
-        page.title = title
-        page.h1 = ""
-        return page
+        return _page(url, title, body)
 
     monkeypatch.setattr("autoshorts.generators.product.fetch_page_evidence", fake_fetch)
     monkeypatch.setattr(
@@ -149,23 +152,10 @@ def _evidence_mocks(monkeypatch, title="Projetor HY300 Pro 4K"):
     )
 
 
-def test_narration_never_repeats_page_title_prose(tmp_path, monkeypatch):
-    """Neither the slug nor the page title is a verified fact: only the model
-    identifier is narrated, never title marketing prose."""
-    gen = _make_generator(tmp_path)
-    monkeypatch.setattr(
-        "autoshorts.generators.product.parse_product_link", lambda url: _product()
-    )
-    monkeypatch.setattr(
-        "autoshorts.generators.product.search_image_candidates",
-        lambda name, limit: [_candidate(0)],
-    )
+def _run_ok(gen, monkeypatch):
     monkeypatch.setattr(
         "autoshorts.generators.product.search_image_candidates",
         lambda name, limit: [_candidate(i) for i in range(3)],
-    )
-    _evidence_mocks(
-        monkeypatch, title="Projetor HY300 Pro 4K Wi-Fi Oficial Fabricado no Japão"
     )
     monkeypatch.setattr(
         "autoshorts.generators.product.verify_image_sources",
@@ -186,11 +176,53 @@ def test_narration_never_repeats_page_title_prose(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "autoshorts.generators.product.AudioFileClip", lambda p: fake_clip
     )
-    assert asyncio.run(gen.generate()) is True
+    return asyncio.run(gen.generate())
+
+
+def test_narration_uses_attributed_page_atoms_not_title_prose(tmp_path, monkeypatch):
+    """Only structured atoms from the verified page are narrated, attributed to
+    its host; title marketing prose (origin, certification, battery) never is."""
+    gen = _make_generator(tmp_path)
+    monkeypatch.setattr(
+        "autoshorts.generators.product.parse_product_link", lambda url: _product()
+    )
+    _evidence_mocks(
+        monkeypatch,
+        title="Projetor HY300 Pro 4K Oficial Fabricado no Japão aluminio aeronautico",
+    )
+    assert _run_ok(gen, monkeypatch) is True
     description = gen.metadata.description
-    assert "HY300 Pro" in description
-    for prose in ("4K", "Wi-Fi", "Oficial"):
+    assert "Segundo o site" in description and "example.org" in description
+    assert "8GB de memória" in description and "Wi-Fi" in description
+    for prose in ("Japão", "aeronautico", "Oficial"):
         assert prose not in description
+
+
+def test_negated_and_ambiguous_page_clauses_are_never_narrated(tmp_path, monkeypatch):
+    gen = _make_generator(tmp_path)
+    monkeypatch.setattr(
+        "autoshorts.generators.product.parse_product_link", lambda url: _product()
+    )
+    body = (
+        "<li>Sem Bluetooth</li><li>Não tem suporte para HDMI</li>"
+        "<li>Suporta 2kg peso 1kg</li><li>Wi-Fi 6</li><li>8GB RAM</li><li>4K</li>"
+    )
+    _evidence_mocks(monkeypatch, body=body)
+    assert _run_ok(gen, monkeypatch) is True
+    description = gen.metadata.description
+    assert "Bluetooth" not in description and "HDMI" not in description
+    assert "2kg" not in description  # ambiguous load-vs-weight is skipped
+    assert "1kg de peso" in description
+
+
+def test_too_few_verified_facts_aborts_without_a_video(tmp_path, monkeypatch):
+    gen = _make_generator(tmp_path)
+    monkeypatch.setattr(
+        "autoshorts.generators.product.parse_product_link", lambda url: _product()
+    )
+    _evidence_mocks(monkeypatch, body="<li>Wi-Fi 6</li>")
+    assert _run_ok(gen, monkeypatch) is False
+    gen._create_flux_video.assert_not_called()
 
 
 def test_no_verifiable_page_aborts_before_narration(tmp_path, monkeypatch):

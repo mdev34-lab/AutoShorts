@@ -20,6 +20,7 @@ from ..modules.image_searcher import ImageSearcher
 from ..modules.logging_system import log
 from ..modules.product.discovery import search_image_candidates
 from ..modules.product.errors import ProductPipelineError
+from ..modules.product.evidence import host_label, page_atoms
 from ..modules.product.narration import compose_showcase_script
 from ..modules.product.network import safe_get
 from ..modules.product.product import parse_product_link
@@ -31,13 +32,15 @@ from ..modules.product.provenance import (
 )
 from ..modules.product.script_guard import (
     assert_no_added_facts,
-    assert_script_within_verified_facts,
+    assert_script_within_atoms,
 )
 from ..modules.utils import setup_directories
 from .explainer import ExplainerGenerator
 
 MIN_IMAGES = 3
 MAX_CANDIDATES_TO_TRY = 8
+MAX_EVIDENCE_PAGES = 3
+MIN_FACT_ATOMS = 3
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
 
@@ -76,15 +79,24 @@ class ProductGenerator(ExplainerGenerator):
             # Facts are composed only from a page whose title/H1 proves the
             # exact model code - never from the raw user-supplied slug.
             evidence_page = None
+            atoms: list = []
+            seen_hosts: set[str] = set()
             for candidate in candidates[:MAX_CANDIDATES_TO_TRY]:
                 try:
                     page = fetch_page_evidence(candidate.page_url)
                     verify_product_identity(product.name, page, label="narration")
-                    evidence_page = page
-                    break
                 except ProductPipelineError as exc:
                     log(f"Evidence page rejected: {exc}", "WARNING")
                     continue
+                if evidence_page is None:
+                    evidence_page = page
+                host = host_label(page.url)
+                if host in seen_hosts:
+                    continue
+                seen_hosts.add(host)
+                atoms.extend(page_atoms(page))
+                if len(seen_hosts) >= MAX_EVIDENCE_PAGES:
+                    break
             if evidence_page is None:
                 log(
                     "No authoritative page could verify the product identity; "
@@ -93,14 +105,22 @@ class ProductGenerator(ExplainerGenerator):
                 )
                 return False
             log(
-                f"Verified model identifier on {evidence_page.url}",
+                f"Verified model identifier on {len(seen_hosts)} page host(s)",
                 "SUCCESS",
             )
+            unique_facts = {a.key for a in atoms}
+            if len(unique_facts) < MIN_FACT_ATOMS:
+                log(
+                    f"Only {len(unique_facts)} verified fact(s) found (need {MIN_FACT_ATOMS}); "
+                    "aborting instead of producing a claim-free or unsupported video",
+                    "ERROR",
+                )
+                return False
 
-            log("Step 4: Composing identifier-only showcase script...")
-            # The page title is third-party marketing prose, not a verified
-            # fact: only the model identifier it proves is ever narrated.
-            paragraphs = compose_showcase_script(product.name)
+            log("Step 4: Composing attributed showcase script from page facts...")
+            # Only structured fact atoms from identity-verified pages are
+            # narrated, each attributed to its page host (never slug/title prose).
+            paragraphs = compose_showcase_script(product.name, atoms)
             if not paragraphs or len(paragraphs) < 3:
                 log(
                     f"Script composition failed: got {len(paragraphs)} paragraphs, need >= 3",
@@ -108,7 +128,7 @@ class ProductGenerator(ExplainerGenerator):
                 )
                 return False
             try:
-                assert_script_within_verified_facts(paragraphs, product.name)
+                assert_script_within_atoms(paragraphs, atoms)
             except ProductPipelineError as exc:
                 log(f"Script rejected by the verified-facts guard: {exc}", "ERROR")
                 return False
