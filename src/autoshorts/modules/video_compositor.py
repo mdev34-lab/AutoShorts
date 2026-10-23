@@ -22,6 +22,7 @@ from moviepy import (
     AudioFileClip,
     CompositeVideoClip,
     ImageClip,
+    VideoClip,
     VideoFileClip,
     concatenate_videoclips,
 )
@@ -197,7 +198,6 @@ class VideoCompositor:
         def apply_overlay(get_frame, t):
             frame = get_frame(t)
             scale = scale_anim(t)
-            opacity = opacity_anim(t)
 
             # Zoom: center-crop + resize (constant frame size)
             if scale > 1.001 and _pil:
@@ -231,13 +231,22 @@ class VideoCompositor:
                         )
                     )
 
-            # Opacity
-            if opacity < 1.0 and opacity >= 0.0:
-                frame = np.minimum(255, frame * opacity).astype("uint8")
-
             return frame
 
-        return clip.transform(apply_overlay).with_position(("center", "center"))
+        # Fade via alpha mask, NOT pixel multiply: multiplying RGB by the
+        # opacity yields an opaque near-black image, and since ImageClips have
+        # no mask the "faded" overlay covered the background with black.
+        h, w = clip.size[1], clip.size[0]
+        mask = VideoClip(
+            frame_function=lambda t: np.full((h, w), opacity_anim(t), dtype=float),
+            is_mask=True,
+            duration=duration,
+        )
+        return (
+            clip.transform(apply_overlay)
+            .with_mask(mask)
+            .with_position(("center", "center"))
+        )
 
     def _apply_opening_animation(self, clip, duration: float = OPENING_ANIMATION_DURATION):
         """Cold-open: ease-out zoom-out + per-frame motion-blur-style blur.

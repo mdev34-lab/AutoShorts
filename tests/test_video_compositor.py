@@ -56,6 +56,7 @@ class TestApplyOverlayAnimation:
         mock_clip.size = (1080, 1920)
         mock_clip.with_effects.return_value = mock_clip
         mock_clip.transform.return_value = mock_clip
+        mock_clip.with_mask.return_value = mock_clip
         mock_clip.with_position.return_value = mock_clip
 
         result = self.compositor._apply_overlay_animation(mock_clip, 3.0)
@@ -63,6 +64,8 @@ class TestApplyOverlayAnimation:
         assert result is mock_clip
         mock_clip.with_effects.assert_not_called()
         mock_clip.transform.assert_called_once()
+        # Fade is carried by an alpha mask, not by darkening pixels.
+        assert mock_clip.with_mask.call_args[0][0].is_mask
         mock_clip.with_position.assert_called_once_with(("center", "center"))
 
     def test_zero_duration(self):
@@ -70,6 +73,7 @@ class TestApplyOverlayAnimation:
         mock_clip.size = (1080, 1920)
         mock_clip.with_effects.return_value = mock_clip
         mock_clip.transform.return_value = mock_clip
+        mock_clip.with_mask.return_value = mock_clip
         mock_clip.with_position.return_value = mock_clip
 
         result = self.compositor._apply_overlay_animation(mock_clip, 0.0)
@@ -106,6 +110,7 @@ class TestOverlayAnimationFrameTransform:
         mock_clip.size = (100, 100)
         mock_clip.with_effects = Mock(return_value=mock_clip)
         mock_clip.transform = Mock(return_value=mock_clip)
+        mock_clip.with_mask = Mock(return_value=mock_clip)
         mock_clip.with_position = Mock(return_value=mock_clip)
 
         self.compositor._apply_overlay_animation(mock_clip, 1.0)
@@ -115,11 +120,17 @@ class TestOverlayAnimationFrameTransform:
         def dummy_get_frame(t):
             return np.ones((100, 100, 3), dtype=np.uint8) * 255
 
+        # The RGB transform never darkens for opacity; the fade lives in the mask.
         at_mid = transform_call(dummy_get_frame, 0.5)
         at_end = transform_call(dummy_get_frame, 1.0)
 
-        assert np.any(at_mid > 0)
-        assert np.all(at_end == 0)
+        assert np.all(at_mid == 255)
+        assert np.all(at_end == 255)
+
+        mask = mock_clip.with_mask.call_args[0][0]
+        assert mask.get_frame(0.5).max() == 1.0
+        assert mask.get_frame(1.0).max() == 0.0
+        assert 0.0 < mask.get_frame(0.05).max() < 1.0
 
 
 class TestVerticalCropBox:
@@ -360,3 +371,29 @@ class TestRealPathComposition:
         # Overlay mode must receive the untouched source (full source also
         # feeds the blurred-background path).
         assert overlay_exc.value.size == (640, 338)
+
+
+def test_overlay_fade_uses_alpha_not_black():
+    """The overlay fade must reveal the background, never dim the frame to black."""
+    import numpy as np
+    from moviepy import CompositeVideoClip, ImageClip
+
+    from autoshorts.modules.video_compositor import VideoCompositor
+
+    compositor = VideoCompositor()
+    red_bg = ImageClip(np.full((36, 64, 3), (200, 0, 0), dtype="uint8")).with_duration(
+        1.0
+    )
+    white_fg = ImageClip(np.full((36, 64, 3), 255, dtype="uint8")).with_duration(1.0)
+    overlay = compositor._apply_overlay_animation(white_fg, 1.0)
+    composite = CompositeVideoClip([red_bg, overlay], size=(64, 36))
+
+    # t=0: fade-in start -> background fully visible, not a black frame
+    px_start = composite.get_frame(0.0)[18, 32]
+    assert px_start[0] > 150 and px_start[1] < 60, f"fade start went dark: {px_start}"
+    # t=0.5: fully opaque overlay
+    px_mid = composite.get_frame(0.5)[18, 32]
+    assert all(c > 240 for c in px_mid), f"overlay not opaque mid-show: {px_mid}"
+    # t=0.075 (mid fade-in, opacity ~0.5): a blend of bg and overlay, never black
+    px_blend = composite.get_frame(0.075)[18, 32]
+    assert px_blend[1] > 60, f"mid-fade crushed to black: {px_blend}"
