@@ -156,3 +156,14 @@ def test_resource_key_preserves_case_sensitive_path_and_query():
     assert upper != lower  # distinct case-sensitive resources must not conflate
     reordered = _resource_key("https://CDN.shopee.com/IMG/AbC.jpg?h=200&w=100", base)
     assert upper == reordered  # host case and query order remain normalized
+
+
+def test_resource_key_distinguishes_effective_port():
+    from autoshorts.modules.product.provenance import _resource_key
+
+    page = "https://shopee.com.br/product-page"
+    default = _resource_key("https://cdn.example.com/img/a.jpg", page)
+    explicit_443 = _resource_key("https://cdn.example.com:443/img/a.jpg", page)
+    other_port = _resource_key("https://cdn.example.com:8443/img/a.jpg", page)
+    assert default == explicit_443
+    assert default != other_port

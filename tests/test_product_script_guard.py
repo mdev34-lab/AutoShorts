@@ -112,3 +112,36 @@ def test_unit_aliases_ground_equivalent_claims():
     assert_script_within_verified_facts(
         ["Tela OLED linda."], "Smart TV Z9 OLED 55 Polegadas"
     )
+
+
+def test_ungroundable_claim_classes_always_rejected():
+    # A product slug can never verify certifications, warranty or grade claims.
+    for claim in (
+        "Certificado pela Anatel e Inmetro.",
+        "Garantia de cinco anos.",
+        "Produto com garantia vitalícia.",
+        "Lifetime warranty included.",
+        "Estrutura de alumínio aeroespacial.",
+    ):
+        with pytest.raises(ProductPipelineError):
+            assert_script_within_verified_facts([claim], "Drone D10 Pro")
+
+
+def test_attribute_binding_blocks_cross_attribute_reuse():
+    # "8GB RAM" in the name must not ground "8GB de armazenamento".
+    with pytest.raises(ProductPipelineError, match="storage"):
+        assert_script_within_verified_facts(
+            ["São 8GB de armazenamento interno."], "Notebook Y2 8GB RAM"
+        )
+    # "suporta 2kg" must not ground "pesa 2kg".
+    with pytest.raises(ProductPipelineError, match="weight"):
+        assert_script_within_verified_facts(
+            ["Pesa apenas 2kg."], "Suporte de TV Suporta 2kg"
+        )
+    # Same attribute binds fine.
+    assert_script_within_verified_facts(
+        ["São 8GB de RAM pra multitarefa."], "Notebook Y2 8GB RAM"
+    )
+    assert_script_within_verified_facts(
+        ["Suporta até 2kg com segurança."], "Suporte de TV Suporta 2kg"
+    )

@@ -305,13 +305,15 @@ def verify_product_identity(
     }
 
 
-def _resource_key(url: str, page_url: str) -> tuple[str, str, str]:
+def _resource_key(url: str, page_url: str) -> tuple[str, int, str, str]:
     absolute = urljoin(page_url, html.unescape(url.strip()))
     parts = urlsplit(absolute)
     host = (parts.hostname or "").casefold().rstrip(".")
+    scheme = parts.scheme.lower()
+    port = parts.port or (443 if scheme == "https" else 80 if scheme == "http" else 0)
     path = re.sub(r"/+", "/", parts.path)
     query = "&".join(sorted(parts.query.split("&"))) if parts.query else ""
-    return host, path, query
+    return host, port, path, query
 
 
 def verify_image_sources(

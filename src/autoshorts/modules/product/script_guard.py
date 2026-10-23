@@ -98,6 +98,45 @@ _PRICE_PATTERN = re.compile(
     r"\bdesconto\b|\bcupom\b|\bfrete\s+gr[áa]tis\b)",
     re.IGNORECASE,
 )
+# Claims a slug-derived product name can never verify: certifications, warranty
+# terms and grade/origin claims. Rejected categorically, regardless of wording.
+_UNGROUNDABLE_PATTERN = re.compile(
+    r"(?<![a-z0-9])(anatel|inmetro|fcc|fda|iso\s?9001|garantia|warranty|"
+    r"vitalicio|lifetime|aerospace|aeroespacial|military|militar|medico|"
+    r"medical|hospitalar)(?![a-z0-9])"
+)
+
+# Attribute context for binding unit claims: "8GB RAM" must not ground "8GB de
+# armazenamento", nor "suporta 2kg" ground "pesa 2kg".
+_ATTRIBUTE_WORDS = {
+    "ram": "memory",
+    "memoria": "memory",
+    "armazenamento": "storage",
+    "storage": "storage",
+    "disco": "storage",
+    "ssd": "storage",
+    "hd": "storage",
+    "peso": "weight",
+    "pesa": "weight",
+    "weighs": "weight",
+    "weight": "weight",
+    "suporta": "load",
+    "supports": "load",
+    "carga": "load",
+    "capacidade": "load",
+    "load": "load",
+    "potencia": "power",
+    "power": "power",
+    "brilho": "brightness",
+    "brightness": "brightness",
+    "bateria": "battery",
+    "battery": "battery",
+    "autonomia": "battery",
+    "tela": "screen",
+    "screen": "screen",
+    "display": "display",
+}
+
 # Feature claims that must appear verbatim in the verified product name.
 _FEATURE_KEYWORDS = (
     "bluetooth",
@@ -126,21 +165,48 @@ def _canon_unit(unit: str) -> str:
     return _UNIT_ALIASES.get(_normalize(unit), _normalize(unit))
 
 
-def _spec_pairs(text: str) -> set[tuple[str, str]]:
-    """(number, unit) pairs grounded by the text, separators/units normalized."""
-    pairs = {
-        (m.group(1).replace(",", "."), _canon_unit(m.group(2)))
-        for m in _UNIT_PATTERN.finditer(text)
-    }
-    pairs.update(
-        (m.group(1).replace(",", "."), m.group(2).casefold())
-        for m in _RESOLUTION_PATTERN.finditer(text)
-    )
-    pairs.update(
-        (_NUMBER_WORDS[_normalize(m.group(1))], _canon_unit(m.group(2)))
-        for m in _SPELLED_PATTERN.finditer(text)
-    )
-    return pairs
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+
+def _attribute_near(text: str, start: int, end: int, window: int = 5) -> str | None:
+    """First recognized attribute word within `window` words around a match."""
+    before = _WORD_RE.findall(_normalize(text[:start]))[-window:]
+    after = _WORD_RE.findall(_normalize(text[end:]))[:window]
+    for word in list(reversed(before)) + after:
+        attribute = _ATTRIBUTE_WORDS.get(word)
+        if attribute:
+            return attribute
+    return None
+
+
+def _spec_claims(text: str) -> set[tuple[str, str, str | None]]:
+    """(number, unit, attribute) claims, separators/units normalized."""
+    claims: set[tuple[str, str, str | None]] = set()
+    for m in _UNIT_PATTERN.finditer(text):
+        claims.add(
+            (
+                m.group(1).replace(",", "."),
+                _canon_unit(m.group(2)),
+                _attribute_near(text, m.start(), m.end()),
+            )
+        )
+    for m in _RESOLUTION_PATTERN.finditer(text):
+        claims.add(
+            (
+                m.group(1).replace(",", "."),
+                m.group(2).casefold(),
+                _attribute_near(text, m.start(), m.end()),
+            )
+        )
+    for m in _SPELLED_PATTERN.finditer(text):
+        claims.add(
+            (
+                _NUMBER_WORDS[_normalize(m.group(1))],
+                _canon_unit(m.group(2)),
+                _attribute_near(text, m.start(), m.end()),
+            )
+        )
+    return claims
 
 
 def _features_in(text: str) -> set[str]:
@@ -161,16 +227,34 @@ def assert_script_within_verified_facts(
             "No verified product name available; aborting instead of narrating "
             "claims that cannot be grounded."
         )
-    grounded = _spec_pairs(product_name)
+    grounded = _spec_claims(product_name)
     grounded_features = _features_in(product_name)
     text = " ".join(paragraphs)
-    for number, unit in _spec_pairs(text):
-        if (number, unit) not in grounded:
+    ungroundable = _UNGROUNDABLE_PATTERN.search(_normalize(text))
+    if ungroundable:
+        raise ProductPipelineError(
+            f"Script makes a {ungroundable.group(0)!r} claim; certification, "
+            "warranty and grade/origin claims can never be verified from a "
+            "product name - aborting."
+        )
+    for number, unit, attribute in _spec_claims(text):
+        candidates = {(n, u) for n, u, _a in grounded}
+        if (number, unit) not in candidates:
             raise ProductPipelineError(
                 f"Script mentions specification {number}{unit} that is not present "
                 "in the verified product name; aborting instead of narrating "
                 "unverified specs."
             )
+        if attribute is not None:
+            name_attributes = {
+                a for n, u, a in grounded if (n, u) == (number, unit) and a is not None
+            }
+            if name_attributes and attribute not in name_attributes:
+                raise ProductPipelineError(
+                    f"Script binds {number}{unit} to {attribute!r} but the verified "
+                    f"product name binds it to {sorted(name_attributes)!r}; "
+                    "aborting instead of narrating a mismatched attribute."
+                )
     for feature in sorted(_features_in(text) - grounded_features):
         raise ProductPipelineError(
             f"Script claims feature {feature!r} that is not present in the "
