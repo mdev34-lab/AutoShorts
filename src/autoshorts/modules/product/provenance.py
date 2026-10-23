@@ -42,6 +42,7 @@ _PREFIX_STOPWORDS = {
     "series",
     "product",
     "projector",
+    "projetor",
     "jbl",
     "magcubic",
 }
@@ -49,6 +50,9 @@ _URL_RE = re.compile(r"(?:https?:)?//[^\s,]+|/[^\s,]+", re.IGNORECASE)
 # Numeric listing IDs embedded in the slug (-i.<shop>.<item>) are not product
 # model codes and must never be required from the source page.
 _SHOPEE_ITEM_ID = re.compile(r"^i\d{6,}$")
+# Resolution specs (1080p, 4K, 8K) are descriptors, not model identifiers;
+# they must never seed or extend a model code ("Portátil 4K" != "portatil4k").
+_RESOLUTION_TOKEN = re.compile(r"^(?:\d{3,4}p|[48]k)$")
 
 
 def _words(text: str) -> list[str]:
@@ -65,7 +69,7 @@ def model_codes(text: str) -> list[str]:
     for index, token in enumerate(tokens):
         if not any(ch.isdigit() for ch in token):
             continue
-        if _SHOPEE_ITEM_ID.match(token):
+        if _SHOPEE_ITEM_ID.match(token) or _RESOLUTION_TOKEN.match(token):
             continue
         code = token
         following = index + 1
@@ -92,7 +96,11 @@ def model_codes(text: str) -> list[str]:
         if not token.isalpha() or len(token) > 5 or token in _PREFIX_STOPWORDS:
             continue
         next_token = tokens[index + 1]
-        if next_token.isdigit() and len(next_token) >= 2:
+        if (
+            next_token.isdigit()
+            and len(next_token) >= 2
+            and not _RESOLUTION_TOKEN.match(token + next_token)
+        ):
             code = token + next_token
             following = index + 2
             while following < len(tokens) and tokens[following] in _MODEL_SUFFIXES:
@@ -301,8 +309,8 @@ def _resource_key(url: str, page_url: str) -> tuple[str, str, str]:
     absolute = urljoin(page_url, html.unescape(url.strip()))
     parts = urlsplit(absolute)
     host = (parts.hostname or "").casefold().rstrip(".")
-    path = re.sub(r"/+", "/", parts.path).casefold()
-    query = "&".join(sorted(parts.query.casefold().split("&"))) if parts.query else ""
+    path = re.sub(r"/+", "/", parts.path)
+    query = "&".join(sorted(parts.query.split("&"))) if parts.query else ""
     return host, path, query
 
 

@@ -130,3 +130,25 @@ def test_resource_key_distinguishes_query_variants():
     assert v1 != wide
     reordered = _resource_key("https://cdn.example.com/img/photo.jpg?v=1&width=600", page)
     assert wide == reordered
+
+
+def test_category_and_resolution_do_not_fold_into_primary_code():
+    from autoshorts.modules.product.provenance import model_codes, primary_model_code
+
+    codes = model_codes("Projetor HY300 Pro Portátil 4K")
+    assert primary_model_code("Projetor HY300 Pro Portátil 4K") == "hy300pro"
+    assert "projetorhy300pro" not in codes
+    assert "portatil4k" not in codes
+    # The legitimate brand-titled page now shares the same code.
+    assert "hy300pro" in model_codes("Magcubic HY300 Pro Smart Projector")
+
+
+def test_resource_key_preserves_case_sensitive_path_and_query():
+    from autoshorts.modules.product.provenance import _resource_key
+
+    base = "https://shopee.com.br/product-page"
+    upper = _resource_key("https://cdn.Shopee.com/IMG/AbC.jpg?w=100&h=200", base)
+    lower = _resource_key("https://cdn.shopee.com/img/abc.jpg?w=100&h=200", base)
+    assert upper != lower  # distinct case-sensitive resources must not conflate
+    reordered = _resource_key("https://CDN.shopee.com/IMG/AbC.jpg?h=200&w=100", base)
+    assert upper == reordered  # host case and query order remain normalized
