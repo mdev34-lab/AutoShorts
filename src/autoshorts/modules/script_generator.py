@@ -49,6 +49,15 @@ class ScriptGenerator:
             "NO corporate language.\n"
             "FORBIDDEN: Hyperboles, exaggerated claims, 'designed by a god', "
             "'you won't believe', 'shocking truth' \u2014 these sound fake.\n"
+            "PACING: Vary sentence length. One idea per sentence, one beat per "
+            "paragraph \u2014 never open two paragraphs the same way.\n"
+            "SPOKEN LANGUAGE: Write for the ear, not the page \u2014 short, direct "
+            "sentences a person would actually say out loud. Prefer concrete "
+            "names and numbers over generic qualifiers ('significant', "
+            "'impressive', 'remarkable' alone say nothing).\n"
+            "NEVER sound like a news reader: no bureaucratic openers "
+            "('Recent developments', 'has drawn attention', 'is a topic that'), "
+            "no meta-commentary about the video itself.\n"
         )
         if self.custom_instructions:
             base += (
@@ -660,6 +669,20 @@ class ScriptGenerator:
             "pouca gente sabe",
             "muita gente n\u00e3o sabe",
             "o que poucos sabem",
+            # bureaucratic / news-reader openers and empty qualifiers
+            "recentes desenvolvimentos",
+            "atraiu aten\u00e7\u00e3o",
+            "atraindo aten\u00e7\u00e3o",
+            "aten\u00e7\u00e3o significativa",
+            "ganhou destaque",
+            "tem sido tema",
+            "\u00e9 um tema que",
+            "\u00e9 importante notar",
+            "vale ressaltar",
+            "nos \u00faltimos tempos",
+            # meta-commentary about the video itself
+            "neste v\u00eddeo",
+            "vamos explorar",
             "ltda",
             "s.a.",
             "institui\u00e7\u00e3o de pagamento",

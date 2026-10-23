@@ -1008,5 +1008,38 @@ class TestScriptGeneratorEdgeCases:
         assert len(result) == 0
 
 
+class TestVoiceAndFiller:
+    """Spoken-voice tone rules and bureaucratic-filler rejection."""
+
+    def test_tone_block_includes_pacing_and_spoken_language_rules(self):
+        gen = ScriptGenerator.__new__(ScriptGenerator)
+        gen.custom_instructions = None
+        tone = gen._tone_instructions()
+        assert "PACING" in tone
+        assert "SPOKEN LANGUAGE" in tone
+        assert "news reader" in tone
+
+    @pytest.mark.parametrize(
+        "paragraph",
+        [
+            "Recentes desenvolvimentos no mundo do futebol mudaram tudo.",
+            "A partida atraiu atenção significativa de fãs e analistas.",
+            "É um tema que divide opiniões entre especialistas.",
+            "Vale ressaltar que o elenco estava completo.",
+            "É importante notar o contexto histórico do clube.",
+            "Neste vídeo, vamos explorar a trajetória do time.",
+        ],
+    )
+    def test_bureaucratic_newsreader_paragraphs_are_filler(self, paragraph):
+        assert ScriptGenerator._is_filler(paragraph) is True
+
+    def test_concrete_fact_paragraph_is_not_filler(self):
+        paragraph = (
+            "O time venceu por 2 a 0 no sábado, com gols marcados "
+            "aos 12 e aos 78 minutos do segundo tempo."
+        )
+        assert ScriptGenerator._is_filler(paragraph) is False
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
