@@ -1033,6 +1033,35 @@ class TestVoiceAndFiller:
     def test_bureaucratic_newsreader_paragraphs_are_filler(self, paragraph):
         assert ScriptGenerator._is_filler(paragraph) is True
 
+    @pytest.mark.parametrize(
+        "paragraph",
+        [
+            # same phrases, but carrying grounded facts: must survive
+            "O gol de Seedorf atraiu atenção de 40 mil torcedores.",
+            "A partida ganhou destaque após 3 gols em 20 minutos.",
+            "Nos últimos tempos o time venceu 7 jogos seguidos.",
+            "Tem sido tema desde a final de 2012, quando perdeu por 2 a 1.",
+            # quoted speech is preserved verbatim
+            'Segundo o técnico, o resultado "ganhou destaque" na imprensa.',
+            # attribution keeps the context even without digits
+            "Segundo analistas, o clube tem sido tema de debates na mídia.",
+            "O treinador disse que vale ressaltar o esforço do elenco.",
+        ],
+    )
+    def test_fact_bearing_paragraph_with_bureaucratic_phrase_survives(self, paragraph):
+        assert ScriptGenerator._is_filler(paragraph) is False
+
+    def test_validation_never_drops_fact_bearing_paragraph(self):
+        paragraphs = [
+            "O time venceu por 2 a 0 no sábado.",
+            "A partida atraiu atenção de 40 mil torcedores.",
+            "Seedorf marcou aos 12 e aos 78 minutos.",
+            "O técnico elogiou a entrega do elenco.",
+            "O clube sobe para 45 pontos na tabela.",
+        ]
+        cleaned = ScriptGenerator._validate_paragraphs(list(paragraphs))
+        assert cleaned == paragraphs  # no silent 5->4 fact drop
+
     def test_concrete_fact_paragraph_is_not_filler(self):
         paragraph = (
             "O time venceu por 2 a 0 no sábado, com gols marcados "

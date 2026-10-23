@@ -53,8 +53,8 @@ class ScriptGenerator:
             "paragraph \u2014 never open two paragraphs the same way.\n"
             "SPOKEN LANGUAGE: Write for the ear, not the page \u2014 short, direct "
             "sentences a person would actually say out loud. Prefer concrete "
-            "names and numbers over generic qualifiers ('significant', "
-            "'impressive', 'remarkable' alone say nothing).\n"
+            "names and numbers over generic qualifiers ('significativo', "
+            "'impressionante', 'not\u00e1vel' alone say nothing).\n"
             "NEVER sound like a news reader: no bureaucratic openers "
             "('Recent developments', 'has drawn attention', 'is a topic that'), "
             "no meta-commentary about the video itself.\n"
@@ -654,6 +654,42 @@ class ScriptGenerator:
             log(f"Script generation failed: {e}", "ERROR")
             return []
 
+    # Bureaucratic / news-reader openers: filler ONLY when the paragraph
+    # carries nothing concrete. The same phrase inside a fact-bearing,
+    # quoted or attributed sentence must survive - dropping it would
+    # silently lose grounded facts or abort the whole video.
+    _CONTEXTUAL_FILLER_PATTERNS = [
+        "recentes desenvolvimentos",
+        "atraiu aten\u00e7\u00e3o",
+        "atraindo aten\u00e7\u00e3o",
+        "aten\u00e7\u00e3o significativa",
+        "ganhou destaque",
+        "tem sido tema",
+        "\u00e9 um tema que",
+        "\u00e9 importante notar",
+        "vale ressaltar",
+        "nos \u00faltimos tempos",
+    ]
+    _ATTRIBUTION_MARKERS = (
+        "segundo",
+        "disse",
+        "afirmou",
+        "declarou",
+        "relatou",
+        "according to",
+        "said",
+    )
+
+    @staticmethod
+    def _has_concrete_anchor(lower: str, original: str) -> bool:
+        """Digits (scores/dates/stats), quoted speech or attribution make a
+        paragraph fact-bearing: never filler, whatever openers it uses."""
+        if any(ch.isdigit() for ch in original):
+            return True
+        if '"' in original or "\u201c" in original or "'" in original:
+            return True
+        return any(m in lower for m in ScriptGenerator._ATTRIBUTION_MARKERS)
+
     @staticmethod
     def _is_filler(paragraph: str) -> bool:
         """Check if a paragraph is generic filler or corporate language that should be rejected."""
@@ -669,17 +705,6 @@ class ScriptGenerator:
             "pouca gente sabe",
             "muita gente n\u00e3o sabe",
             "o que poucos sabem",
-            # bureaucratic / news-reader openers and empty qualifiers
-            "recentes desenvolvimentos",
-            "atraiu aten\u00e7\u00e3o",
-            "atraindo aten\u00e7\u00e3o",
-            "aten\u00e7\u00e3o significativa",
-            "ganhou destaque",
-            "tem sido tema",
-            "\u00e9 um tema que",
-            "\u00e9 importante notar",
-            "vale ressaltar",
-            "nos \u00faltimos tempos",
             # meta-commentary about the video itself
             "neste v\u00eddeo",
             "vamos explorar",
@@ -689,7 +714,12 @@ class ScriptGenerator:
             "pessoa jur\u00eddica",
         ]
         lower = paragraph.lower()
-        return any(p in lower for p in filler_patterns)
+        if any(p in lower for p in filler_patterns):
+            return True
+        if not any(p in lower for p in ScriptGenerator._CONTEXTUAL_FILLER_PATTERNS):
+            return False
+        # Contextual match: filler only without a concrete anchor.
+        return not ScriptGenerator._has_concrete_anchor(lower, paragraph)
 
     @staticmethod
     def _validate_paragraphs(paragraphs: list) -> list:
