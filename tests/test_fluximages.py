@@ -700,6 +700,8 @@ class TestImageSearcher:
         with (
             patch("autoshorts.modules.image_searcher.Image.open") as mock_open,
             patch.object(self.searcher, "resize_to_fill"),
+            # fixture downloads no real file; the pixel gate has its own tests
+            patch.object(self.searcher, "_content_rejection", return_value=None),
         ):
             mock_open.return_value.__enter__.return_value.size = (800, 600)
             paths = self.searcher.get_images(
@@ -747,6 +749,8 @@ class TestImageSearcher:
         with (
             patch("autoshorts.modules.image_searcher.Image.open") as mock_open,
             patch.object(self.searcher, "resize_to_fill"),
+            # fixture downloads no real file; the pixel gate has its own tests
+            patch.object(self.searcher, "_content_rejection", return_value=None),
         ):
             mock_open.return_value.__enter__.return_value.size = (800, 600)
             paths = self.searcher.get_images(["uncached A", prompt, "uncached B"])

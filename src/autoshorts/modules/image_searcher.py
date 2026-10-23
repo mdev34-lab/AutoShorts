@@ -8,7 +8,7 @@ from urllib.parse import quote
 import requests
 from PIL import Image
 
-from . import image_sources
+from . import image_content, image_sources
 from .config import (
     ALLOW_UNVERIFIED_IMAGES,
     API_KEY,
@@ -219,6 +219,14 @@ class ImageSearcher:
             return None
         return data
 
+    @staticmethod
+    def _content_rejection(path: Path, prompt: str) -> str | None:
+        """Pixel gate on the downloaded bytes; fails closed if OCR is missing."""
+        try:
+            return image_content.check_image_content(path, prompt)
+        except image_content.ContentUnavailableError as exc:
+            return f"pixel content could not be checked ({exc})"
+
     @classmethod
     def _usable_cache(cls, cached_path: Path) -> bool:
         """Reusable only with a valid provenance record that is still allowed
@@ -270,6 +278,14 @@ class ImageSearcher:
                         if actual_w < 100 or actual_h < 100:
                             log(
                                 f"  Downloaded image too small ({actual_w}×{actual_h}), skipping",
+                                "WARNING",
+                            )
+                            temp_path.unlink(missing_ok=True)
+                            continue
+                        reason = self._content_rejection(temp_path, prompt)
+                        if reason:
+                            log(
+                                f"  Rejected by pixel content check: {reason}",
                                 "WARNING",
                             )
                             temp_path.unlink(missing_ok=True)
