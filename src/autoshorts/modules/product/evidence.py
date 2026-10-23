@@ -224,6 +224,34 @@ def _meta_descriptions(html_text: str) -> list[str]:
     return [t[: _MAX_CLAUSE * 4] for t in seen]
 
 
+_OTHER_MODEL = re.compile(r"\b[a-z]{1,3}\d{3}", re.I)
+
+
+def _code_pattern(code: str) -> re.Pattern:
+    body = re.escape(code).replace("plus", r"(?:plus|\+)")
+    return re.compile(body, re.I)
+
+
+def _disputed_near_code(html_text: str, codes: list[str]) -> set[tuple]:
+    """(unit, other number) pairs stated right after the model code anywhere on
+    the page, nav and menus included (e.g. a product menu listing the same
+    model with another brightness). Used only to REMOVE claims."""
+    text = re.sub(
+        r"<script.*?</script>|<style.*?</style>", " ", html_text, flags=re.S | re.I
+    )
+    text = " ".join(html.unescape(re.sub(r"<[^>]+>", " ", text)).split())
+    seen: set[tuple] = set()
+    for code in codes:
+        for m in _code_pattern(code).finditer(text):
+            window = text[m.end() : m.end() + 70]
+            cut = _OTHER_MODEL.search(window)
+            if cut:
+                window = window[: cut.start()]
+            for um in _UNIT_PATTERN.finditer(window):
+                seen.add((_canon_unit(um.group(2)), um.group(1).replace(",", ".")))
+    return seen
+
+
 def page_atoms(page) -> list[Atom]:
     """Atoms from a verified page: identity fields plus bounded body spec lines."""
     source = host_label(page.url)
@@ -242,17 +270,29 @@ def page_atoms(page) -> list[Atom]:
         if isinstance(text, str) and text:
             for atom in atoms_from_text(text, source):
                 merged.setdefault(atom.key, atom)
-    return list(merged.values())
+    atoms = list(merged.values())
+    codes = list(getattr(page, "identity_codes", None) or [])
+    if codes:
+        disputed = _disputed_near_code(html_text, codes)
+        atoms = [
+            a
+            for a in atoms
+            if not (
+                a.key[0] == "spec"
+                and any(u == a.key[2] and n != a.key[1] for u, n in disputed)
+            )
+        ]
+    return atoms
 
 
 def reconcile_atoms(atoms: list[Atom]) -> list[Atom]:
     """Drop disputed or uncorroborated numeric claims; never pick a side.
 
     - Resolution atoms (720P, 4K): dropped when two atoms disagree.
-    - Attribute-bound specs (brightness, memory, storage, weight...): kept only
-      when at least two DIFFERENT hosts state the same value and none states
-      another. One host alone (or any disagreement, even inside the same site
-      across variants/revisions) is not enough to narrate a number.
+    - Attribute-bound specs (brightness, memory, storage, weight...): dropped
+      when any collected atom states another value for the same attribute.
+      Source COUNT is not truth (hosts copy each other or describe other
+      variants), so agreement is not required, only absence of dispute.
     - Features carry no number and pass through.
     """
     groups: dict[tuple, list[Atom]] = {}
@@ -273,7 +313,5 @@ def reconcile_atoms(atoms: list[Atom]) -> list[Atom]:
         values = {a.key[1:3] for a in members}
         if len(values) > 1:
             continue  # sources disagree: omit, do not choose
-        if attribute is not None and len({a.source for a in members}) < 2:
-            continue  # a lone number is not corroborated
         keep.append(atom)
     return keep

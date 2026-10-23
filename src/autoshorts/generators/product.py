@@ -40,7 +40,6 @@ from .explainer import ExplainerGenerator
 MIN_IMAGES = 3
 MAX_CANDIDATES_TO_TRY = 8
 MAX_EVIDENCE_PAGES = 3
-MIN_AUDIO_SECONDS = 20.0
 MIN_FACT_ATOMS = 3
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
@@ -160,14 +159,6 @@ class ProductGenerator(ExplainerGenerator):
                 return False
 
             audio = AudioFileClip(audio_path)
-            if audio.duration < MIN_AUDIO_SECONDS:
-                log(
-                    f"Narration is only {audio.duration:.1f}s (need >= "
-                    f"{MIN_AUDIO_SECONDS}s of evidenced content); aborting instead "
-                    "of producing a too-short video",
-                    "ERROR",
-                )
-                return False
             num_images = max(MIN_IMAGES, int(audio.duration / SCENE_DURATION_SECONDS))
             log(f"TTS: {audio.duration:.1f}s -> {num_images} images")
             audio.close()

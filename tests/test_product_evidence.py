@@ -92,7 +92,7 @@ def test_storefront_page_without_main_uses_meta_description_and_skips_junk():
     assert not any("7mm" in s or "5W" in s or "99W" in s for s in surfaces)
 
 
-def test_conflicting_or_lone_numeric_claims_are_omitted_not_chosen():
+def test_conflicting_numeric_claims_are_omitted_not_chosen():
     from autoshorts.modules.product.evidence import reconcile_atoms
 
     a = atoms_from_text("290 ANSI brightness, 720P HD, WiFi 6", "a.example.org")
@@ -100,8 +100,22 @@ def test_conflicting_or_lone_numeric_claims_are_omitted_not_chosen():
     out = {x.surface for x in reconcile_atoms(a + b)}
     assert not any("ANSI" in s for s in out)  # 290 vs 170: neither is chosen
     assert "resolução 720P" in out and "Wi-Fi" in out and "Bluetooth" in out
-    # a lone single-host number is not corroborated
-    assert not any("ANSI" in x.surface for x in reconcile_atoms(a))
-    # two hosts agreeing on a value keep it
-    c = atoms_from_text("290 ANSI brightness", "c.example.org")
-    assert any("290 ANSI" in x.surface for x in reconcile_atoms(a + c))
+    # source COUNT is not truth: an undisputed single-source number is kept
+    assert any("290 ANSI" in x.surface for x in reconcile_atoms(a))
+
+
+def test_same_model_listed_with_another_value_elsewhere_on_the_page_is_disputed():
+    from autoshorts.modules.product.evidence import page_atoms
+
+    class P(_Page):
+        identity_codes = ["hy300proplus"]
+
+    html = (
+        '<html><head><meta name="description" content="HY300Pro+ delivers 720P HD, '
+        '290 ANSI brightness, WiFi 6"></head><body>'
+        "<nav>HY320 260ANSI 4K HY300Pro+ HOT 720P 200ANSI 4K Wifi6 HY300Pro 720P "
+        "150ANSI</nav><div><p>Pronto</p></div></body></html>"
+    )
+    surfaces = {a.surface for a in page_atoms(P(html))}
+    assert not any("ANSI" in s for s in surfaces)  # 290 vs 200 for the same model
+    assert "resolução 720P" in surfaces  # no dispute on resolution
