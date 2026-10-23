@@ -18,6 +18,7 @@ from .config import (
     IMAGE_TEXT_REMOVAL,
     IMG_URL,
     MODEL_IMAGE,
+    SUBJECT_FRAMING,
     TARGET_IMAGE_HEIGHT,
     TARGET_IMAGE_WIDTH,
 )
@@ -111,13 +112,31 @@ class ImageSearcher:
             return False
 
     def resize_to_fill(self, image_path: Path, output_path: Path):
+        # Order matters: text removal runs FIRST (inpainting needs the
+        # untouched source, and removed text must not pull the saliency
+        # centroid), subject framing SECOND.
+        sidecar = None
         if IMAGE_TEXT_REMOVAL:
             from .text_removal import remove_overlay_text
 
-            cleaned_path = image_path.with_name(image_path.stem + "_notext.jpg")
-            remove_overlay_text(image_path, cleaned_path)
-            image_path = cleaned_path
+            sidecar = image_path.with_name(image_path.stem + "_notext.jpg")
+            remove_overlay_text(image_path, sidecar)
+            image_path = sidecar
+        if SUBJECT_FRAMING:
+            from .image_framing import frame_subject_file
+
+            try:
+                frame_subject_file(
+                    image_path, output_path, self.target_width, self.target_height
+                )
+            finally:
+                if sidecar is not None:
+                    sidecar.unlink(missing_ok=True)
+            return
         img = Image.open(image_path).convert("RGB")
+        if sidecar is not None:
+            # convert() already copied the pixels; the sidecar can go.
+            sidecar.unlink(missing_ok=True)
         target_ratio = self.target_width / self.target_height
         img_ratio = img.width / img.height
 
