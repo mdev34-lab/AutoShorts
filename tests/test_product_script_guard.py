@@ -74,3 +74,41 @@ def test_unverified_resolution_and_features_fail_closed():
 def test_grounded_resolution_and_features_pass():
     paragraphs = ["Resolução 4K com Wi-Fi integrado pra espelhar a tela."]
     assert_script_within_verified_facts(paragraphs, "Projetor HY300 Pro 4K Wi-Fi")
+
+
+def test_spelled_out_quantities_fail_closed():
+    for claim in (
+        "Com dois terabytes de armazenamento.",
+        "With two Terabytes of storage.",
+        "São cinco horas de bateria.",
+    ):
+        with pytest.raises(ProductPipelineError):
+            assert_script_within_verified_facts([claim], "Smartphone X100 Pro")
+
+
+def test_display_tech_and_battery_claims_fail_closed():
+    for claim in (
+        "Tela OLED de tirar o fôlego.",
+        "Long battery life for days.",
+        "Bateria que dura o dia todo.",
+    ):
+        with pytest.raises(ProductPipelineError):
+            assert_script_within_verified_facts([claim], "Smartphone X100 Pro")
+
+
+def test_empty_product_name_fails_closed():
+    with pytest.raises(ProductPipelineError, match="No verified product name"):
+        assert_script_within_verified_facts(["Qualquer coisa."], "   ")
+
+
+def test_unit_aliases_ground_equivalent_claims():
+    # "10h" in the name grounds "10 horas"; "20 Watts" grounds "20W".
+    assert_script_within_verified_facts(
+        ["Bateria de 10 horas de autonomia."], "Notebook Y2 10h Bateria"
+    )
+    assert_script_within_verified_facts(
+        ["São 20W de potência."], "Caixa X200 20 Watts Bluetooth"
+    )
+    assert_script_within_verified_facts(
+        ["Tela OLED linda."], "Smart TV Z9 OLED 55 Polegadas"
+    )

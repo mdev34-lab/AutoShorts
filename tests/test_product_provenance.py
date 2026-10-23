@@ -116,7 +116,9 @@ def test_meta_og_image_does_not_satisfy_gallery_alt_requirement():
         "autoshorts.modules.product.provenance.fetch_page_evidence", return_value=page
     ):
         with pytest.raises(ProductNotFoundError):
-            verify_image_sources([candidate], "MAGCUBIC HY300ProPlus Projector 290 ANSI")
+            verify_image_sources(
+                [candidate], "MAGCUBIC HY300ProPlus Projector 290 ANSI"
+            )
 
 
 def test_resource_key_distinguishes_query_variants():
@@ -128,7 +130,9 @@ def test_resource_key_distinguishes_query_variants():
     wide = _resource_key("https://cdn.example.com/img/photo.jpg?width=600&v=1", page)
     assert v1 != v2
     assert v1 != wide
-    reordered = _resource_key("https://cdn.example.com/img/photo.jpg?v=1&width=600", page)
+    reordered = _resource_key(
+        "https://cdn.example.com/img/photo.jpg?v=1&width=600", page
+    )
     assert wide == reordered
 
 

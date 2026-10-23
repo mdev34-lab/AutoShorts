@@ -66,3 +66,52 @@ def test_redirect_without_location_fails_closed():
         network.safe_request(
             _Session(resp), "GET", "https://example.com/r", operation="t"
         )
+
+
+class _CountingStream(_StreamResponse):
+    def __init__(self, chunks, **kw):
+        super().__init__(chunks, **kw)
+        self.pulled = 0
+
+    def iter_content(self, size):
+        for chunk in self._chunks:
+            self.pulled += 1
+            yield chunk
+
+
+def test_byte_cap_terminates_stream_early():
+    # 1 MiB chunks, 4 MiB cap: the read must stop at the 5th chunk, not drain 10.
+    big = _CountingStream([b"y" * (1024 * 1024)] * 10)
+    with patch.object(network, "safe_request", return_value=big):
+        with pytest.raises(ProviderError, match="byte limit"):
+            network.safe_get(
+                "https://example.com/f", operation="t", max_bytes=4 * 1024 * 1024
+            )
+    assert big.pulled == 5
+
+
+def test_challenge_markers_rejected_even_in_octet_stream():
+    # safe_request skips the probe for streamed bodies, so safe_get's scan of
+    # the capped bytes is the only challenge check - it runs for any MIME type.
+    marker = next(iter(network._CAPTCHA_MARKERS)).encode()
+    challenge = _StreamResponse(
+        [b"\x89binary-prefix " + marker + b" \x00\xff"],
+        headers={"content-type": "application/octet-stream"},
+    )
+    with patch.object(network, "safe_request", return_value=challenge):
+        with pytest.raises(SourceBlockedError, match="CAPTCHA"):
+            network.safe_get(
+                "https://example.com/f", operation="t", max_bytes=4 * 1024 * 1024
+            )
+
+
+def test_fetch_page_evidence_cap_terminates_early():
+    from autoshorts.modules.product import provenance
+
+    chunk = b"<html>" + b"z" * (64 * 1024 - 6)  # exactly one 64 KiB read
+    page = _CountingStream([chunk] * 100, headers={"content-type": "text/html"})
+    with patch.object(provenance, "safe_request", return_value=page):
+        with pytest.raises(provenance.MediaProcessingError, match="exceeded 4 MiB"):
+            provenance.fetch_page_evidence("https://example.com/p")
+    # 4 MiB / 64 KiB = 64 allowed chunks; the 65th read trips the cap.
+    assert page.pulled == 65
