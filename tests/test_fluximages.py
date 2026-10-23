@@ -680,14 +680,18 @@ class TestImageSearcher:
         assert result_img.size == (1080, 1920)
         result_img.close()
 
+    @patch(
+        "autoshorts.modules.image_searcher.ImageSearcher._commons_candidates",
+        return_value=[],
+    )
     @patch("autoshorts.modules.image_searcher.ImageSearcher.search_images")
     @patch("autoshorts.modules.image_searcher.ImageSearcher.download_image")
-    def test_get_images_all_from_web(self, mock_download, mock_search):
+    def test_get_images_all_from_web(self, mock_download, mock_search, _mock_commons):
         import time
 
         uid = str(time.time())
-        mock_search.return_value = [
-            {"image": "http://example.com/img1.jpg"},
+        mock_search.side_effect = lambda q: [
+            {"image": "http://example.com/img1.jpg", "title": f"{q} photo"},
         ]
         mock_download.return_value = True
 
@@ -704,11 +708,15 @@ class TestImageSearcher:
         assert mock_search.call_count == 3
         assert mock_download.call_count == 3
 
+    @patch(
+        "autoshorts.modules.image_searcher.ImageSearcher._commons_candidates",
+        return_value=[],
+    )
     @patch("autoshorts.modules.image_searcher.ImageSearcher.search_images")
     @patch("autoshorts.modules.image_searcher.ImageSearcher.download_image")
-    def test_get_images_uses_cache(self, mock_download, mock_search):
-        mock_search.return_value = [
-            {"image": "http://example.com/img.jpg"},
+    def test_get_images_uses_cache(self, mock_download, mock_search, _mock_commons):
+        mock_search.side_effect = lambda q: [
+            {"image": "http://example.com/img.jpg", "title": f"{q} image"},
         ]
         mock_download.return_value = True
 
@@ -731,8 +739,12 @@ class TestImageSearcher:
 
         cached_path.unlink(missing_ok=True)
 
+    @patch(
+        "autoshorts.modules.image_searcher.ImageSearcher._commons_candidates",
+        return_value=[],
+    )
     @patch("autoshorts.modules.image_searcher.ImageSearcher.search_images")
-    def test_get_images_fallback_to_ai(self, mock_search):
+    def test_get_images_fallback_to_ai(self, mock_search, _mock_commons):
         mock_search.return_value = []
 
         with patch("autoshorts.modules.image_searcher.requests.get") as mock_get:

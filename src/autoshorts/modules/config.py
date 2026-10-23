@@ -38,6 +38,7 @@ __all__ = [
     "TEMP_DIR_PREFIX",
     "OUTPUT_DIR",
     "IMAGE_CACHE_DIR",
+    "IMAGE_PROVIDERS",
     "IMAGE_SEARCH_SAFE",
     "IMAGE_SEARCH_PER_QUERY",
     "IMAGE_MIN_WIDTH",
@@ -159,6 +160,14 @@ IMAGE_CACHE_DIR = Path(tempfile.gettempdir()) / f"{TEMP_DIR_PREFIX}image_cache"
 
 # Image Search Configuration
 IMAGE_SEARCH_SAFE = os.getenv("IMAGE_SEARCH_SAFE", "on")
+# Image providers in preference order. "commons" returns license-verified
+# Wikimedia Commons images; "ddg" is DuckDuckGo (no license metadata -
+# stock-agency/watermarked domains are blocked and contextual fit is required).
+IMAGE_PROVIDERS = [
+    p.strip().lower()
+    for p in os.getenv("IMAGE_PROVIDERS", "commons,ddg").split(",")
+    if p.strip()
+]
 IMAGE_SEARCH_PER_QUERY = _get_env_int("IMAGE_SEARCH_PER_QUERY", 5)
 IMAGE_MIN_WIDTH = _get_env_int("IMAGE_MIN_WIDTH", 720)
 IMAGE_MIN_HEIGHT = _get_env_int("IMAGE_MIN_HEIGHT", 720)

@@ -7,12 +7,14 @@ from urllib.parse import quote
 import requests
 from PIL import Image
 
+from . import image_sources
 from .config import (
     API_KEY,
     API_TIMEOUT_IMAGE,
     IMAGE_CACHE_DIR,
     IMAGE_MIN_HEIGHT,
     IMAGE_MIN_WIDTH,
+    IMAGE_PROVIDERS,
     IMAGE_SEARCH_PER_QUERY,
     IMAGE_SEARCH_SAFE,
     IMAGE_TEXT_REMOVAL,
@@ -25,15 +27,35 @@ from .config import (
 from .logging_system import log
 
 BLOCKED_DOMAINS: set[str] = {
-    "crossdresser", "sissy", "femboy", "hentai", "rule34",
-    "xvideos", "xnxx", "xhamster", "pornhub", "onlyfans",
-    "redtube", "youporn", "erotic", "nsfw",
+    "crossdresser",
+    "sissy",
+    "femboy",
+    "hentai",
+    "rule34",
+    "xvideos",
+    "xnxx",
+    "xhamster",
+    "pornhub",
+    "onlyfans",
+    "redtube",
+    "youporn",
+    "erotic",
+    "nsfw",
 }
 
 BLOCKED_KEYWORDS: set[str] = {
-    "crossdresser", "sissy", "femboy", "hentai", "rule34",
-    "nsfw", "xxx", "18+", "erotic",
-    "nude", "naked", "seductive",
+    "crossdresser",
+    "sissy",
+    "femboy",
+    "hentai",
+    "rule34",
+    "nsfw",
+    "xxx",
+    "18+",
+    "erotic",
+    "nude",
+    "naked",
+    "seductive",
 }
 
 
@@ -170,11 +192,10 @@ class ImageSearcher:
                 log(f"  Using cached: {cached_path.name}", "INFO")
                 continue
 
-            results = self.search_images(prompt)
-            results = [r for r in results if not self._is_nsfw(r)]
+            candidates = self._candidates(prompt)
             downloaded = False
-            for r in results:
-                url = r.get("image", "")
+            for candidate in candidates:
+                url = candidate.url
                 if not url:
                     continue
                 temp_path = (
@@ -195,7 +216,13 @@ class ImageSearcher:
                         self.resize_to_fill(temp_path, cached_path)
                         temp_path.unlink(missing_ok=True)
                         img_paths.append(str(cached_path))
-                        log(f"  Downloaded & processed: {cached_path.name}", "INFO")
+                        log(
+                            f"  Downloaded & processed: {cached_path.name} "
+                            f"({candidate.provider}, license: "
+                            f"{candidate.license or 'unverified'}, "
+                            f"fit: {candidate.fit_evidence})",
+                            "INFO",
+                        )
                         downloaded = True
                         break
                     except Exception as e:
@@ -210,6 +237,25 @@ class ImageSearcher:
                 self._fallback_to_ai([prompt], img_paths)
 
         return img_paths
+
+    def _candidates(self, query: str) -> list[image_sources.SourceCandidate]:
+        """Provider-ordered candidates with provenance and fit evidence."""
+        candidates: list[image_sources.SourceCandidate] = []
+        for provider in IMAGE_PROVIDERS:
+            if provider == "commons":
+                candidates.extend(self._commons_candidates(query))
+            elif provider == "ddg":
+                raw = [r for r in self.search_images(query) if not self._is_nsfw(r)]
+                candidates.extend(image_sources.filter_ddg_results(query, raw))
+        return candidates
+
+    def _commons_candidates(self, query: str) -> list[image_sources.SourceCandidate]:
+        return image_sources.search_commons(
+            query,
+            limit=self.max_per_query,
+            min_width=self.min_width,
+            min_height=self.min_height,
+        )
 
     def _fallback_to_ai(
         self, remaining_prompts: list[str], collected_paths: list[str]
