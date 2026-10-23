@@ -472,3 +472,57 @@ def test_overlay_animation_duration_clamped_to_clip():
     last_t = 29 / 30
     fade = result.mask.get_frame(last_t).max()
     assert fade == 0.0, f"clip would end visible: alpha {fade}"
+
+
+def test_overlay_source_alpha_is_zoomed_with_the_pixels():
+    """The source alpha must be zoomed exactly like the RGB frame: with an
+    off-center transparent boundary, no pixel from the transparent (green)
+    region may show up and the opaque region must start where its pixels do."""
+    from moviepy import CompositeVideoClip, ImageClip
+
+    from autoshorts.modules import video_compositor as vc
+
+    w, h, boundary = 400, 72, 60
+    rgba = np.zeros((h, w, 4), dtype="uint8")
+    rgba[:, :boundary] = (0, 255, 0, 0)  # transparent, green RGB
+    rgba[:, boundary:] = (0, 0, 255, 255)  # opaque blue
+    compositor = vc.VideoCompositor()
+    red_bg = ImageClip(np.full((h, w, 3), (200, 0, 0), dtype="uint8")).with_duration(
+        1.0
+    )
+    fg = ImageClip(rgba).with_duration(1.0)
+    overlay = compositor._apply_overlay_animation(fg, 1.0)
+    frame = CompositeVideoClip([red_bg, overlay], size=(w, h)).get_frame(0.5)
+
+    scale = vc.MAX_ZOOM_FACTOR
+    assert scale > 1.01
+    edge = int(round(w / 2 + (boundary - w / 2) * scale))
+    row = frame[h // 2]
+    for x in range(0, w):
+        if x < edge - 4:
+            assert row[x][0] > 150 and row[x][1] < 60, f"x={x} not background: {row[x]}"
+        elif x > edge + 4:
+            assert row[x][2] > 200 and row[x][1] < 60, f"x={x} not overlay: {row[x]}"
+
+
+def test_short_clip_last_encoded_frame_transparent_at_any_fps():
+    from moviepy import CompositeVideoClip, ImageClip
+
+    from autoshorts.modules import video_compositor as vc
+
+    compositor = vc.VideoCompositor()
+    for fps in (24, 30):
+        for duration in (0.5, 0.8, 2.0):
+            red_bg = ImageClip(
+                np.full((36, 64, 3), (200, 0, 0), dtype="uint8")
+            ).with_duration(duration)
+            white = ImageClip(np.full((36, 64, 3), 255, dtype="uint8")).with_duration(
+                duration
+            )
+            overlay = compositor._apply_overlay_animation(white, duration)
+            comp = CompositeVideoClip([red_bg, overlay], size=(64, 36))
+            last_t = (int(round(duration * fps)) - 1) / fps
+            px = comp.get_frame(last_t)[18, 32]
+            assert px[0] > 195 and px[1] < 6 and px[2] < 6, (
+                f"ghost at fps={fps} dur={duration}: {px}"
+            )

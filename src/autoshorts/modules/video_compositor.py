@@ -182,18 +182,22 @@ class VideoCompositor:
             fade_in_end = 0.15
             fade_out_start = 0.85
             # The last encoded frame samples t = duration - 1/fps, never
-            # t = duration, so a fade completing at progress 1.0 leaves a
-            # ghost (alpha ~0.044 at 30fps). Complete the fade by 0.95:
-            # any fps >= 20 then encodes truly transparent final frames.
-            fade_out_end = 0.95
+            # t = duration. Finish the fade in absolute time, 1.5 frames
+            # before the end, so ANY clip length encodes a truly transparent
+            # final frame (a fixed 0.95 fraction left 0.0185 on 0.5 s clips).
+            fade_out_start_t = fade_out_start * duration
+            fade_out_end_t = max(
+                fade_out_start_t + 1e-3,
+                min(0.95 * duration, duration - 1.5 / max(1, VIDEO_FPS)),
+            )
 
             if progress < fade_in_end:
                 return self._ease_in_out_cubic(progress / fade_in_end)
             elif progress < fade_out_start:
                 return 1.0
-            elif progress < fade_out_end:
-                out_progress = (progress - fade_out_start) / (
-                    fade_out_end - fade_out_start
+            elif t < fade_out_end_t:
+                out_progress = (t - fade_out_start_t) / (
+                    fade_out_end_t - fade_out_start_t
                 )
                 return max(1.0 - self._ease_in_out_cubic(out_progress), 0.0)
             return 0.0
@@ -209,21 +213,28 @@ class VideoCompositor:
         shutter = float(OPENING_SHUTTER_FRACTION)
         max_sigma = max(0.0, float(samples) * shutter)
 
+        def _zoom_array(arr, scale):
+            """Center-crop + resize an RGB uint8 frame or a float [0,1] mask."""
+            h, w = arr.shape[:2]
+            crop_w = max(1, int(round(w / scale)))
+            crop_h = max(1, int(round(h / scale)))
+            x1 = (w - crop_w) // 2
+            y1 = (h - crop_h) // 2
+            cropped = arr[y1 : y1 + crop_h, x1 : x1 + crop_w]
+            if arr.dtype == np.uint8:
+                img = Image.fromarray(cropped)
+                return np.array(img.resize((w, h), Image.Resampling.LANCZOS))
+            img = Image.fromarray(np.asarray(cropped, dtype=np.float32), mode="F")
+            out = np.array(img.resize((w, h), Image.Resampling.BILINEAR))
+            return np.clip(out, 0.0, 1.0).astype(float)
+
         def apply_overlay(get_frame, t):
             frame = get_frame(t)
             scale = scale_anim(t)
 
             # Zoom: center-crop + resize (constant frame size)
             if scale > 1.001 and _pil:
-                h, w = frame.shape[:2]
-                crop_w = max(1, int(round(w / scale)))
-                crop_h = max(1, int(round(h / scale)))
-                x1 = (w - crop_w) // 2
-                y1 = (h - crop_h) // 2
-                cropped = frame[y1 : y1 + crop_h, x1 : x1 + crop_w]
-                frame = np.array(
-                    Image.fromarray(cropped).resize((w, h), Image.Resampling.LANCZOS)
-                )
+                frame = _zoom_array(frame, scale)
 
             # Motion blur: velocity-driven Gaussian
             if _pil and max_sigma > 0:
@@ -261,7 +272,13 @@ class VideoCompositor:
                 # Combine with the source's own alpha (e.g. transparent PNG):
                 # a plain replacement would resurrect pixels the source
                 # made fully transparent.
-                return np.asarray(base_mask.get_frame(t), dtype=float) * fade
+                source_alpha = np.asarray(base_mask.get_frame(t), dtype=float)
+                # The RGB frame is zoomed; the source alpha must be zoomed
+                # identically or transparent regions drift off their pixels.
+                scale = scale_anim(t)
+                if scale > 1.001 and _pil:
+                    source_alpha = _zoom_array(source_alpha, scale)
+                return source_alpha * fade
             return np.full((h, w), fade, dtype=float)
 
         mask = VideoClip(
@@ -275,7 +292,9 @@ class VideoCompositor:
             .with_position(("center", "center"))
         )
 
-    def _apply_opening_animation(self, clip, duration: float = OPENING_ANIMATION_DURATION):
+    def _apply_opening_animation(
+        self, clip, duration: float = OPENING_ANIMATION_DURATION
+    ):
         """Cold-open: ease-out zoom-out + per-frame motion-blur-style blur.
 
         Starts at OPENING_ZOOM_START (e.g. 1.25) and decelerates to 1.0
