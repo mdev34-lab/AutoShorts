@@ -20,21 +20,32 @@ def test_composed_script_passes_its_own_guard():
         assert_script_within_verified_facts(paragraphs, name)
 
 
-def test_hook_narrates_the_verified_name_verbatim():
+def test_hook_narrates_only_the_model_identifier():
     paragraphs = compose_showcase_script("Projetor HY300 Pro 4K Wi-Fi")
-    assert paragraphs[0] == "Conheça Projetor HY300 Pro 4K Wi-Fi."
+    assert paragraphs[0] == "Conheça o HY300 Pro."
+    assert "4K" not in " ".join(paragraphs)
 
 
-def test_attribute_binding_in_narration():
-    paragraphs = compose_showcase_script("Notebook Y2 8GB RAM")
-    assert any("8GB de RAM" in p for p in paragraphs)
-    assert not any("armazenamento" in p for p in paragraphs)
+def test_negated_slug_claim_is_never_inverted():
+    joined = " ".join(compose_showcase_script("Projetor HY300 Pro sem Bluetooth"))
+    assert "Bluetooth" not in joined
 
 
-def test_bare_spec_gets_no_invented_attribute():
-    paragraphs = compose_showcase_script("Caixa de Som X200 20W Bluetooth")
-    assert any("Traz 20W." in p for p in paragraphs)
-    assert not any("potência" in p for p in paragraphs)
+def test_unverified_slug_claims_are_not_repeated():
+    name = (
+        "Projetor HY300 Pro aluminio aeronautico Fabricado no Japao "
+        "certificado CE dois terabytes bateria o dia todo"
+    )
+    joined = " ".join(compose_showcase_script(name)).lower()
+    for claim in ("alumin", "japao", "certificado", "terabyte", "bateria", "dia todo"):
+        assert claim not in joined
+
+
+def test_multi_spec_name_does_not_abort_or_cross_bind():
+    name = "Notebook Y2 8GB de RAM e 256GB de armazenamento"
+    paragraphs = compose_showcase_script(name)
+    assert_script_within_verified_facts(paragraphs, name)
+    assert "GB" not in " ".join(paragraphs)
 
 
 def test_model_code_narrated_as_written_in_name():
@@ -43,18 +54,8 @@ def test_model_code_narrated_as_written_in_name():
     assert not any("hy300pro" in p for p in paragraphs)
 
 
-def test_no_facts_means_no_fact_claims():
+def test_identifier_only_script_has_no_fact_claims():
     paragraphs = compose_showcase_script("Smartphone X100 Pro")
     joined = " ".join(paragraphs)
     for forbidden in ("bateria", "OLED", "garantia", "Anatel", "horas", "GB"):
         assert forbidden not in joined
-
-
-def test_portuguese_negation_forms_never_narrated_as_features():
-    for name in (
-        "Projetor HY300 Pro não tem Bluetooth",
-        "Projetor HY300 Pro nem Bluetooth",
-        "Projetor HY300 Pro sem Bluetooth",
-    ):
-        joined = " ".join(compose_showcase_script(name)[1:])
-        assert "Com Bluetooth" not in joined

@@ -120,10 +120,9 @@ def test_pipeline_aborts_when_too_few_verified(tmp_path, monkeypatch):
         "autoshorts.generators.product.search_image_candidates",
         lambda name, limit: [_candidate(i) for i in range(3)],
     )
-    monkeypatch.setattr(
-        "autoshorts.generators.product.verify_image_sources",
-        mock.MagicMock(side_effect=ProductNotFoundError("nope")),
-    )
+    _evidence_mocks(monkeypatch)
+    verify = mock.MagicMock(side_effect=ProductNotFoundError("nope"))
+    monkeypatch.setattr("autoshorts.generators.product.verify_image_sources", verify)
     fake_clip = mock.MagicMock()
     fake_clip.duration = 12.0
     monkeypatch.setattr(
@@ -131,6 +130,8 @@ def test_pipeline_aborts_when_too_few_verified(tmp_path, monkeypatch):
     )
 
     assert asyncio.run(gen.generate()) is False
+    # the image-source gate was actually reached (not exited earlier)
+    assert verify.call_count >= 1
     gen._create_flux_video.assert_not_called()
 
 
@@ -148,9 +149,9 @@ def _evidence_mocks(monkeypatch, title="Projetor HY300 Pro 4K"):
     )
 
 
-def test_narration_uses_verified_page_title_not_slug(tmp_path, monkeypatch):
-    """The untrusted slug never grounds narration: facts come from the
-    identity-verified source page."""
+def test_narration_never_repeats_page_title_prose(tmp_path, monkeypatch):
+    """Neither the slug nor the page title is a verified fact: only the model
+    identifier is narrated, never title marketing prose."""
     gen = _make_generator(tmp_path)
     monkeypatch.setattr(
         "autoshorts.generators.product.parse_product_link", lambda url: _product()
@@ -163,7 +164,9 @@ def test_narration_uses_verified_page_title_not_slug(tmp_path, monkeypatch):
         "autoshorts.generators.product.search_image_candidates",
         lambda name, limit: [_candidate(i) for i in range(3)],
     )
-    _evidence_mocks(monkeypatch, title="Projetor HY300 Pro 4K Wi-Fi Oficial")
+    _evidence_mocks(
+        monkeypatch, title="Projetor HY300 Pro 4K Wi-Fi Oficial Fabricado no Japão"
+    )
     monkeypatch.setattr(
         "autoshorts.generators.product.verify_image_sources",
         lambda cands, name, prefetched_page=None: [
@@ -184,7 +187,10 @@ def test_narration_uses_verified_page_title_not_slug(tmp_path, monkeypatch):
         "autoshorts.generators.product.AudioFileClip", lambda p: fake_clip
     )
     assert asyncio.run(gen.generate()) is True
-    assert "4K" in gen.metadata.description  # page-title fact, not in the slug
+    description = gen.metadata.description
+    assert "HY300 Pro" in description
+    for prose in ("4K", "Wi-Fi", "Oficial"):
+        assert prose not in description
 
 
 def test_no_verifiable_page_aborts_before_narration(tmp_path, monkeypatch):

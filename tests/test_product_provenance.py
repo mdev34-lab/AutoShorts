@@ -167,3 +167,26 @@ def test_resource_key_distinguishes_effective_port():
     other_port = _resource_key("https://cdn.example.com:8443/img/a.jpg", page)
     assert default == explicit_443
     assert default != other_port
+
+
+def test_identity_rejects_title_h1_variant_conflict():
+    import pytest
+
+    from autoshorts.modules.product.errors import ProductNotFoundError
+    from autoshorts.modules.product.provenance import (
+        PageEvidence,
+        model_codes,
+        verify_product_identity,
+    )
+
+    title, h1 = "Projetor HY300 ProPlus", "Projetor HY300 Pro"
+    page = PageEvidence(
+        url="https://page.example.org/",
+        status=200,
+        title=title,
+        h1=h1,
+        meta_title="",
+        identity_codes=model_codes(f"{title} {h1}"),
+    )
+    with pytest.raises(ProductNotFoundError):
+        verify_product_identity("Projetor HY300 Pro", page, label="narration")

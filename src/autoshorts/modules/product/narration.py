@@ -1,11 +1,8 @@
-"""Deterministic product narration built only from the verified name.
+"""Deterministic product narration that carries no unverified claims.
 
-The showcase script is composed from facts parsed out of the verified
-product name - there is no free text generation in this path, so no
-fabricated specification, feature, certification or benefit can reach the
-narration. Connective phrasing carries no product facts: a spec is narrated
-with an attribute word ("8GB de RAM") only when the name itself binds the
-two; otherwise the bare verified spec is used ("com 8GB").
+There is no free text generation in this path. The product name comes from
+a user-controlled URL slug, so only the model identifier is narrated; no
+specification, feature, certification or benefit parsed from the slug.
 """
 
 from __future__ import annotations
@@ -13,70 +10,7 @@ from __future__ import annotations
 import re
 
 from .provenance import primary_model_code
-from .script_guard import (
-    _ATTRIBUTE_WORDS,
-    _RESOLUTION_PATTERN,
-    _UNIT_PATTERN,
-    _WORD_RE,
-    _features_in,
-    _normalize,
-)
-
-# Attribute words are narrated exactly as written in the verified name.
-_ATTRIBUTE_SURFACE = re.compile(
-    r"\b("
-    + "|".join(sorted({w for w in _ATTRIBUTE_WORDS}, key=len, reverse=True))
-    + r")\b",
-    re.IGNORECASE,
-)
-
-
-def _surface_attribute(name: str, start: int, end: int, window: int = 5) -> str | None:
-    """Nearest attribute word as written in the name, by word distance.
-
-    Local binding: "8GB de RAM e 256GB de armazenamento" narrates 256GB as
-    storage, never as RAM. Ties go to the following attribute."""
-    before = [m.group(0) for m in _WORD_RE.finditer(_normalize(name[:start]))][-window:]
-    after = [m.group(0) for m in _WORD_RE.finditer(_normalize(name[end:]))][:window]
-    best: tuple[int, str] | None = None
-    for distance, word in enumerate(reversed(before), start=1):
-        if word in _ATTRIBUTE_WORDS:
-            best = (distance, word)
-            break
-    for distance, word in enumerate(after, start=1):
-        if word in _ATTRIBUTE_WORDS and (best is None or distance <= best[0]):
-            best = (distance, word)
-            break
-    if best is None:
-        return None
-    word = best[1]
-    original = re.search(rf"\b{re.escape(word)}\b", name, re.IGNORECASE)
-    return original.group(0) if original else word
-
-
-def _verified_specs(name: str) -> list[str]:
-    """Spec clauses grounded verbatim in the name, in order of appearance."""
-    clauses: list[str] = []
-    for m in _UNIT_PATTERN.finditer(name):
-        spec = m.group(0).strip()
-        attribute = _surface_attribute(name, m.start(), m.end())
-        if attribute:
-            clauses.append(f"{spec} de {attribute}")
-        else:
-            clauses.append(spec)
-    for m in _RESOLUTION_PATTERN.finditer(name):
-        clauses.append(f"resolução {m.group(0).strip()}")
-    return list(dict.fromkeys(clauses))
-
-
-def _verified_features(name: str) -> list[str]:
-    features = []
-    for feature in sorted(_features_in(name)):
-        original = re.search(
-            rf"(?<![a-z0-9]){re.escape(feature)}(?![a-z0-9])", name, re.IGNORECASE
-        )
-        features.append(original.group(0) if original else feature)
-    return features
+from .script_guard import _normalize
 
 
 def _surface_code(name: str, code: str) -> str:
@@ -93,28 +27,19 @@ def _surface_code(name: str, code: str) -> str:
 
 
 def compose_showcase_script(product_name: str) -> list[str]:
-    """Build the 3-paragraph showcase script from verified name facts only."""
+    """Build the 3-paragraph showcase script without any slug-derived claim.
+
+    The product name is a user-controlled URL slug, and narration is
+    synthesized before any source page is verified. Specs, features and
+    negations ("sem Bluetooth") parsed from it are therefore claims, not
+    facts, and are never narrated. Only the model identifier is spoken: it
+    names the product and is exactly what the image pipeline later proves
+    against external sources. Connective phrasing carries no product facts.
+    """
     name = " ".join(product_name.split())
     primary = _surface_code(name, primary_model_code(name))
-    specs = _verified_specs(name)
-    features = _verified_features(name)
-
-    hook = f"Conheça {name}."
-
-    facts: list[str] = []
-    if specs:
-        facts.append(
-            "Traz "
-            + ", ".join(specs[:-1])
-            + (" e " if len(specs) > 1 else "")
-            + specs[-1]
-            + "."
-        )
-    if features:
-        facts.append("Com " + " e ".join(features) + ".")
-    if not facts:
-        facts.append(f"Vale conferir o {primary} de perto.")
-
-    close = f"Confira todos os detalhes do {primary} no link."
-
-    return [hook, *facts, close]
+    return [
+        f"Conheça o {primary}.",
+        f"Veja o {primary} em detalhe, nas imagens a seguir.",
+        f"Confira todos os detalhes do {primary} no link.",
+    ]

@@ -54,18 +54,6 @@ class ProductGenerator(ExplainerGenerator):
         self.product_url = product_url
         self.pronunciation_file = pronunciation_file
 
-    @staticmethod
-    def _bounded_verified_name(evidence_page, slug_name: str) -> str:
-        """Display name from the verified page title (not the raw slug),
-        bounded and single-line; falls back to the slug identifier."""
-        name = (evidence_page.title or evidence_page.h1 or "").strip()
-        if not name:
-            name = slug_name
-        name = " ".join(name.split())
-        if len(name) > 160:
-            name = name[:160].rsplit(" ", 1)[0].rstrip(" .,;-")
-        return name
-
     async def generate(self) -> bool:
         log("Starting product video (images-only, verified sources)...")
         start_time = time.time()
@@ -104,11 +92,15 @@ class ProductGenerator(ExplainerGenerator):
                     "ERROR",
                 )
                 return False
-            verified_name = self._bounded_verified_name(evidence_page, product.name)
-            log(f"Verified product identity: {verified_name}", "SUCCESS")
+            log(
+                f"Verified model identifier on {evidence_page.url}",
+                "SUCCESS",
+            )
 
-            log("Step 4: Composing showcase script from verified page facts...")
-            paragraphs = compose_showcase_script(verified_name)
+            log("Step 4: Composing identifier-only showcase script...")
+            # The page title is third-party marketing prose, not a verified
+            # fact: only the model identifier it proves is ever narrated.
+            paragraphs = compose_showcase_script(product.name)
             if not paragraphs or len(paragraphs) < 3:
                 log(
                     f"Script composition failed: got {len(paragraphs)} paragraphs, need >= 3",
@@ -116,7 +108,7 @@ class ProductGenerator(ExplainerGenerator):
                 )
                 return False
             try:
-                assert_script_within_verified_facts(paragraphs, verified_name)
+                assert_script_within_verified_facts(paragraphs, product.name)
             except ProductPipelineError as exc:
                 log(f"Script rejected by the verified-facts guard: {exc}", "ERROR")
                 return False

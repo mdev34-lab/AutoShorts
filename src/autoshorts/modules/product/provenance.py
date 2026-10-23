@@ -289,6 +289,21 @@ def verify_product_identity(
     product_name: str, page: PageEvidence, *, label: str
 ) -> dict:
     expected = primary_model_code(product_name)
+    # Every identity field that names a model must name THIS model: a page
+    # whose H1 says "HY300 Pro" but whose title says "HY300 ProPlus" is
+    # ambiguous about the variant and is rejected, not merged.
+    for field_name, text in (
+        ("title", page.title),
+        ("h1", page.h1),
+        ("meta title", page.meta_title),
+    ):
+        codes = model_codes(text) if isinstance(text, str) and text else []
+        if codes and expected not in codes:
+            raise ProductNotFoundError(
+                f"Match rejected for {label}: the page {field_name} names a different "
+                f"model variant (codes seen: {codes}), the slug requires {expected!r}. "
+                "No media will be downloaded."
+            )
     if expected not in page.identity_codes:
         raise ProductNotFoundError(
             f"Match rejected for {label}: the slug requires the exact model {expected!r}, "
