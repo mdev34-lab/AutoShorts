@@ -34,6 +34,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+subject = [
+    "onnxruntime>=1.17",
+    "tokenizers>=0.15",
+]
 piper = [
     "piper-tts>=1.2,<2",
 ]

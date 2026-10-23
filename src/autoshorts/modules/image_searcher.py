@@ -8,7 +8,7 @@ from urllib.parse import quote
 import requests
 from PIL import Image
 
-from . import image_content, image_sources
+from . import image_content, image_sources, image_subject
 from .config import (
     ALLOW_UNVERIFIED_IMAGES,
     API_KEY,
@@ -223,9 +223,15 @@ class ImageSearcher:
     def _content_rejection(path: Path, prompt: str) -> str | None:
         """Pixel gate on the downloaded bytes; fails closed if OCR is missing."""
         try:
-            return image_content.check_image_content(path, prompt)
+            reason = image_content.check_image_content(path, prompt)
         except image_content.ContentUnavailableError as exc:
             return f"pixel content could not be checked ({exc})"
+        if reason or ALLOW_UNVERIFIED_IMAGES:
+            return reason
+        try:
+            return image_subject.check_subject(path, prompt)
+        except image_subject.SubjectUnavailableError as exc:
+            return f"pictured subject could not be verified ({exc})"
 
     @classmethod
     def _usable_cache(cls, cached_path: Path) -> bool:
@@ -260,14 +266,12 @@ class ImageSearcher:
                 url = candidate.url
                 if not url:
                     continue
-                # License checks and title/description agreement are source
-                # claims: nothing here verifies the PICTURED subject, so web
-                # images are opt-in until a pixel-level subject check exists.
-                if not ALLOW_UNVERIFIED_IMAGES:
+                # Without the opt-in a web image needs verified reuse rights AND
+                # a passing pictured-subject check on the downloaded pixels.
+                if not candidate.license and not ALLOW_UNVERIFIED_IMAGES:
                     log(
-                        f"  Skipping {candidate.provider} image: pictured subject "
-                        "and reuse rights are unverified (set "
-                        "ALLOW_UNVERIFIED_IMAGES=1 to opt in)",
+                        f"  Skipping {candidate.provider} image without verified "
+                        "reuse rights (set ALLOW_UNVERIFIED_IMAGES=1 to opt in)",
                         "WARNING",
                     )
                     continue

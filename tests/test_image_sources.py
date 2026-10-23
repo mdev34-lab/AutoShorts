@@ -1,11 +1,13 @@
 """Provider provenance: license verification and contextual-fit rejection."""
 
 import json
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
+from PIL import Image
 
-from autoshorts.modules import image_sources
+from autoshorts.modules import image_sources, image_subject
 
 
 def _commons_page(
@@ -344,15 +346,22 @@ class TestCacheProvenance:
         assert downloads == []  # never even downloaded
         assert result == ["ai.jpg"]
 
-    def test_license_verified_commons_still_skipped_without_opt_in(
-        self, tmp_path, monkeypatch
-    ):
-        """A verified license is not a verified pictured subject."""
+    def _commons_searcher(self, tmp_path, monkeypatch, subject_result):
         from autoshorts.modules import image_searcher as mod
         from autoshorts.modules.image_searcher import ImageSearcher
 
         monkeypatch.setattr(mod, "IMAGE_CACHE_DIR", tmp_path)
         monkeypatch.setattr(mod, "ALLOW_UNVERIFIED_IMAGES", False)
+        monkeypatch.setattr(
+            mod.image_content, "check_image_content", lambda path, prompt: None
+        )
+
+        def fake_subject(path, prompt):
+            if isinstance(subject_result, Exception):
+                raise subject_result
+            return subject_result
+
+        monkeypatch.setattr(mod.image_subject, "check_subject", fake_subject)
         commons = image_sources.SourceCandidate(
             url="https://upload.wikimedia.org/p.jpg",
             provider="commons",
@@ -362,13 +371,39 @@ class TestCacheProvenance:
         )
         searcher = ImageSearcher.__new__(ImageSearcher)
         searcher._candidates = lambda q: [commons]
-        downloads = []
-        searcher.download_image = lambda url, path: downloads.append(url) or True
+
+        def fake_download(url, path):
+            Image.new("RGB", (400, 300), "gray").save(path, "JPEG")
+            return True
+
+        searcher.download_image = fake_download
         searcher._fallback_to_ai = lambda prompts, paths: paths.append("ai.jpg")
+        searcher._write_provenance_sidecar = lambda *a, **k: None
+        searcher.resize_to_fill = lambda src, dst: Path(dst).write_bytes(b"jpg")
+        return mod, searcher
+
+    def test_license_alone_is_not_subject_evidence(self, tmp_path, monkeypatch):
+        """Verified license but the pictured subject cannot be verified: reject."""
+        mod, searcher = self._commons_searcher(
+            tmp_path,
+            monkeypatch,
+            image_subject.SubjectUnavailableError("no model"),
+        )
+        with patch.object(mod, "OUTPUT_DIR", tmp_path / "out"):
+            assert searcher.get_images(["some prompt"]) == ["ai.jpg"]
+
+    def test_wrong_pictured_subject_is_rejected(self, tmp_path, monkeypatch):
+        mod, searcher = self._commons_searcher(
+            tmp_path, monkeypatch, "image does not look like 'x' (p=0.01)"
+        )
+        with patch.object(mod, "OUTPUT_DIR", tmp_path / "out"):
+            assert searcher.get_images(["some prompt"]) == ["ai.jpg"]
+
+    def test_verified_license_and_subject_are_used(self, tmp_path, monkeypatch):
+        mod, searcher = self._commons_searcher(tmp_path, monkeypatch, None)
         with patch.object(mod, "OUTPUT_DIR", tmp_path / "out"):
             result = searcher.get_images(["some prompt"])
-        assert downloads == []
-        assert result == ["ai.jpg"]
+        assert result and result[0].endswith(".jpg") and result != ["ai.jpg"]
 
     def test_cache_key_versioned_by_providers(self, monkeypatch):
         from autoshorts.modules import image_searcher as mod
