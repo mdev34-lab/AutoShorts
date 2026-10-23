@@ -170,4 +170,10 @@ def test_real_pipeline_removal_on_framing_off(tmp_path, monkeypatch):
 
     assert Image.open(out).size == (720, 1280)
     _assert_no_confident_text(out)
+    # Classic center-crop path keeps the source's horizontal layout: the
+    # subject (x=0.38 in the source) lands at ~0.32 (resize 1000->1066 px
+    # then crop 173 px from the left), NOT reframed to ~0.5.
+    count, cx_frac = _subject_stats(out)
+    assert count > 0.01 * 720 * 1280  # subject preserved
+    assert cx_frac is not None and abs(cx_frac - 0.323) < 0.05, cx_frac
     assert not (tmp_path / "combo_notext.jpg").exists()
