@@ -327,6 +327,13 @@ class VideoCompositor:
         seg_dur = JUMPCUT_SEG_DUR
         source_dur = clip.duration
 
+        if source_dur <= 0:
+            raise ValueError(
+                "Jumpcut background requires a source clip with positive duration."
+            )
+        if target_duration <= 0:
+            raise ValueError("Jumpcut background requires a positive target duration.")
+
         # Skip intro section (default 25s) to avoid logos/intros
         start_offset = min(BG_SKIP_INTRO, source_dur * 0.3)
         available_dur = source_dur - start_offset

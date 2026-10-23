@@ -65,3 +65,16 @@ def test_sampled_segments_cover_at_least_target(compositor, monkeypatch):
         assert result.duration >= min(
             target - TRIM_BUFFER, expected_segs * 4.0 - TRIM_BUFFER
         )
+
+
+def test_zero_duration_source_rejected(compositor, monkeypatch):
+    monkeypatch.setattr(vc, "BG_SKIP_INTRO", 25.0)
+    with pytest.raises(ValueError, match="positive duration"):
+        compositor._jumpcut_background(_source(0.0), 10.0)
+
+
+def test_non_positive_target_rejected(compositor, monkeypatch):
+    monkeypatch.setattr(vc, "BG_SKIP_INTRO", 25.0)
+    for bad_target in (0.0, -1.0):
+        with pytest.raises(ValueError, match="positive target"):
+            compositor._jumpcut_background(_source(30.0), bad_target)
