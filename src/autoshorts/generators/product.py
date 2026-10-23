@@ -23,6 +23,7 @@ from ..modules.product.network import safe_get
 from ..modules.product.product import parse_product_link
 from ..modules.product.pronunciation import load_dictionary, prepare_for_tts
 from ..modules.product.provenance import verify_image_sources
+from ..modules.product.script_guard import assert_script_within_verified_facts
 from ..modules.utils import setup_directories
 from .explainer import ExplainerGenerator
 
@@ -70,6 +71,11 @@ class ProductGenerator(ExplainerGenerator):
                     f"Script generation failed: got {len(paragraphs)} paragraphs, need >= 3",
                     "ERROR",
                 )
+                return False
+            try:
+                assert_script_within_verified_facts(paragraphs, product.name)
+            except ProductPipelineError as exc:
+                log(f"Script rejected by the verified-facts guard: {exc}", "ERROR")
                 return False
             self.metadata.description = " ".join(paragraphs)
 

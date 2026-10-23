@@ -17,8 +17,8 @@ from urllib.parse import urljoin, urlsplit
 
 import requests
 
-from .errors import MediaProcessingError, ProductNotFoundError
-from .network import safe_request
+from .errors import MediaProcessingError, ProductNotFoundError, SourceBlockedError
+from .network import _CAPTCHA_MARKERS, safe_request
 
 _MAX_PAGE_BYTES = 4 * 1024 * 1024
 _MODEL_SUFFIXES = {
@@ -216,11 +216,6 @@ def _parse_page_html(raw: str, url: str, status: int) -> PageEvidence:
     raw_title = re.sub(r"\s+", " ", html.unescape(" ".join(parser.title_parts))).strip()
     h1 = re.sub(r"\s+", " ", html.unescape(" ".join(parser.h1_parts))).strip()
     title = re.sub(r"\s+", " ", html.unescape(parser.meta_title or raw_title)).strip()
-    if parser.meta_images:
-        alt = " ".join(x for x in (parser.meta_title, title, h1) if x)
-        parser.images.extend(
-            {"alt": alt, "sources": item} for item in parser.meta_images
-        )
     identity = " ".join(x for x in (title, h1, parser.meta_title) if x)
     return PageEvidence(
         url=url,
@@ -274,6 +269,11 @@ def fetch_page_evidence(
             )
         chunks.append(chunk)
     raw = b"".join(chunks).decode(response.encoding or "utf-8", errors="replace")
+    sample = raw[:256_000].casefold()
+    if any(marker in sample for marker in _CAPTCHA_MARKERS):
+        raise SourceBlockedError(
+            "Challenge/CAPTCHA detected in the evidence page; aborting instead of solving."
+        )
     return _parse_page_html(raw, url=response.url, status=response.status_code)
 
 
@@ -297,12 +297,13 @@ def verify_product_identity(
     }
 
 
-def _resource_key(url: str, page_url: str) -> tuple[str, str]:
+def _resource_key(url: str, page_url: str) -> tuple[str, str, str]:
     absolute = urljoin(page_url, html.unescape(url.strip()))
     parts = urlsplit(absolute)
     host = (parts.hostname or "").casefold().rstrip(".")
     path = re.sub(r"/+", "/", parts.path).casefold()
-    return host, path
+    query = "&".join(sorted(parts.query.casefold().split("&"))) if parts.query else ""
+    return host, path, query
 
 
 def verify_image_sources(

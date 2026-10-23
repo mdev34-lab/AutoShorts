@@ -142,7 +142,10 @@ def safe_request(
             raise SourceBlockedError(
                 f"Source blocked (HTTP {response.status_code}) at {host}; no retry/CAPTCHA/proxy."
             )
-        if _looks_like_challenge(response):
+        # Streamed responses must not be probed here: reading response.content
+        # would download the whole body before any byte cap applies. Streamed
+        # callers (safe_get) scan the capped bytes for challenge markers.
+        if not kwargs.get("stream") and _looks_like_challenge(response):
             raise SourceBlockedError(
                 f"Challenge/CAPTCHA page detected at {host}; aborting instead of solving."
             )
