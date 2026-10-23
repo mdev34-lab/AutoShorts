@@ -486,19 +486,44 @@ class VideoCompositor:
 
     @staticmethod
     def _vertical_crop_box(w: int, h: int) -> tuple[int, int, int, int] | None:
-        """Center-crop box (x1, y1, width, height) bringing (w, h) to 9:16.
+        """Minimal, always in-bounds center-crop box for out-of-range sources.
 
-        Always inside the source bounds: cropping beyond them wraps around
-        and returns a strip a few pixels tall, which later stretches into
-        vertical streaks (the "smeared foreground" bug).
+        Contract (preserves the historical simple-mode behavior):
+        - Sources between 9:16 and 16:9 (e.g. 1920x1080, 4:3) are NOT cropped;
+          the full frame is resized to the output, as before.
+        - Sources wider than 16:9 are center-cropped to 16:9.
+        - Sources taller than 9:16 are center-cropped to 9:16.
+
+        Every returned box lies fully inside the source and has positive
+        dimensions. Cropping out of bounds wraps around and returns a strip
+        a few pixels tall, which later stretches into vertical streaks
+        (the "smeared foreground" bug, #10).
         """
-        if w / h > 9 / 16:  # too wide: crop the sides
-            new_w = int(h * (9 / 16))
+        if w <= 0 or h <= 0:
+            return None
+        if w / h > 16 / 9:  # wider than 16:9: crop the sides
+            new_w = min(w, max(1, round(h * 16 / 9)))
             return ((w - new_w) // 2, 0, new_w, h)
-        if w / h < 9 / 16:  # too tall: crop top/bottom
-            new_h = int(w * (16 / 9))
+        if w / h < 9 / 16:  # taller than 9:16: crop top/bottom
+            new_h = min(h, max(1, round(w * 16 / 9)))
             return (0, (h - new_h) // 2, w, new_h)
         return None
+
+    @staticmethod
+    def _fit_fg_size(w: int, h: int) -> tuple[int, int]:
+        """Foreground band size: source aspect preserved, fitted inside the
+        output frame, always positive and even (yuv420p encoders reject odd
+        dimensions). Never overflows the frame for tall sources and never
+        rounds down to zero for extreme aspects.
+        """
+        if w <= 0 or h <= 0:
+            return VIDEO_WIDTH, VIDEO_HEIGHT
+        scale = min(VIDEO_WIDTH / w, VIDEO_HEIGHT / h)
+        fw = max(2, round(w * scale))
+        fh = max(2, round(h * scale))
+        fw -= fw % 2
+        fh -= fh % 2
+        return min(fw, VIDEO_WIDTH), min(fh, VIDEO_HEIGHT)
 
     def create_output_video(
         self,
@@ -634,11 +659,10 @@ class VideoCompositor:
         blurred = self._create_blurred_background_from_clip(video)
         blurred = self._ensure_duration(blurred, target_duration)
 
-        # Foreground band keeps the source aspect: full width, proportional
-        # height, instead of a fixed height that distorts the image.
-        content_h = int(round(video.h * (VIDEO_WIDTH / video.w)))
-        content_h -= content_h % 2  # even height keeps yuv420p encoders happy
-        fg = video.resized((VIDEO_WIDTH, content_h)).with_position(("center", "center"))
+        # Foreground band keeps the source aspect, fitted inside the frame,
+        # instead of a fixed height that distorts the image.
+        fg_w, fg_h = VideoCompositor._fit_fg_size(*video.size)
+        fg = video.resized((fg_w, fg_h)).with_position(("center", "center"))
         fg = self._ensure_duration(fg, target_duration)
 
         base_composite = CompositeVideoClip(
