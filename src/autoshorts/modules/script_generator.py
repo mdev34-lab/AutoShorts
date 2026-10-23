@@ -60,9 +60,7 @@ class ScriptGenerator:
             "no meta-commentary about the video itself.\n"
         )
         if self.custom_instructions:
-            base += (
-                f"\nADDITIONAL USER INSTRUCTIONS: {self.custom_instructions}\n"
-            )
+            base += f"\nADDITIONAL USER INSTRUCTIONS: {self.custom_instructions}\n"
         return base
 
     # ── Public API ──────────────────────────────────────────────────────
@@ -173,7 +171,9 @@ class ScriptGenerator:
                 if paragraphs:
                     log("Script generated with web sources", "SUCCESS")
                     paragraphs = self._verify_factual_claims(paragraphs, subject)
-                    self.generated_title = self._generate_title_from_script(paragraphs, subject)
+                    self.generated_title = self._generate_title_from_script(
+                        paragraphs, subject
+                    )
                     log("Script verified", "SUCCESS")
                     return paragraphs, []
 
@@ -182,7 +182,9 @@ class ScriptGenerator:
                 if repair and len(repair) >= 3:
                     log("Script repaired after validation", "SUCCESS")
                     paragraphs = self._verify_factual_claims(repair, subject)
-                    self.generated_title = self._generate_title_from_script(paragraphs, subject)
+                    self.generated_title = self._generate_title_from_script(
+                        paragraphs, subject
+                    )
                     return paragraphs, []
 
             log("Script generation with context failed or produced filler", "WARNING")
@@ -236,7 +238,7 @@ class ScriptGenerator:
         system_prompt = (
             f"You are a YouTube Shorts scriptwriter. Output ONLY valid JSON with these exact keys:\n"
             f'1. "draft": Array of {num_paragraphs} strings (PT-BR), each 1-2 short sentences '
-            f"\u2014 a first-draft script about \"{subject}\".\n"
+            f'\u2014 a first-draft script about "{subject}".\n'
             f"   {tone_block}"
             f"   - Every paragraph MUST contain a verifiable fact \u2014 no generalities, no filler.\n"
             f"   - CRITICAL: Do the math yourself. If you mention a date range, calculate the years correctly.\n"
@@ -283,9 +285,7 @@ class ScriptGenerator:
             "These queries will be used to fact-check, so prioritize queries that return concrete data.\n"
             "NEVER include the topic name alone as a query \u2014 always add qualifiers like year, event, or location."
         )
-        user_prompt = (
-            f"Generate search queries to find accurate factual information about: {subject}"
-        )
+        user_prompt = f"Generate search queries to find accurate factual information about: {subject}"
         try:
             data = self._make_json_api_call(system_prompt, user_prompt)
             queries = data.get("queries") or []
@@ -310,7 +310,8 @@ class ScriptGenerator:
         # 2. Extract score/result patterns: "3 a 2", "3x2", "por 3 a 2", "3-2"
         score_matches = re.findall(
             r"(\d+)\s*(?:[a\u00e0x-]\s*|a\s+|venceu por\s+|por\s+)(\d+)",
-            script_text, re.IGNORECASE
+            script_text,
+            re.IGNORECASE,
         )
         for s1, s2 in score_matches:
             for sep in (" a ", "x"):
@@ -322,7 +323,8 @@ class ScriptGenerator:
         if re.search(
             r"(?:n\u00e3o\s+\w+\s+(?:vence|ganha|perde|supera)|tabu|"
             r"sem\s+\w+\s+(?:vence|ganha|perde|supera))",
-            script_text, re.IGNORECASE
+            script_text,
+            re.IGNORECASE,
         ):
             tabu_q = f"{subject} tabu hist\u00f3rico"
             if tabu_q not in verification_queries:
@@ -330,8 +332,7 @@ class ScriptGenerator:
 
         # 4. Extract "em [month] de [year]" / "desde [month] de [year]" contexts
         context_years = re.findall(
-            r"(?:em|desde|no|na)\s+\w+\s+de\s+(\d{4})",
-            script_text, re.IGNORECASE
+            r"(?:em|desde|no|na)\s+\w+\s+de\s+(\d{4})", script_text, re.IGNORECASE
         )
         for y in context_years:
             q = f"{subject} {y}"
@@ -353,7 +354,9 @@ class ScriptGenerator:
         if not self.searcher:
             log("Fact verification skipped: searcher not available", "WARNING")
             return paragraphs
-        results = self.searcher.search_with_queries(list(dict.fromkeys(verification_queries)))
+        results = self.searcher.search_with_queries(
+            list(dict.fromkeys(verification_queries))
+        )
         if not results:
             log("Fact verification: no web sources found", "WARNING")
             return paragraphs
@@ -446,9 +449,7 @@ class ScriptGenerator:
     def _fix_hashtags_case(title: str) -> str:
         return re.sub(r"#(\w+)", lambda m: f"#{m.group(1).lower()}", title)
 
-    def _generate_title_from_script(
-        self, paragraphs: list, subject: str
-    ) -> str | None:
+    def _generate_title_from_script(self, paragraphs: list, subject: str) -> str | None:
         """Generate a YouTube Shorts title from the final script."""
         script_text = " ".join(paragraphs)[:500]
         system_prompt = (
@@ -529,7 +530,10 @@ class ScriptGenerator:
                 )
             combined = self._ensure_paragraph_count(combined, target)
             if combined:
-                log(f"Repair success: {len(good)} -> {len(combined)} paragraphs", "SUCCESS")
+                log(
+                    f"Repair success: {len(good)} -> {len(combined)} paragraphs",
+                    "SUCCESS",
+                )
                 return combined
             log(
                 f"Repair failed: only {after_validation} good paragraphs "
@@ -654,11 +658,13 @@ class ScriptGenerator:
             log(f"Script generation failed: {e}", "ERROR")
             return []
 
-    # Bureaucratic / news-reader openers: filler ONLY when the paragraph
-    # carries nothing concrete. The same phrase inside a fact-bearing,
-    # quoted or attributed sentence must survive - dropping it would
-    # silently lose grounded facts or abort the whole video.
-    _CONTEXTUAL_FILLER_PATTERNS = [
+    # Bureaucratic / news-reader openers ("atraiu atenção", "ganhou destaque")
+    # are a STYLE problem handled by the prompt's tone rules. They are never a
+    # reason to drop a paragraph: without a model there is no reliable way to
+    # tell empty prose from a grounded fact that happens to use the phrase, and
+    # a wrong drop silently loses facts (5->4) or aborts the whole video (5->2).
+    # They are only reported so the weakness stays visible in the logs.
+    _BUREAUCRATIC_OPENERS = (
         "recentes desenvolvimentos",
         "atraiu aten\u00e7\u00e3o",
         "atraindo aten\u00e7\u00e3o",
@@ -669,26 +675,7 @@ class ScriptGenerator:
         "\u00e9 importante notar",
         "vale ressaltar",
         "nos \u00faltimos tempos",
-    ]
-    _ATTRIBUTION_MARKERS = (
-        "segundo",
-        "disse",
-        "afirmou",
-        "declarou",
-        "relatou",
-        "according to",
-        "said",
     )
-
-    @staticmethod
-    def _has_concrete_anchor(lower: str, original: str) -> bool:
-        """Digits (scores/dates/stats), quoted speech or attribution make a
-        paragraph fact-bearing: never filler, whatever openers it uses."""
-        if any(ch.isdigit() for ch in original):
-            return True
-        if '"' in original or "\u201c" in original or "'" in original:
-            return True
-        return any(m in lower for m in ScriptGenerator._ATTRIBUTION_MARKERS)
 
     @staticmethod
     def _is_filler(paragraph: str) -> bool:
@@ -714,12 +701,7 @@ class ScriptGenerator:
             "pessoa jur\u00eddica",
         ]
         lower = paragraph.lower()
-        if any(p in lower for p in filler_patterns):
-            return True
-        if not any(p in lower for p in ScriptGenerator._CONTEXTUAL_FILLER_PATTERNS):
-            return False
-        # Contextual match: filler only without a concrete anchor.
-        return not ScriptGenerator._has_concrete_anchor(lower, paragraph)
+        return any(p in lower for p in filler_patterns)
 
     @staticmethod
     def _validate_paragraphs(paragraphs: list) -> list:
@@ -731,6 +713,17 @@ class ScriptGenerator:
             for p in paragraphs
             if isinstance(p, str) and not ScriptGenerator._is_filler(p)
         ]
+        flagged = sum(
+            1
+            for p in cleaned
+            if any(o in p.lower() for o in ScriptGenerator._BUREAUCRATIC_OPENERS)
+        )
+        if flagged:
+            log(
+                f"{flagged} paragraph(s) use news-reader phrasing; kept "
+                "(never dropped: facts take priority over style)",
+                "WARNING",
+            )
         if len(cleaned) < 3:
             log(
                 f"Validation: {len(paragraphs)} input, {len(cleaned)} after removing filler",
@@ -835,10 +828,10 @@ _SYSTEM_PROMPT_SINGLE = (
     "10.Every paragraph must advance the story with a new specific fact \u2014 no filler.\n"
     "11.USE the provided web sources as your primary source of facts. "
     "Cite specific data from them.\n"
-     '12.End with a punchy conclusion, NOT "fica uma li\u00e7\u00e3o" or similar generic phrases.\n'
-     '13.NEVER use "no final fica uma li\u00e7\u00e3o" or "vale a pena conhecer" \u2014 these are filler.\n'
-     "14.Do the math yourself. If you mention a date range or time period, calculate the years correctly."
- )
+    '12.End with a punchy conclusion, NOT "fica uma li\u00e7\u00e3o" or similar generic phrases.\n'
+    '13.NEVER use "no final fica uma li\u00e7\u00e3o" or "vale a pena conhecer" \u2014 these are filler.\n'
+    "14.Do the math yourself. If you mention a date range or time period, calculate the years correctly."
+)
 
 
 def _user_prompt_single(subject: str, search_context: str) -> str:
@@ -901,9 +894,9 @@ _SYSTEM_PROMPT_METADATA = (
     "11.NO markdown formatting, NO JSON, just plain text paragraphs.\n"
     "12.Base your story entirely on the video's content, "
     "adding only well-known historical context.\n"
-     '13.End with a punchy conclusion, NOT "fica uma li\u00e7\u00e3o" or similar.\n'
-     "14.Every paragraph must contain a verifiable fact \u2014 no generalities."
- )
+    '13.End with a punchy conclusion, NOT "fica uma li\u00e7\u00e3o" or similar.\n'
+    "14.Every paragraph must contain a verifiable fact \u2014 no generalities."
+)
 
 
 def _user_prompt_metadata(combined_content: str) -> str:
