@@ -139,7 +139,11 @@ TTS_RATE = os.getenv("TTS_RATE", "+20%")
 TTS_ENGINE = os.getenv("TTS_ENGINE", "edge").strip().lower()
 PIPER_VOICE_ID = os.getenv("PIPER_VOICE_ID", "pt_BR-faber-medium")
 PIPER_VOICE_URL = os.getenv("PIPER_VOICE_URL", "")  # optional full .onnx URL override
-PIPER_CACHE_DIR = Path(os.getenv("PIPER_CACHE_DIR", str(Path.home() / ".cache" / "autoshorts" / "piper")))
+PIPER_CACHE_DIR = Path(
+    os.getenv("PIPER_CACHE_DIR", str(Path.home() / ".cache" / "autoshorts" / "piper"))
+)
+PIPER_VOICE_SHA256 = os.getenv("PIPER_VOICE_SHA256", "")  # optional integrity pin
+
 
 # Background Processing Mode
 BG_MODE = os.getenv("BG_MODE", "jumpcut")  # jumpcut or speed

@@ -159,6 +159,48 @@ class SubtitleGenerator:
 
         return output_path
 
+    @staticmethod
+    def generate_vtt_from_sentence_timings(
+        timings: list, duration: float, output_path: str
+    ) -> str:
+        """Generate VTT cues aligned to real per-sentence audio timings.
+
+        Each (sentence, start, end) entry is split into ~5-word chunks whose
+        cue windows share the sentence's measured audio span proportionally,
+        instead of spreading text evenly across the whole duration.
+        """
+        vtt_lines = ["WEBVTT", ""]
+        index = 1
+        for sentence, start, end in timings:
+            words = sentence.split()
+            if not words:
+                continue
+            chunks = [" ".join(words[i : i + 5]) for i in range(0, len(words), 5)]
+            counts = [len(c.split()) for c in chunks]
+            total = sum(counts)
+            span = max(float(end) - float(start), 0.01)
+            cursor = float(start)
+            for chunk, count in zip(chunks, counts, strict=True):
+                chunk_end = cursor + span * count / total
+                if duration > 0:
+                    chunk_end = min(chunk_end, duration)
+                vtt_lines.extend(
+                    [
+                        str(index),
+                        f"{SubtitleGenerator.format_vtt_time(cursor)} --> "
+                        f"{SubtitleGenerator.format_vtt_time(chunk_end)}",
+                        chunk,
+                        "",
+                    ]
+                )
+                index += 1
+                cursor = chunk_end
+
+        with open(output_path, "w", encoding="utf-8-sig") as f:
+            f.write("\n".join(vtt_lines))
+
+        return output_path
+
 
 class SubtitleRenderer:
     """Handles subtitle rendering and clip creation - optimized version."""
@@ -487,6 +529,15 @@ class SubtitleSystem:
         vtt_path = Path(output_dir) / "subtitles.vtt"
         return self.generator.generate_vtt_from_paragraphs(
             paragraphs, duration, str(vtt_path)
+        )
+
+    def generate_subtitles_from_timings(
+        self, timings: list, duration: float, output_dir: str
+    ) -> str:
+        """Generate VTT subtitle file aligned to per-sentence audio timings."""
+        vtt_path = Path(output_dir) / "subtitles.vtt"
+        return self.generator.generate_vtt_from_sentence_timings(
+            timings, duration, str(vtt_path)
         )
 
     def render_subtitles(self, vtt_path: str, video_size: tuple) -> list:
