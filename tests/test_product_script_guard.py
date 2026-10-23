@@ -86,6 +86,25 @@ def test_spelled_out_quantities_fail_closed():
             assert_script_within_verified_facts([claim], "Smartphone X100 Pro")
 
 
+def test_spelled_out_16_to_19_ground_and_reject():
+    # Grounded: spelled-out 16GB matches "16GB" in the verified name.
+    assert_script_within_verified_facts(
+        ["Com dezesseis GB de memória RAM."], "Smartphone X100 16GB RAM"
+    )
+    assert_script_within_verified_facts(
+        ["With nineteen GB of storage."], "Smartphone X100 19GB"
+    )
+    # Confused/fabricated: spelled-out quantities absent from the name.
+    for claim in (
+        "Com dezoito GB de memória RAM.",
+        "Com dezesseis GB de armazenamento.",
+        "With seventeen GB of storage.",
+        "São dezessete horas de bateria.",
+    ):
+        with pytest.raises(ProductPipelineError):
+            assert_script_within_verified_facts([claim], "Smartphone X100 16GB RAM")
+
+
 def test_display_tech_and_battery_claims_fail_closed():
     for claim in (
         "Tela OLED de tirar o fôlego.",
