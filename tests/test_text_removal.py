@@ -11,7 +11,13 @@ from autoshorts.modules.text_removal import (
     remove_overlay_text,
 )
 
-FONT = str(Path(__file__).parent.parent / "fonts" / "BebasNeue-Regular.ttf")
+FONT = str(
+    Path(__file__).parent.parent
+    / "src"
+    / "autoshorts"
+    / "fonts"
+    / "BebasNeue-Regular.ttf"
+)
 
 
 def _photo_with_text(

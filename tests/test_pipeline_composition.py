@@ -61,7 +61,13 @@ def test_framing_alone_when_removal_disabled(tmp_path, monkeypatch):
 # Real-pipeline composition: synthetic photo + overlay text + off-center
 # subject through the actual removal and framing code (no mocks).
 
-FONT = str(Path(__file__).parent.parent / "fonts" / "BebasNeue-Regular.ttf")
+FONT = str(
+    Path(__file__).parent.parent
+    / "src"
+    / "autoshorts"
+    / "fonts"
+    / "BebasNeue-Regular.ttf"
+)
 
 SUBJECT_COLOR = (225, 25, 25)
 SUBJECT_FRAC = (0.38, 0.72)  # off-center: left-of-center, lower half
