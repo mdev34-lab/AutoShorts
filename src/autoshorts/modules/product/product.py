@@ -44,10 +44,23 @@ def _parse_product_path(url: str) -> Product:
         )
     match = re.search(r"-i\.(\d+)\.(\d+)$", segment, re.IGNORECASE)
     shop_id, item_id = (match.group(1), match.group(2)) if match else (None, None)
+    if len(segment) > 300:
+        raise InvalidProductLinkError(
+            "The product slug is unreasonably long (>300 chars); refusing to "
+            "treat it as a product name."
+        )
     slug = _ITEM_SUFFIX.sub("", segment)
-    # The slug is the only source of the name: no page title, no Shopee calls.
+    # The slug is an UNTRUSTED identifier, not evidence: keep it bounded and
+    # markup-free; facts are verified against the source page downstream.
     name = html.unescape(slug.replace("-", " ").replace("_", " "))
+    name = re.sub(r"<[^>]*>", " ", name)  # strip any markup smuggled via %3C...
+    name = "".join(ch for ch in name if ch.isprintable() or ch.isspace())
     name = _WHITESPACE.sub(" ", name).strip(" .")
+    if len(name) > 200:
+        raise InvalidProductLinkError(
+            "The slug-derived product name exceeds 200 chars; refusing to "
+            "narrate an unbounded user-supplied string."
+        )
     if len(name) < 3 or not any(ch.isalpha() for ch in name):
         raise InvalidProductLinkError(
             "Could not extract a usable product name from the slug."

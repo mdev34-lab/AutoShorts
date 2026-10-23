@@ -24,8 +24,15 @@ from ..modules.product.narration import compose_showcase_script
 from ..modules.product.network import safe_get
 from ..modules.product.product import parse_product_link
 from ..modules.product.pronunciation import load_dictionary, prepare_for_tts
-from ..modules.product.provenance import verify_image_sources
-from ..modules.product.script_guard import assert_script_within_verified_facts
+from ..modules.product.provenance import (
+    fetch_page_evidence,
+    verify_image_sources,
+    verify_product_identity,
+)
+from ..modules.product.script_guard import (
+    assert_no_added_facts,
+    assert_script_within_verified_facts,
+)
 from ..modules.utils import setup_directories
 from .explainer import ExplainerGenerator
 
@@ -47,6 +54,18 @@ class ProductGenerator(ExplainerGenerator):
         self.product_url = product_url
         self.pronunciation_file = pronunciation_file
 
+    @staticmethod
+    def _bounded_verified_name(evidence_page, slug_name: str) -> str:
+        """Display name from the verified page title (not the raw slug),
+        bounded and single-line; falls back to the slug identifier."""
+        name = (evidence_page.title or evidence_page.h1 or "").strip()
+        if not name:
+            name = slug_name
+        name = " ".join(name.split())
+        if len(name) > 160:
+            name = name[:160].rsplit(" ", 1)[0].rstrip(" .,;-")
+        return name
+
     async def generate(self) -> bool:
         log("Starting product video (images-only, verified sources)...")
         start_time = time.time()
@@ -58,8 +77,38 @@ class ProductGenerator(ExplainerGenerator):
             product = parse_product_link(self.product_url)
             log(f"Product: {product.name}", "SUCCESS")
 
-            log("Step 2: Composing showcase script from verified name facts...")
-            paragraphs = compose_showcase_script(product.name)
+            log("Step 2: Searching public evidence sources...")
+            candidates = search_image_candidates(product.name, limit=12)
+            if not candidates:
+                log("No evidence/image candidates found", "ERROR")
+                return False
+
+            log("Step 3: Verifying the product on an authoritative source page...")
+            # Evidence BEFORE narration: the slug is an untrusted identifier.
+            # Facts are composed only from a page whose title/H1 proves the
+            # exact model code - never from the raw user-supplied slug.
+            evidence_page = None
+            for candidate in candidates[:MAX_CANDIDATES_TO_TRY]:
+                try:
+                    page = fetch_page_evidence(candidate.page_url)
+                    verify_product_identity(product.name, page, label="narration")
+                    evidence_page = page
+                    break
+                except ProductPipelineError as exc:
+                    log(f"Evidence page rejected: {exc}", "WARNING")
+                    continue
+            if evidence_page is None:
+                log(
+                    "No authoritative page could verify the product identity; "
+                    "aborting instead of narrating unverified slug claims",
+                    "ERROR",
+                )
+                return False
+            verified_name = self._bounded_verified_name(evidence_page, product.name)
+            log(f"Verified product identity: {verified_name}", "SUCCESS")
+
+            log("Step 4: Composing showcase script from verified page facts...")
+            paragraphs = compose_showcase_script(verified_name)
             if not paragraphs or len(paragraphs) < 3:
                 log(
                     f"Script composition failed: got {len(paragraphs)} paragraphs, need >= 3",
@@ -67,38 +116,53 @@ class ProductGenerator(ExplainerGenerator):
                 )
                 return False
             try:
-                assert_script_within_verified_facts(paragraphs, product.name)
+                assert_script_within_verified_facts(paragraphs, verified_name)
             except ProductPipelineError as exc:
                 log(f"Script rejected by the verified-facts guard: {exc}", "ERROR")
                 return False
             self.metadata.description = " ".join(paragraphs)
 
-            log("Step 3: Generating TTS audio (with pronunciation respellings)...")
-            pron_dict = load_dictionary(self.pronunciation_file)
-            audio_path = await self.tts_system.generate_audio_only(
-                paragraphs,
-                self.temp_dir,
-                text_transform=lambda text: prepare_for_tts(text, pron_dict),
+            log(
+                "Step 5: Generating TTS audio (pronunciation respellings, fact-checked)..."
             )
+            pron_dict = load_dictionary(self.pronunciation_file)
+
+            def _tts_transform(text: str) -> str:
+                spoken = prepare_for_tts(text, pron_dict)
+                # Pronunciation changes how words SOUND, never what is CLAIMED.
+                assert_no_added_facts(text, spoken)
+                return spoken
+
+            try:
+                audio_path = await self.tts_system.generate_audio_only(
+                    paragraphs,
+                    self.temp_dir,
+                    text_transform=_tts_transform,
+                )
+            except ProductPipelineError as exc:
+                log(f"TTS transform rejected: {exc}", "ERROR")
+                return False
 
             audio = AudioFileClip(audio_path)
             num_images = max(MIN_IMAGES, int(audio.duration / SCENE_DURATION_SECONDS))
             log(f"TTS: {audio.duration:.1f}s -> {num_images} images")
             audio.close()
 
-            log("Step 4: Searching public image sources...")
-            candidates = search_image_candidates(product.name, limit=12)
-            if not candidates:
-                log("No image candidates found", "ERROR")
-                return False
-
-            log("Step 5: Verifying sources (fail-closed model match)...")
+            log("Step 6: Verifying image sources (fail-closed model match)...")
             verified: list = []
             for candidate in candidates[:MAX_CANDIDATES_TO_TRY]:
                 if len(verified) >= num_images:
                     break
                 try:
-                    evidence = verify_image_sources([candidate], product.name)
+                    evidence = verify_image_sources(
+                        [candidate],
+                        product.name,
+                        prefetched_page=(
+                            evidence_page
+                            if candidate.page_url == evidence_page.url
+                            else None
+                        ),
+                    )
                 except ProductPipelineError as e:
                     log(f"Rejected {candidate.image_url[:60]}...: {e}", "WARNING")
                     continue

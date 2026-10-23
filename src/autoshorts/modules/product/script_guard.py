@@ -179,15 +179,35 @@ def _canon_unit(unit: str) -> str:
 _WORD_RE = re.compile(r"[a-z0-9]+")
 
 
+_NEGATION_WORDS = {"sem", "no", "without", "not"}
+
+
+def _is_negated(text: str, start: int, window: int = 3) -> bool:
+    """True when a negation word scopes the match ("sem Bluetooth", "no Wi-Fi")."""
+    before = _WORD_RE.findall(_normalize(text[:start]))[-window:]
+    return any(word in _NEGATION_WORDS for word in before)
+
+
 def _attribute_near(text: str, start: int, end: int, window: int = 5) -> str | None:
-    """First recognized attribute word within `window` words around a match."""
+    """Nearest recognized attribute word around a match, by word distance.
+
+    Local binding: in "8GB de RAM e 256GB de armazenamento" the 256GB binds
+    to storage (1 word away), never to the RAM two words behind. Ties go to
+    the following attribute (the canonical "de <attribute>" form)."""
     before = _WORD_RE.findall(_normalize(text[:start]))[-window:]
     after = _WORD_RE.findall(_normalize(text[end:]))[:window]
-    for word in list(reversed(before)) + after:
+    best: tuple[int, str] | None = None
+    for distance, word in enumerate(reversed(before), start=1):
         attribute = _ATTRIBUTE_WORDS.get(word)
         if attribute:
-            return attribute
-    return None
+            best = (distance, attribute)
+            break
+    for distance, word in enumerate(after, start=1):
+        attribute = _ATTRIBUTE_WORDS.get(word)
+        if attribute and (best is None or distance <= best[0]):
+            best = (distance, attribute)
+            break
+    return best[1] if best else None
 
 
 def _spec_claims(text: str) -> set[tuple[str, str, str | None]]:
@@ -221,12 +241,15 @@ def _spec_claims(text: str) -> set[tuple[str, str, str | None]]:
 
 
 def _features_in(text: str) -> set[str]:
+    """Features asserted by the text - negated mentions ("sem Bluetooth")
+    are NOT assertions and never ground (or count as) a feature claim."""
     normalized = _normalize(text)
-    return {
-        kw
-        for kw in _FEATURE_KEYWORDS
-        if re.search(rf"(?<![a-z0-9]){re.escape(kw)}(?![a-z0-9])", normalized)
-    }
+    found: set[str] = set()
+    for kw in _FEATURE_KEYWORDS:
+        for m in re.finditer(rf"(?<![a-z0-9]){re.escape(kw)}(?![a-z0-9])", normalized):
+            if not _is_negated(normalized, m.start()):
+                found.add(kw)
+    return found
 
 
 def assert_script_within_verified_facts(
@@ -277,4 +300,32 @@ def assert_script_within_verified_facts(
         raise ProductPipelineError(
             f"Script mentions price/discount ({price.group(0).strip()!r}); "
             "showcase narration must stay price-free."
+        )
+
+
+def assert_no_added_facts(original: str, transformed: str) -> None:
+    """Post-guard transforms (TTS pronunciation respelling) must not add facts.
+
+    The transform exists to change how words SOUND, never what the video
+    CLAIMS: every spec claim, feature and ungroundable-class word in the
+    transformed text must already exist in the guarded original. Raises
+    ProductPipelineError otherwise.
+    """
+    for number, unit, _attribute in _spec_claims(transformed):
+        if (number, unit) not in {(n, u) for n, u, _ in _spec_claims(original)}:
+            raise ProductPipelineError(
+                f"Post-guard transform added spec {number}{unit}; pronunciation "
+                "may change pronunciation, never facts."
+            )
+    added_features = _features_in(transformed) - _features_in(original)
+    if added_features:
+        raise ProductPipelineError(
+            f"Post-guard transform added feature claims {sorted(added_features)}; "
+            "pronunciation may change pronunciation, never facts."
+        )
+    ungroundable = _UNGROUNDABLE_PATTERN.search(_normalize(transformed))
+    if ungroundable and not _UNGROUNDABLE_PATTERN.search(_normalize(original)):
+        raise ProductPipelineError(
+            f"Post-guard transform introduced a {ungroundable.group(0)!r} claim; "
+            "certification/warranty/grade terms may never be added after the guard."
         )

@@ -62,3 +62,15 @@ def test_shp_ee_needs_resolver():
 def test_normalized_query_keeps_codes():
     q = normalized_product_query("Projetor HY300 Pro 4K Android 11 Wifi6")
     assert "HY300" in q and "4K" in q
+
+
+def test_slug_markup_stripped_and_bounded():
+    from autoshorts.modules.product.product import parse_product_link
+
+    p = parse_product_link("https://shopee.com.br/Projetor-HY300-%3Cb%3E-i.1.2")
+    assert "<" not in p.name and ">" not in p.name
+    assert p.name == "Projetor HY300"
+
+    long_slug = "Projetor-HY300-" + "x" * 400
+    with pytest.raises(InvalidProductLinkError):
+        parse_product_link(f"https://shopee.com.br/{long_slug}-i.1.2")

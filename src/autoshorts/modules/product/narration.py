@@ -32,16 +32,26 @@ _ATTRIBUTE_SURFACE = re.compile(
 
 
 def _surface_attribute(name: str, start: int, end: int, window: int = 5) -> str | None:
-    """Attribute word as written in the name, within `window` words of a match."""
-    before = list(_WORD_RE.finditer(_normalize(name[:start])))[-window:]
-    after = list(_WORD_RE.finditer(_normalize(name[end:])))[:window]
-    words = [m.group(0) for m in reversed(before)] + [m.group(0) for m in after]
-    for word in words:
+    """Nearest attribute word as written in the name, by word distance.
+
+    Local binding: "8GB de RAM e 256GB de armazenamento" narrates 256GB as
+    storage, never as RAM. Ties go to the following attribute."""
+    before = [m.group(0) for m in _WORD_RE.finditer(_normalize(name[:start]))][-window:]
+    after = [m.group(0) for m in _WORD_RE.finditer(_normalize(name[end:]))][:window]
+    best: tuple[int, str] | None = None
+    for distance, word in enumerate(reversed(before), start=1):
         if word in _ATTRIBUTE_WORDS:
-            # Return the original-cased word from the name itself.
-            original = re.search(rf"\b{re.escape(word)}\b", name, re.IGNORECASE)
-            return original.group(0) if original else word
-    return None
+            best = (distance, word)
+            break
+    for distance, word in enumerate(after, start=1):
+        if word in _ATTRIBUTE_WORDS and (best is None or distance <= best[0]):
+            best = (distance, word)
+            break
+    if best is None:
+        return None
+    word = best[1]
+    original = re.search(rf"\b{re.escape(word)}\b", name, re.IGNORECASE)
+    return original.group(0) if original else word
 
 
 def _verified_specs(name: str) -> list[str]:

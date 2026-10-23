@@ -68,13 +68,26 @@ def test_pipeline_skips_rejected_candidates(tmp_path, monkeypatch):
         lambda name, limit: [_candidate(i) for i in range(5)],
     )
 
-    def fake_verify(cands, name):
+    def fake_verify(cands, name, prefetched_page=None):
         if "img0" in cands[0].image_url or "img1" in cands[0].image_url:
             raise ProductNotFoundError("model mismatch")
         return [{"identity_match": True, "image_bound_to_page": True}]
 
     monkeypatch.setattr(
         "autoshorts.generators.product.verify_image_sources", fake_verify
+    )
+
+    # Evidence-before-narration: the first candidate page verifies the model.
+    def fake_fetch(url, **kw):
+        page = mock.MagicMock()
+        page.url = url
+        page.title = "Projetor HY300 Pro 4K"
+        page.h1 = ""
+        return page
+
+    monkeypatch.setattr("autoshorts.generators.product.fetch_page_evidence", fake_fetch)
+    monkeypatch.setattr(
+        "autoshorts.generators.product.verify_product_identity", lambda *a, **k: {}
     )
 
     monkeypatch.setattr(
@@ -119,3 +132,77 @@ def test_pipeline_aborts_when_too_few_verified(tmp_path, monkeypatch):
 
     assert asyncio.run(gen.generate()) is False
     gen._create_flux_video.assert_not_called()
+
+
+def _evidence_mocks(monkeypatch, title="Projetor HY300 Pro 4K"):
+    def fake_fetch(url, **kw):
+        page = mock.MagicMock()
+        page.url = url
+        page.title = title
+        page.h1 = ""
+        return page
+
+    monkeypatch.setattr("autoshorts.generators.product.fetch_page_evidence", fake_fetch)
+    monkeypatch.setattr(
+        "autoshorts.generators.product.verify_product_identity", lambda *a, **k: {}
+    )
+
+
+def test_narration_uses_verified_page_title_not_slug(tmp_path, monkeypatch):
+    """The untrusted slug never grounds narration: facts come from the
+    identity-verified source page."""
+    gen = _make_generator(tmp_path)
+    monkeypatch.setattr(
+        "autoshorts.generators.product.parse_product_link", lambda url: _product()
+    )
+    monkeypatch.setattr(
+        "autoshorts.generators.product.search_image_candidates",
+        lambda name, limit: [_candidate(0)],
+    )
+    monkeypatch.setattr(
+        "autoshorts.generators.product.search_image_candidates",
+        lambda name, limit: [_candidate(i) for i in range(3)],
+    )
+    _evidence_mocks(monkeypatch, title="Projetor HY300 Pro 4K Wi-Fi Oficial")
+    monkeypatch.setattr(
+        "autoshorts.generators.product.verify_image_sources",
+        lambda cands, name, prefetched_page=None: [
+            {"identity_match": True, "image_bound_to_page": True}
+        ],
+    )
+    monkeypatch.setattr(
+        "autoshorts.generators.product.safe_get",
+        lambda url, **kw: (b"\xff\xd8\xff" + b"0" * 200, None),
+    )
+    monkeypatch.setattr(
+        "autoshorts.generators.product.ImageSearcher",
+        lambda: mock.MagicMock(resize_to_fill=lambda src, dst: dst.write_bytes(b"jpg")),
+    )
+    fake_clip = mock.MagicMock()
+    fake_clip.duration = 12.0
+    monkeypatch.setattr(
+        "autoshorts.generators.product.AudioFileClip", lambda p: fake_clip
+    )
+    assert asyncio.run(gen.generate()) is True
+    assert "4K" in gen.metadata.description  # page-title fact, not in the slug
+
+
+def test_no_verifiable_page_aborts_before_narration(tmp_path, monkeypatch):
+    """No authoritative page, no narration: fail closed, never slug claims."""
+    gen = _make_generator(tmp_path)
+    monkeypatch.setattr(
+        "autoshorts.generators.product.parse_product_link", lambda url: _product()
+    )
+    monkeypatch.setattr(
+        "autoshorts.generators.product.search_image_candidates",
+        lambda name, limit: [_candidate(0)],
+    )
+
+    def reject(url, **kw):
+        raise ProductNotFoundError("model mismatch")
+
+    monkeypatch.setattr("autoshorts.generators.product.fetch_page_evidence", reject)
+    tts_mock = mock.MagicMock()
+    gen.tts_system.generate_audio_only = tts_mock
+    assert asyncio.run(gen.generate()) is False
+    tts_mock.assert_not_called()
