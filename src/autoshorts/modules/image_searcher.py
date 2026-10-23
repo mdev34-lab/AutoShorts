@@ -20,6 +20,7 @@ from .config import (
     IMAGE_TEXT_REMOVAL,
     IMG_URL,
     MODEL_IMAGE,
+    OUTPUT_DIR,
     SUBJECT_FRAMING,
     TARGET_IMAGE_HEIGHT,
     TARGET_IMAGE_WIDTH,
@@ -216,6 +217,7 @@ class ImageSearcher:
                         self.resize_to_fill(temp_path, cached_path)
                         temp_path.unlink(missing_ok=True)
                         img_paths.append(str(cached_path))
+                        self._write_provenance_sidecar(cached_path, candidate, prompt)
                         log(
                             f"  Downloaded & processed: {cached_path.name} "
                             f"({candidate.provider}, license: "
@@ -236,7 +238,60 @@ class ImageSearcher:
                 )
                 self._fallback_to_ai([prompt], img_paths)
 
+        self._write_credits_file(img_paths)
         return img_paths
+
+    @staticmethod
+    def _write_provenance_sidecar(
+        image_path: Path, candidate: "image_sources.SourceCandidate", prompt: str
+    ) -> None:
+        """Persist provenance next to the cached image so credits survive cache hits."""
+        try:
+            license_line = candidate.license or "UNVERIFIED - review before publishing"
+            lines = [
+                f"prompt: {prompt}",
+                f"provider: {candidate.provider}",
+                f"source: {candidate.url}",
+                f"license: {license_line}",
+            ]
+            if candidate.attribution:
+                lines.append(f"attribution: {candidate.attribution}")
+            lines.append(f"fit: {candidate.fit_evidence}")
+            image_path.with_suffix(".credits.txt").write_text(
+                "\n".join(lines) + "\n", encoding="utf-8"
+            )
+        except Exception as e:
+            log(f"  Could not write provenance sidecar: {e}", "WARNING")
+
+    @staticmethod
+    def _write_credits_file(img_paths: list[str]) -> None:
+        """Deliver per-image credits next to the video output.
+
+        Never presents an unlicensed image as cleared: entries without a
+        verified license are marked UNVERIFIED for review before publishing.
+        """
+        try:
+            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            blocks = []
+            for p in img_paths:
+                sidecar = Path(p).with_suffix(".credits.txt")
+                if sidecar.exists():
+                    blocks.append(
+                        f"{Path(p).name}\n"
+                        + sidecar.read_text(encoding="utf-8").strip()
+                    )
+                else:
+                    blocks.append(
+                        f"{Path(p).name}\n"
+                        "license: UNVERIFIED - no provenance record "
+                        "(AI-generated or cached before credits tracking); "
+                        "review before publishing"
+                    )
+            (OUTPUT_DIR / "image_credits.txt").write_text(
+                "\n\n".join(blocks) + "\n", encoding="utf-8"
+            )
+        except Exception as e:
+            log(f"Could not write image credits file: {e}", "WARNING")
 
     def _candidates(self, query: str) -> list[image_sources.SourceCandidate]:
         """Provider-ordered candidates with provenance and fit evidence."""

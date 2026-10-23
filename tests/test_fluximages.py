@@ -680,6 +680,7 @@ class TestImageSearcher:
         assert result_img.size == (1080, 1920)
         result_img.close()
 
+    @patch("autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["commons", "ddg"])
     @patch(
         "autoshorts.modules.image_searcher.ImageSearcher._commons_candidates",
         return_value=[],
@@ -708,6 +709,7 @@ class TestImageSearcher:
         assert mock_search.call_count == 3
         assert mock_download.call_count == 3
 
+    @patch("autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["commons", "ddg"])
     @patch(
         "autoshorts.modules.image_searcher.ImageSearcher._commons_candidates",
         return_value=[],
@@ -739,6 +741,7 @@ class TestImageSearcher:
 
         cached_path.unlink(missing_ok=True)
 
+    @patch("autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["commons", "ddg"])
     @patch(
         "autoshorts.modules.image_searcher.ImageSearcher._commons_candidates",
         return_value=[],

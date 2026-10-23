@@ -165,7 +165,7 @@ IMAGE_SEARCH_SAFE = os.getenv("IMAGE_SEARCH_SAFE", "on")
 # stock-agency/watermarked domains are blocked and contextual fit is required).
 IMAGE_PROVIDERS = [
     p.strip().lower()
-    for p in os.getenv("IMAGE_PROVIDERS", "commons,ddg").split(",")
+    for p in os.getenv("IMAGE_PROVIDERS", "commons").split(",")
     if p.strip()
 ]
 IMAGE_SEARCH_PER_QUERY = _get_env_int("IMAGE_SEARCH_PER_QUERY", 5)

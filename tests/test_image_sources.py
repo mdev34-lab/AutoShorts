@@ -108,6 +108,10 @@ def test_searcher_candidates_provider_order():
         fit_evidence="seedorf",
     )
     with (
+        patch(
+            "autoshorts.modules.image_searcher.IMAGE_PROVIDERS",
+            ["commons", "ddg"],
+        ),
         patch.object(searcher, "_commons_candidates", return_value=[commons_hit]),
         patch.object(
             searcher,
@@ -118,3 +122,59 @@ def test_searcher_candidates_provider_order():
         out = searcher._candidates("Seedorf Corinthians")
     assert out[0].provider == "commons"  # verified license comes first
     assert out[1].provider == "ddg"
+
+
+def test_default_providers_fail_closed_commons_only():
+    """Default config must be license-verified only; DDG is explicit opt-in."""
+    import importlib
+    import os
+
+    os.environ.pop("IMAGE_PROVIDERS", None)
+    import autoshorts.modules.config as cfg
+
+    try:
+        importlib.reload(cfg)
+        assert cfg.IMAGE_PROVIDERS == ["commons"]
+    finally:
+        importlib.reload(cfg)
+
+
+def test_ddg_is_opt_in_only():
+    """With the default provider list, the DDG path is never consulted."""
+    from autoshorts.modules.image_searcher import ImageSearcher
+
+    searcher = ImageSearcher()
+    with (
+        patch("autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["commons"]),
+        patch.object(searcher, "_commons_candidates", return_value=[]),
+        patch.object(searcher, "search_images") as mock_ddg,
+    ):
+        assert searcher._candidates("Seedorf Corinthians") == []
+        mock_ddg.assert_not_called()
+
+
+def test_provenance_sidecar_and_credits_delivery(tmp_path):
+    """Verified attribution is delivered; unverified entries are marked, never cleared."""
+    from autoshorts.modules import image_searcher as mod
+    from autoshorts.modules.image_searcher import ImageSearcher
+
+    img = tmp_path / "a.jpg"
+    img.write_bytes(b"x")
+    cand = image_sources.SourceCandidate(
+        url="https://upload.wikimedia.org/a.jpg",
+        provider="commons",
+        license="CC BY-SA 4.0",
+        attribution="Jane Doe, CC BY-SA 4.0, via Wikimedia Commons",
+        fit_evidence="seedorf",
+    )
+    ImageSearcher._write_provenance_sidecar(img, cand, "Seedorf Corinthians")
+    sidecar = img.with_suffix(".credits.txt").read_text()
+    assert "CC BY-SA 4.0" in sidecar and "Jane Doe" in sidecar
+
+    orphan = tmp_path / "b.jpg"
+    orphan.write_bytes(b"x")
+    with patch.object(mod, "OUTPUT_DIR", tmp_path / "out"):
+        ImageSearcher._write_credits_file([str(img), str(orphan)])
+        credits = (tmp_path / "out" / "image_credits.txt").read_text()
+    assert "Jane Doe" in credits
+    assert "UNVERIFIED" in credits  # orphan never reported as licensed/safe
