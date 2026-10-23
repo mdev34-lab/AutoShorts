@@ -318,6 +318,7 @@ class VideoCompositor:
 
     def _jumpcut_background(self, clip, target_duration: float) -> VideoFileClip:
         """Create background by randomly sampling segments instead of speed scaling."""
+        import math
         import random
 
         from moviepy import concatenate_videoclips
@@ -335,8 +336,16 @@ class VideoCompositor:
             available_dur = source_dur
 
         if available_dur <= target_duration:
-            end_time = min(start_offset + target_duration, source_dur)
-            return clip.subclipped(start_offset, end_time)
+            # Source too short: loop the available range to cover the target
+            n_loops = math.ceil(target_duration / available_dur)
+            segments = [
+                clip.subclipped(start_offset, source_dur) for _ in range(n_loops)
+            ]
+            result = concatenate_videoclips(segments)
+            result = result.subclipped(0, min(target_duration - 0.05, result.duration))
+            # Strip audio to avoid MoviePy composite bugs
+            result.audio = None
+            return result
 
         # Calculate valid start positions (after intro, ensuring segment fits)
         max_seg_start = source_dur - seg_dur
@@ -344,7 +353,7 @@ class VideoCompositor:
             end_time = min(start_offset + target_duration, source_dur)
             return clip.subclipped(start_offset, end_time)
 
-        num_segs = max(1, int(target_duration / seg_dur))
+        num_segs = max(1, math.ceil(target_duration / seg_dur))
         available_starts = list(range(int(start_offset), int(max_seg_start)))
 
         # Ensure we don't request more samples than available
