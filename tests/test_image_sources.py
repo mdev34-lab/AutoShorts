@@ -344,6 +344,32 @@ class TestCacheProvenance:
         assert downloads == []  # never even downloaded
         assert result == ["ai.jpg"]
 
+    def test_license_verified_commons_still_skipped_without_opt_in(
+        self, tmp_path, monkeypatch
+    ):
+        """A verified license is not a verified pictured subject."""
+        from autoshorts.modules import image_searcher as mod
+        from autoshorts.modules.image_searcher import ImageSearcher
+
+        monkeypatch.setattr(mod, "IMAGE_CACHE_DIR", tmp_path)
+        monkeypatch.setattr(mod, "ALLOW_UNVERIFIED_IMAGES", False)
+        commons = image_sources.SourceCandidate(
+            url="https://upload.wikimedia.org/p.jpg",
+            provider="commons",
+            license="CC BY-SA 4.0",
+            fit_evidence="a,b",
+            title="t",
+        )
+        searcher = ImageSearcher.__new__(ImageSearcher)
+        searcher._candidates = lambda q: [commons]
+        downloads = []
+        searcher.download_image = lambda url, path: downloads.append(url) or True
+        searcher._fallback_to_ai = lambda prompts, paths: paths.append("ai.jpg")
+        with patch.object(mod, "OUTPUT_DIR", tmp_path / "out"):
+            result = searcher.get_images(["some prompt"])
+        assert downloads == []
+        assert result == ["ai.jpg"]
+
     def test_cache_key_versioned_by_providers(self, monkeypatch):
         from autoshorts.modules import image_searcher as mod
         from autoshorts.modules.image_searcher import ImageSearcher

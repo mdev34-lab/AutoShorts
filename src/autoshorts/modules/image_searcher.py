@@ -260,10 +260,14 @@ class ImageSearcher:
                 url = candidate.url
                 if not url:
                     continue
-                if not candidate.license and not ALLOW_UNVERIFIED_IMAGES:
+                # License checks and title/description agreement are source
+                # claims: nothing here verifies the PICTURED subject, so web
+                # images are opt-in until a pixel-level subject check exists.
+                if not ALLOW_UNVERIFIED_IMAGES:
                     log(
-                        f"  Skipping {candidate.provider} image without verified "
-                        "reuse rights (set ALLOW_UNVERIFIED_IMAGES=1 to opt in)",
+                        f"  Skipping {candidate.provider} image: pictured subject "
+                        "and reuse rights are unverified (set "
+                        "ALLOW_UNVERIFIED_IMAGES=1 to opt in)",
                         "WARNING",
                     )
                     continue
