@@ -140,6 +140,12 @@ class VideoCompositor:
         Opacity is applied as a multiply in the same pass.
         """
 
+        # An animation longer than the clip would end the clip at full
+        # opacity, before its fade-out - clamp to the clip's own duration.
+        clip_duration = getattr(clip, "duration", None)
+        if isinstance(clip_duration, (int, float)) and clip_duration > 0:
+            duration = min(duration, clip_duration)
+
         def _ease_slope(p: float) -> float:
             """Normalized derivative [0,1] of ease_in_out_cubic at progress p ∈ [0,1]."""
             if p <= 0.0:
@@ -175,14 +181,22 @@ class VideoCompositor:
             progress = t / duration
             fade_in_end = 0.15
             fade_out_start = 0.85
+            # The last encoded frame samples t = duration - 1/fps, never
+            # t = duration, so a fade completing at progress 1.0 leaves a
+            # ghost (alpha ~0.044 at 30fps). Complete the fade by 0.95:
+            # any fps >= 20 then encodes truly transparent final frames.
+            fade_out_end = 0.95
 
             if progress < fade_in_end:
                 return self._ease_in_out_cubic(progress / fade_in_end)
             elif progress < fade_out_start:
                 return 1.0
-            else:
-                out_progress = (progress - fade_out_start) / (1.0 - fade_out_start)
+            elif progress < fade_out_end:
+                out_progress = (progress - fade_out_start) / (
+                    fade_out_end - fade_out_start
+                )
                 return max(1.0 - self._ease_in_out_cubic(out_progress), 0.0)
+            return 0.0
 
         try:
             from PIL import Image, ImageFilter
@@ -237,8 +251,21 @@ class VideoCompositor:
         # opacity yields an opaque near-black image, and since ImageClips have
         # no mask the "faded" overlay covered the background with black.
         h, w = clip.size[1], clip.size[0]
+        # Only a real VideoClip mask can be combined; mocks and odd objects
+        # fall back to the plain fade mask.
+        base_mask = clip.mask if isinstance(clip.mask, VideoClip) else None
+
+        def _fade_mask_frame(t):
+            fade = opacity_anim(t)
+            if base_mask is not None:
+                # Combine with the source's own alpha (e.g. transparent PNG):
+                # a plain replacement would resurrect pixels the source
+                # made fully transparent.
+                return np.asarray(base_mask.get_frame(t), dtype=float) * fade
+            return np.full((h, w), fade, dtype=float)
+
         mask = VideoClip(
-            frame_function=lambda t: np.full((h, w), opacity_anim(t), dtype=float),
+            frame_function=_fade_mask_frame,
             is_mask=True,
             duration=duration,
         )

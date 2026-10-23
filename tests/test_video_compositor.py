@@ -397,3 +397,78 @@ def test_overlay_fade_uses_alpha_not_black():
     # t=0.075 (mid fade-in, opacity ~0.5): a blend of bg and overlay, never black
     px_blend = composite.get_frame(0.075)[18, 32]
     assert px_blend[1] > 60, f"mid-fade crushed to black: {px_blend}"
+
+
+def test_overlay_last_encoded_frame_fully_transparent():
+    """The final ENCODED frame (t = duration - 1/fps), not t=duration, must
+    show pure background - no ghost overlay from an incomplete fade."""
+    import numpy as np
+    from moviepy import CompositeVideoClip, ImageClip
+
+    from autoshorts.modules.video_compositor import VideoCompositor
+
+    fps, duration = 30, 1.0
+    compositor = VideoCompositor()
+    red_bg = ImageClip(np.full((36, 64, 3), (200, 0, 0), dtype="uint8")).with_duration(
+        duration
+    )
+    white_fg = ImageClip(np.full((36, 64, 3), 255, dtype="uint8")).with_duration(
+        duration
+    )
+    overlay = compositor._apply_overlay_animation(white_fg, duration)
+    composite = CompositeVideoClip([red_bg, overlay], size=(64, 36))
+
+    last_t = (int(duration * fps) - 1) / fps  # frame 29/30: what is actually encoded
+    px_last = composite.get_frame(last_t)[18, 32]
+    assert px_last[0] > 190 and px_last[1] < 20 and px_last[2] < 20, (
+        f"ghost overlay on final encoded frame: {px_last}"
+    )
+
+
+def test_overlay_fade_combines_with_source_alpha():
+    """A transparent PNG's own alpha must survive: the fade mask multiplies
+    it, never replaces it (a replacement resurrects transparent pixels)."""
+    import numpy as np
+    from moviepy import CompositeVideoClip, ImageClip
+
+    from autoshorts.modules.video_compositor import VideoCompositor
+
+    rgba = np.full((36, 64, 4), (255, 255, 255, 255), dtype="uint8")
+    rgba[:, :32, 3] = 0  # left half fully transparent
+    compositor = VideoCompositor()
+    red_bg = ImageClip(np.full((36, 64, 3), (200, 0, 0), dtype="uint8")).with_duration(
+        1.0
+    )
+    fg = ImageClip(rgba).with_duration(1.0)
+    assert fg.mask is not None, "RGBA source should carry its alpha as a mask"
+    overlay = compositor._apply_overlay_animation(fg, 1.0)
+    composite = CompositeVideoClip([red_bg, overlay], size=(64, 36))
+
+    # Mid-show (fully faded in): left half still shows the background...
+    px_left = composite.get_frame(0.5)[18, 8]
+    assert px_left[0] > 150 and px_left[1] < 60, (
+        f"source alpha was replaced, transparent pixels resurrected: {px_left}"
+    )
+    # ...right half shows the opaque overlay
+    px_right = composite.get_frame(0.5)[18, 48]
+    assert all(c > 240 for c in px_right), f"opaque region lost: {px_right}"
+
+
+def test_overlay_animation_duration_clamped_to_clip():
+    """An animation longer than the clip must not strand the clip at full
+    opacity past its own end - the fade completes within the clip's life."""
+    import numpy as np
+    from moviepy import ImageClip
+
+    from autoshorts.modules.video_compositor import VideoCompositor
+
+    compositor = VideoCompositor()
+    clip = ImageClip(np.full((36, 64, 3), 255, dtype="uint8")).with_duration(1.0)
+    result = compositor._apply_overlay_animation(clip, 10.0)
+    assert abs(result.mask.duration - 1.0) < 1e-6, (
+        f"mask runs past the clip: {result.mask.duration}"
+    )
+    # final encoded frame of the CLIP's life is transparent
+    last_t = 29 / 30
+    fade = result.mask.get_frame(last_t).max()
+    assert fade == 0.0, f"clip would end visible: alpha {fade}"
