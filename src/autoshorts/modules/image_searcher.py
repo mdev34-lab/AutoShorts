@@ -1,4 +1,5 @@
 import hashlib
+import json
 import random
 import re
 from pathlib import Path
@@ -9,6 +10,7 @@ from PIL import Image
 
 from . import image_sources
 from .config import (
+    ALLOW_UNVERIFIED_IMAGES,
     API_KEY,
     API_TIMEOUT_IMAGE,
     IMAGE_CACHE_DIR,
@@ -186,11 +188,49 @@ class ImageSearcher:
         scheme = f"img2|{','.join(IMAGE_PROVIDERS)}|{prompt}"
         return hashlib.sha256(scheme.encode()).hexdigest()[:16]
 
+    @staticmethod
+    def _sidecar_path(image_path: Path) -> Path:
+        return image_path.with_suffix(".credits.json")
+
+    @classmethod
+    def _read_sidecar(cls, image_path: Path) -> dict | None:
+        """Parsed provenance record, or None unless it is complete and valid.
+
+        An empty, unparsable or incomplete sidecar is NOT provenance: the
+        image is treated as having none."""
+        try:
+            data = json.loads(cls._sidecar_path(image_path).read_text("utf-8"))
+        except Exception:
+            return None
+        if not isinstance(data, dict) or data.get("schema") != 1:
+            return None
+        kind = data.get("kind")
+        if kind == "ai":
+            return data if data.get("license") and data.get("provider") else None
+        if kind != "web":
+            return None
+        required = ("title", "source_page", "image_url", "license", "provider")
+        if not all(isinstance(data.get(k), str) and data[k].strip() for k in required):
+            return None
+        for key in ("source_page", "image_url"):
+            if not data[key].startswith(("http://", "https://")):
+                return None
+        if not isinstance(data.get("license_verified"), bool):
+            return None
+        return data
+
     @classmethod
     def _usable_cache(cls, cached_path: Path) -> bool:
-        """A cached web image is reusable only with its provenance sidecar -
-        anything else (legacy stock, interrupted runs) is refetched."""
-        return cached_path.exists() and cached_path.with_suffix(".credits.txt").exists()
+        """Reusable only with a valid provenance record that is still allowed
+        (legacy stock, interrupted runs, empty/UNVERIFIED records are refetched)."""
+        if not cached_path.exists():
+            return False
+        record = cls._read_sidecar(cached_path)
+        if record is None:
+            return False
+        if record["kind"] == "web" and not record["license_verified"]:
+            return ALLOW_UNVERIFIED_IMAGES
+        return True
 
     def get_images(self, prompts: list[str]) -> list[str]:
         img_paths = []
@@ -211,6 +251,13 @@ class ImageSearcher:
             for candidate in candidates:
                 url = candidate.url
                 if not url:
+                    continue
+                if not candidate.license and not ALLOW_UNVERIFIED_IMAGES:
+                    log(
+                        f"  Skipping {candidate.provider} image without verified "
+                        "reuse rights (set ALLOW_UNVERIFIED_IMAGES=1 to opt in)",
+                        "WARNING",
+                    )
                     continue
                 temp_path = (
                     IMAGE_CACHE_DIR
@@ -254,55 +301,100 @@ class ImageSearcher:
         self._write_credits_file(img_paths)
         return img_paths
 
-    @staticmethod
+    @classmethod
     def _write_provenance_sidecar(
-        image_path: Path, candidate: "image_sources.SourceCandidate", prompt: str
+        cls, image_path: Path, candidate: "image_sources.SourceCandidate", prompt: str
     ) -> None:
         """Persist provenance next to the cached image so credits survive cache hits."""
         try:
-            license_line = candidate.license or "UNVERIFIED - review before publishing"
-            lines = [
-                f"prompt: {prompt}",
-                f"provider: {candidate.provider}",
-                f"source: {candidate.url}",
-                f"license: {license_line}",
-            ]
-            if candidate.attribution:
-                lines.append(f"attribution: {candidate.attribution}")
-            lines.append(f"fit: {candidate.fit_evidence}")
-            image_path.with_suffix(".credits.txt").write_text(
-                "\n".join(lines) + "\n", encoding="utf-8"
+            extra = candidate.extra or {}
+            is_ai = candidate.provider == "ai"
+            record = {
+                "schema": 1,
+                "kind": "ai" if is_ai else "web",
+                "provider": candidate.provider,
+                "prompt": prompt,
+                "title": candidate.title or ("AI-generated image" if is_ai else ""),
+                "image_url": candidate.url,
+                "source_page": extra.get("source_page") or "",
+                "creator": extra.get("creator") or "",
+                "license": candidate.license or "",
+                "license_url": extra.get("license_url") or "",
+                "license_verified": bool(candidate.license) and not is_ai,
+                "fit": candidate.fit_evidence,
+                "modification": (
+                    "Resized and cropped to the video frame; overlay text may "
+                    "have been removed and framing adjusted."
+                ),
+            }
+            if not is_ai and not record["source_page"]:
+                # The image URL is the only locator some providers expose.
+                record["source_page"] = candidate.url
+            cls._sidecar_path(image_path).write_text(
+                json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8"
             )
         except Exception as e:
             log(f"  Could not write provenance sidecar: {e}", "WARNING")
 
-    @staticmethod
-    def _write_credits_file(img_paths: list[str]) -> None:
+    @classmethod
+    def _write_credits_file(cls, img_paths: list[str]) -> None:
         """Deliver per-image credits next to the video output.
 
-        Never presents an unlicensed image as cleared: entries without a
-        verified license are marked UNVERIFIED for review before publishing.
+        Reusable-license obligations (title, creator, source page, license and
+        its URL, modification notice) come from validated sidecars only. Any
+        image without a valid record, or without verified rights, makes the
+        file start with a PUBLICATION REVIEW REQUIRED status.
         """
         try:
             OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            blocks = []
+            blocks: list[str] = []
+            needs_review = 0
             for p in img_paths:
-                sidecar = Path(p).with_suffix(".credits.txt")
-                if sidecar.exists():
+                record = cls._read_sidecar(Path(p))
+                name = Path(p).name
+                if record is None:
+                    needs_review += 1
                     blocks.append(
-                        f"{Path(p).name}\n"
-                        + sidecar.read_text(encoding="utf-8").strip()
-                    )
-                else:
-                    blocks.append(
-                        f"{Path(p).name}\n"
-                        "license: UNVERIFIED - no provenance record "
-                        "(AI-generated or cached before credits tracking); "
+                        f"{name}\nUNVERIFIED: no valid provenance record; "
                         "review before publishing"
                     )
-            (OUTPUT_DIR / "image_credits.txt").write_text(
-                "\n\n".join(blocks) + "\n", encoding="utf-8"
+                    continue
+                if record["kind"] == "ai":
+                    blocks.append(
+                        f"{name}\nAI-generated ({record['provider']}); no "
+                        "third-party source or license claimed."
+                    )
+                    continue
+                if not record["license_verified"]:
+                    needs_review += 1
+                lines = [
+                    name,
+                    f"Title: {record['title']}",
+                    f"Creator: {record.get('creator') or 'not provided by source'}",
+                    f"Source: {record['source_page']}",
+                    f"Image file: {record['image_url']}",
+                    "License: "
+                    + (
+                        record["license"]
+                        if record["license_verified"]
+                        else "UNVERIFIED - reuse rights unknown"
+                    ),
+                ]
+                if record.get("license_url"):
+                    lines.append(f"License URL: {record['license_url']}")
+                lines.append(f"Changes: {record['modification']}")
+                blocks.append("\n".join(lines))
+            status = (
+                f"PUBLICATION REVIEW REQUIRED: {needs_review} image(s) without "
+                "verified reuse rights"
+                if needs_review
+                else "Rights status: all web images carry a verified reusable license"
             )
+            (OUTPUT_DIR / "image_credits.txt").write_text(
+                status + "\n\n" + "\n\n".join(blocks) + "\n", encoding="utf-8"
+            )
+            if needs_review:
+                log(status, "WARNING")
         except Exception as e:
             log(f"Could not write image credits file: {e}", "WARNING")
 

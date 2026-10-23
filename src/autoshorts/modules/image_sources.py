@@ -128,6 +128,16 @@ def _normalize_license(raw: str) -> str:
     return text.strip()
 
 
+def _license_url(license_name: str) -> str:
+    """Canonical license text URL for a normalized allowed license name."""
+    m = re.fullmatch(r"cc (by|by-sa) (\d\.\d)", license_name)
+    if m:
+        return f"https://creativecommons.org/licenses/{m.group(1)}/{m.group(2)}/"
+    if license_name == "cc0":
+        return "https://creativecommons.org/publicdomain/zero/1.0/"
+    return ""
+
+
 def distinctive_tokens(text: str) -> set[str]:
     """Long, content-bearing tokens - the ones that prove contextual fit."""
     return {
@@ -253,6 +263,9 @@ def search_commons(
             " ", html.unescape((meta.get("Artist") or {}).get("value") or "")
         ).strip()
         attribution = f"{artist}, {license_raw}" if artist else license_raw
+        license_url = (meta.get("LicenseUrl") or {}).get("value") or _license_url(
+            license_name
+        )
         candidates.append(
             SourceCandidate(
                 url=url,
@@ -261,6 +274,11 @@ def search_commons(
                 attribution=attribution,
                 fit_evidence=evidence,
                 title=title,
+                extra={
+                    "source_page": info.get("descriptionurl") or "",
+                    "creator": artist,
+                    "license_url": license_url,
+                },
             )
         )
         if len(candidates) >= limit:

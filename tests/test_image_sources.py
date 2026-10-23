@@ -1,5 +1,6 @@
 """Provider provenance: license verification and contextual-fit rejection."""
 
+import json
 from unittest.mock import Mock, patch
 
 import pytest
@@ -165,7 +166,9 @@ def test_ddg_is_opt_in_only():
 
 
 def test_provenance_sidecar_and_credits_delivery(tmp_path):
-    """Verified attribution is delivered; unverified entries are marked, never cleared."""
+    """The reusable-license obligations are delivered: title, creator, source
+    page, license + URL and the modification notice. Entries without a valid
+    record are marked UNVERIFIED and flip the publication status."""
     from autoshorts.modules import image_searcher as mod
     from autoshorts.modules.image_searcher import ImageSearcher
 
@@ -177,18 +180,34 @@ def test_provenance_sidecar_and_credits_delivery(tmp_path):
         license="CC BY-SA 4.0",
         attribution="Jane Doe, CC BY-SA 4.0, via Wikimedia Commons",
         fit_evidence="seedorf",
+        title="File:Seedorf.jpg",
+        extra={
+            "source_page": "https://commons.wikimedia.org/wiki/File:Seedorf.jpg",
+            "creator": "Jane Doe",
+            "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        },
     )
     ImageSearcher._write_provenance_sidecar(img, cand, "Seedorf Corinthians")
-    sidecar = img.with_suffix(".credits.txt").read_text()
-    assert "CC BY-SA 4.0" in sidecar and "Jane Doe" in sidecar
 
     orphan = tmp_path / "b.jpg"
     orphan.write_bytes(b"x")
     with patch.object(mod, "OUTPUT_DIR", tmp_path / "out"):
+        ImageSearcher._write_credits_file([str(img)])
+        clean = (tmp_path / "out" / "image_credits.txt").read_text()
         ImageSearcher._write_credits_file([str(img), str(orphan)])
-        credits = (tmp_path / "out" / "image_credits.txt").read_text()
-    assert "Jane Doe" in credits
-    assert "UNVERIFIED" in credits  # orphan never reported as licensed/safe
+        flagged = (tmp_path / "out" / "image_credits.txt").read_text()
+    for needle in (
+        "Title: File:Seedorf.jpg",
+        "Creator: Jane Doe",
+        "Source: https://commons.wikimedia.org/wiki/File:Seedorf.jpg",
+        "License: CC BY-SA 4.0",
+        "License URL: https://creativecommons.org/licenses/by-sa/4.0/",
+        "Changes:",
+    ):
+        assert needle in clean, needle
+    assert "PUBLICATION REVIEW REQUIRED" not in clean
+    assert "UNVERIFIED" in flagged  # orphan never reported as licensed/safe
+    assert flagged.startswith("PUBLICATION REVIEW REQUIRED: 1")
 
 
 class TestEntityDisambiguation:
@@ -261,6 +280,18 @@ class TestEntityDisambiguation:
         assert image_sources.filter_ddg_results("Seedorf Corinthians", results) == []
 
 
+_VALID_RECORD = {
+    "schema": 1,
+    "kind": "web",
+    "provider": "commons",
+    "title": "File:X.jpg",
+    "image_url": "https://upload.wikimedia.org/x.jpg",
+    "source_page": "https://commons.wikimedia.org/wiki/File:X.jpg",
+    "license": "CC BY 4.0",
+    "license_verified": True,
+}
+
+
 class TestCacheProvenance:
     def test_legacy_cache_without_sidecar_is_not_reused(self, tmp_path, monkeypatch):
         from autoshorts.modules import image_searcher as mod
@@ -270,9 +301,48 @@ class TestCacheProvenance:
         key = ImageSearcher._cache_key("qualquer prompt")
         legacy = tmp_path / f"{key}.jpg"
         legacy.write_bytes(b"old-stock")
+        sidecar = legacy.with_suffix(".credits.json")
         assert ImageSearcher._usable_cache(legacy) is False
-        legacy.with_suffix(".credits.txt").write_text("provider: commons\n")
+        # empty / unparsable / incomplete / unverified records are not provenance
+        for bad in (
+            "",
+            "provider: commons\n",
+            "{}",
+            json.dumps({"schema": 1, "kind": "web", "provider": "commons"}),
+            json.dumps({**_VALID_RECORD, "license": ""}),
+            json.dumps({**_VALID_RECORD, "source_page": "not a url"}),
+            json.dumps({**_VALID_RECORD, "license_verified": False}),
+        ):
+            sidecar.write_text(bad)
+            assert ImageSearcher._usable_cache(legacy) is False, bad
+        sidecar.write_text(json.dumps(_VALID_RECORD))
         assert ImageSearcher._usable_cache(legacy) is True
+        # unverified rights are reusable only under the explicit opt-in
+        sidecar.write_text(json.dumps({**_VALID_RECORD, "license_verified": False}))
+        monkeypatch.setattr(mod, "ALLOW_UNVERIFIED_IMAGES", True)
+        assert ImageSearcher._usable_cache(legacy) is True
+
+    def test_unverified_candidates_skipped_without_opt_in(self, tmp_path, monkeypatch):
+        from autoshorts.modules import image_searcher as mod
+        from autoshorts.modules.image_searcher import ImageSearcher
+
+        monkeypatch.setattr(mod, "IMAGE_CACHE_DIR", tmp_path)
+        monkeypatch.setattr(mod, "ALLOW_UNVERIFIED_IMAGES", False)
+        ddg = image_sources.SourceCandidate(
+            url="https://x.example.org/p.jpg",
+            provider="ddg",
+            fit_evidence="a,b",
+            title="t",
+        )
+        searcher = ImageSearcher.__new__(ImageSearcher)
+        searcher._candidates = lambda q: [ddg]
+        downloads = []
+        searcher.download_image = lambda url, path: downloads.append(url) or True
+        searcher._fallback_to_ai = lambda prompts, paths: paths.append("ai.jpg")
+        with patch.object(mod, "OUTPUT_DIR", tmp_path / "out"):
+            result = searcher.get_images(["some prompt"])
+        assert downloads == []  # never even downloaded
+        assert result == ["ai.jpg"]
 
     def test_cache_key_versioned_by_providers(self, monkeypatch):
         from autoshorts.modules import image_searcher as mod

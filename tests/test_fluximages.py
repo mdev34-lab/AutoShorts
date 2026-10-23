@@ -2,6 +2,7 @@
 Test FluxImages module functionality
 """
 
+import json
 import tempfile
 import warnings
 from pathlib import Path
@@ -679,6 +680,7 @@ class TestImageSearcher:
         assert result_img.size == (1080, 1920)
         result_img.close()
 
+    @patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", True)
     @patch("autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["commons", "ddg"])
     @patch(
         "autoshorts.modules.image_searcher.ImageSearcher._commons_candidates",
@@ -708,6 +710,7 @@ class TestImageSearcher:
         assert mock_search.call_count == 3
         assert mock_download.call_count == 3
 
+    @patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", True)
     @patch("autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["commons", "ddg"])
     @patch(
         "autoshorts.modules.image_searcher.ImageSearcher._commons_candidates",
@@ -726,8 +729,19 @@ class TestImageSearcher:
         cached_path = IMAGE_CACHE_DIR / f"{cache_key}.jpg"
         cached_path.parent.mkdir(parents=True, exist_ok=True)
         cached_path.write_bytes(b"cached_data")
-        cached_path.with_suffix(".credits.txt").write_text(
-            "provider: ddg\nlicense: UNVERIFIED\n"
+        cached_path.with_suffix(".credits.json").write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "kind": "web",
+                    "provider": "commons",
+                    "title": "File:Cached.jpg",
+                    "image_url": "https://upload.wikimedia.org/cached.jpg",
+                    "source_page": "https://commons.wikimedia.org/wiki/File:Cached.jpg",
+                    "license": "CC BY 4.0",
+                    "license_verified": True,
+                }
+            )
         )
 
         with (
@@ -742,7 +756,7 @@ class TestImageSearcher:
         assert mock_search.call_count == 2  # cached prompt doesn't search
 
         cached_path.unlink(missing_ok=True)
-        cached_path.with_suffix(".credits.txt").unlink(missing_ok=True)
+        cached_path.with_suffix(".credits.json").unlink(missing_ok=True)
 
     @patch("autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["commons", "ddg"])
     @patch(

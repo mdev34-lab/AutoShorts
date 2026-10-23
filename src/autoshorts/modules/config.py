@@ -39,6 +39,7 @@ __all__ = [
     "OUTPUT_DIR",
     "IMAGE_CACHE_DIR",
     "IMAGE_PROVIDERS",
+    "ALLOW_UNVERIFIED_IMAGES",
     "IMAGE_SEARCH_SAFE",
     "IMAGE_SEARCH_PER_QUERY",
     "IMAGE_MIN_WIDTH",
@@ -168,6 +169,9 @@ IMAGE_PROVIDERS = [
     for p in os.getenv("IMAGE_PROVIDERS", "commons").split(",")
     if p.strip()
 ]
+# Images without verified reuse rights (e.g. DDG results) are skipped unless
+# explicitly allowed; credits then mark the video "publication review required".
+ALLOW_UNVERIFIED_IMAGES = _get_env_bool("ALLOW_UNVERIFIED_IMAGES", False)
 IMAGE_SEARCH_PER_QUERY = _get_env_int("IMAGE_SEARCH_PER_QUERY", 5)
 IMAGE_MIN_WIDTH = _get_env_int("IMAGE_MIN_WIDTH", 720)
 IMAGE_MIN_HEIGHT = _get_env_int("IMAGE_MIN_HEIGHT", 720)
