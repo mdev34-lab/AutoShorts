@@ -288,6 +288,11 @@ def search_commons(
         evidence = fit_evidence(query, title, f"{description} {categories}")
         if evidence is None:
             continue
+        # A title alone is cheap to stuff with keywords. Positive subject
+        # evidence needs a SECOND, independent metadata field (the uploader's
+        # description/categories) that also covers the whole query.
+        if fit_evidence(query, "", f"{description} {categories}") is None:
+            continue
         artist = _TAG_RE.sub(
             " ", html.unescape((meta.get("Artist") or {}).get("value") or "")
         ).strip()

@@ -382,3 +382,17 @@ def test_full_entity_coverage_still_admits_a_real_match():
     assert image_sources.fit_evidence(
         "Seedorf Corinthians 2012", "Seedorf in Corinthians shirt, 2012"
     )
+
+
+def test_commons_title_only_keyword_match_is_not_subject_evidence():
+    """A keyword-stuffed title with an unrelated description/categories is not
+    positive subject evidence (title and description must agree)."""
+    pages = [
+        _commons_page(
+            "File:Apple iPhone launch.jpg",
+            "CC BY-SA 4.0",
+            description="A bowl of fruit on a table",
+        )
+    ]
+    with patch.object(image_sources.requests, "get", return_value=_mock_commons(pages)):
+        assert image_sources.search_commons("Apple iPhone launch") == []
