@@ -90,3 +90,18 @@ def test_storefront_page_without_main_uses_meta_description_and_skips_junk():
     assert "290 ANSI de brilho" in surfaces and "resolução 720P" in surfaces
     # bare, attribute-less quantities are never narratable atoms
     assert not any("7mm" in s or "5W" in s or "99W" in s for s in surfaces)
+
+
+def test_conflicting_or_lone_numeric_claims_are_omitted_not_chosen():
+    from autoshorts.modules.product.evidence import reconcile_atoms
+
+    a = atoms_from_text("290 ANSI brightness, 720P HD, WiFi 6", "a.example.org")
+    b = atoms_from_text("170 ANSI brightness, 720P HD, Bluetooth", "b.example.org")
+    out = {x.surface for x in reconcile_atoms(a + b)}
+    assert not any("ANSI" in s for s in out)  # 290 vs 170: neither is chosen
+    assert "resolução 720P" in out and "Wi-Fi" in out and "Bluetooth" in out
+    # a lone single-host number is not corroborated
+    assert not any("ANSI" in x.surface for x in reconcile_atoms(a))
+    # two hosts agreeing on a value keep it
+    c = atoms_from_text("290 ANSI brightness", "c.example.org")
+    assert any("290 ANSI" in x.surface for x in reconcile_atoms(a + c))

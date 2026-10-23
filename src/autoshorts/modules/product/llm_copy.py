@@ -57,11 +57,13 @@ def _prompt(code: str, atoms: list) -> str:
     return (
         "Escreva um roteiro curto em português do Brasil para narrar um vídeo "
         f"vertical do produto {code}. Use SOMENTE os fatos abaixo, atribuídos "
-        "ao site de origem (ex.: 'Segundo o site X, ...'). Proibido: adjetivos "
+        "ao site de origem na PRIMEIRA frase de fatos e de novo só na última "
+        "(as do meio não repetem o site). Proibido: adjetivos "
         "de opinião, comparações, preço, benefícios, qualquer fato que não "
-        "esteja na lista. Escreva de 6 a 9 frases curtas, uma por linha, sem "
-        "numeração, repetindo e reorganizando os fatos se precisar, e termine "
-        "chamando para ver os detalhes no link.\n\nFatos:\n" + facts
+        "esteja na lista. Escreva de 5 a 8 frases curtas e naturais, uma por "
+        "linha, sem numeração, uma frase por fato (agrupe fatos relacionados "
+        "em uma frase se ficar mais natural). NÃO escreva abertura nem "
+        "chamada final: só as frases de fatos.\n\nFatos:\n" + facts
     )
 
 

@@ -20,7 +20,7 @@ from ..modules.image_searcher import ImageSearcher
 from ..modules.logging_system import log
 from ..modules.product.discovery import search_image_candidates
 from ..modules.product.errors import ProductPipelineError
-from ..modules.product.evidence import host_label, page_atoms
+from ..modules.product.evidence import host_label, page_atoms, reconcile_atoms
 from ..modules.product.llm_copy import polish_script
 from ..modules.product.narration import compose_showcase_script
 from ..modules.product.network import safe_get
@@ -109,6 +109,7 @@ class ProductGenerator(ExplainerGenerator):
                 f"Verified model identifier on {len(seen_hosts)} page host(s)",
                 "SUCCESS",
             )
+            atoms = reconcile_atoms(atoms)
             unique_facts = {a.key for a in atoms}
             if len(unique_facts) < MIN_FACT_ATOMS:
                 log(

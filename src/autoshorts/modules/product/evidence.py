@@ -243,3 +243,37 @@ def page_atoms(page) -> list[Atom]:
             for atom in atoms_from_text(text, source):
                 merged.setdefault(atom.key, atom)
     return list(merged.values())
+
+
+def reconcile_atoms(atoms: list[Atom]) -> list[Atom]:
+    """Drop disputed or uncorroborated numeric claims; never pick a side.
+
+    - Resolution atoms (720P, 4K): dropped when two atoms disagree.
+    - Attribute-bound specs (brightness, memory, storage, weight...): kept only
+      when at least two DIFFERENT hosts state the same value and none states
+      another. One host alone (or any disagreement, even inside the same site
+      across variants/revisions) is not enough to narrate a number.
+    - Features carry no number and pass through.
+    """
+    groups: dict[tuple, list[Atom]] = {}
+    for atom in atoms:
+        if atom.key[0] != "spec":
+            continue
+        _kind, _number, unit, attribute = atom.key
+        group = ("resolution",) if attribute is None else ("attr", attribute)
+        groups.setdefault(group, []).append(atom)
+    keep: list[Atom] = []
+    for atom in atoms:
+        if atom.key[0] != "spec":
+            keep.append(atom)
+            continue
+        attribute = atom.key[3]
+        group = ("resolution",) if attribute is None else ("attr", attribute)
+        members = groups[group]
+        values = {a.key[1:3] for a in members}
+        if len(values) > 1:
+            continue  # sources disagree: omit, do not choose
+        if attribute is not None and len({a.source for a in members}) < 2:
+            continue  # a lone number is not corroborated
+        keep.append(atom)
+    return keep
