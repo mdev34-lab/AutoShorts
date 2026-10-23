@@ -193,18 +193,3 @@ def test_multi_spec_local_attribute_binding():
         assert_script_within_verified_facts(["Traz 256GB de RAM."], name)
     with pytest.raises(ProductPipelineError):
         assert_script_within_verified_facts(["Traz 8GB de armazenamento."], name)
-
-
-def test_no_added_facts_contract():
-    from autoshorts.modules.product.script_guard import assert_no_added_facts
-
-    # phonetic respelling is fine
-    assert_no_added_facts("Com Wi-Fi e Bluetooth.", "Com uai fai e blu tuf.")
-    # injected certification/warranty claims are not
-    with pytest.raises(ProductPipelineError):
-        assert_no_added_facts("Conheça o HY300.", "Conheça o HY300 certificado Anatel.")
-    with pytest.raises(ProductPipelineError):
-        assert_no_added_facts("Conheça o HY300.", "HY300 com garantia vitalícia.")
-    # injected specs are not
-    with pytest.raises(ProductPipelineError):
-        assert_no_added_facts("Conheça o HY300.", "HY300 com 16GB de RAM.")

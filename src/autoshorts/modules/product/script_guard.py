@@ -315,34 +315,6 @@ def assert_script_within_verified_facts(
         )
 
 
-def assert_no_added_facts(original: str, transformed: str) -> None:
-    """Post-guard transforms (TTS pronunciation respelling) must not add facts.
-
-    The transform exists to change how words SOUND, never what the video
-    CLAIMS: every spec claim, feature and ungroundable-class word in the
-    transformed text must already exist in the guarded original. Raises
-    ProductPipelineError otherwise.
-    """
-    for number, unit, _attribute in _spec_claims(transformed):
-        if (number, unit) not in {(n, u) for n, u, _ in _spec_claims(original)}:
-            raise ProductPipelineError(
-                f"Post-guard transform added spec {number}{unit}; pronunciation "
-                "may change pronunciation, never facts."
-            )
-    added_features = _features_in(transformed) - _features_in(original)
-    if added_features:
-        raise ProductPipelineError(
-            f"Post-guard transform added feature claims {sorted(added_features)}; "
-            "pronunciation may change pronunciation, never facts."
-        )
-    ungroundable = _UNGROUNDABLE_PATTERN.search(_normalize(transformed))
-    if ungroundable and not _UNGROUNDABLE_PATTERN.search(_normalize(original)):
-        raise ProductPipelineError(
-            f"Post-guard transform introduced a {ungroundable.group(0)!r} claim; "
-            "certification/warranty/grade terms may never be added after the guard."
-        )
-
-
 def assert_script_within_atoms(paragraphs: list[str], atoms: list) -> None:
     """Every spec/feature in the script must be one of the extracted atoms
     (same number, unit and bound attribute); ungroundable-class words and

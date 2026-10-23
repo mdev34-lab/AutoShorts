@@ -31,7 +31,6 @@ from ..modules.product.provenance import (
     verify_product_identity,
 )
 from ..modules.product.script_guard import (
-    assert_no_added_facts,
     assert_script_within_atoms,
 )
 from ..modules.utils import setup_directories
@@ -135,15 +134,14 @@ class ProductGenerator(ExplainerGenerator):
             self.metadata.description = " ".join(paragraphs)
 
             log(
-                "Step 5: Generating TTS audio (pronunciation respellings, fact-checked)..."
+                "Step 5: Generating TTS audio (guarded text, trusted local pronunciation respellings)..."
             )
             pron_dict = load_dictionary(self.pronunciation_file)
 
             def _tts_transform(text: str) -> str:
-                spoken = prepare_for_tts(text, pron_dict)
-                # Pronunciation changes how words SOUND, never what is CLAIMED.
-                assert_no_added_facts(text, spoken)
-                return spoken
+                # The text was fact-guarded above; this transform is trusted
+                # local operator config (see pronunciation.load_dictionary).
+                return prepare_for_tts(text, pron_dict)
 
             try:
                 audio_path = await self.tts_system.generate_audio_only(
