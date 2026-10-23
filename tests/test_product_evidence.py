@@ -64,3 +64,29 @@ def test_guard_rejects_spec_and_feature_claims_outside_the_atoms():
     ):
         with pytest.raises(ProductPipelineError):
             assert_script_within_atoms([bad], atoms)
+
+
+class _Page:
+    url = "https://www.loja.example.org/p/hy300"
+    title = "HY300 Smart Projector"
+    h1 = "HY300 Smart Projector"
+    meta_title = ""
+
+    def __init__(self, html_text):
+        self.html_text = html_text
+
+
+def test_storefront_page_without_main_uses_meta_description_and_skips_junk():
+    from autoshorts.modules.product.evidence import page_atoms
+
+    html = (
+        '<html><head><meta name="description" content="HY300 delivers 720P HD, '
+        '290 ANSI brightness, WiFi 6, Bluetooth 5.4"></head><body>'
+        "<nav><li>Frete 99W</li></nav>"
+        "<div><p>Gap 7mm entre as peças</p><p>Alto-falante 1*5W</p></div>"
+        "</body></html>"
+    )
+    surfaces = sorted(a.surface for a in page_atoms(_Page(html)))
+    assert "290 ANSI de brilho" in surfaces and "resolução 720P" in surfaces
+    # bare, attribute-less quantities are never narratable atoms
+    assert not any("7mm" in s or "5W" in s or "99W" in s for s in surfaces)

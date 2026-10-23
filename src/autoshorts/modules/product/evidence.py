@@ -13,6 +13,7 @@ true, only that a verified page states it in a clause the parser can bind.
 
 from __future__ import annotations
 
+import html
 import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
@@ -144,7 +145,12 @@ def atoms_from_text(text: str, source: str) -> list[Atom]:
                 )
                 if attribute is _AMBIGUOUS:
                     continue
+                if attribute is None and not resolution:
+                    continue  # a bare "7mm" or "5W" says nothing narratable
                 spec = m.group(0).replace(" ", "")
+                unit_text = m.group(unit_group)
+                if len(unit_text) > 2 and unit_text.isalpha():
+                    spec = f"{number} {unit_text}"  # "290 ANSI", read aloud
                 if attribute:
                     surface = f"{spec} de {_ATTRIBUTE_LABEL[attribute]}"
                 elif resolution:
@@ -168,10 +174,12 @@ class _BodyLines(HTMLParser):
     _SKIP = {"script", "style", "nav", "footer", "header", "aside", "noscript"}
     _LINE = {"li", "td", "th", "dd", "p"}
 
-    def __init__(self) -> None:
+    def __init__(self, whole_page: bool = False) -> None:
         super().__init__(convert_charrefs=True)
         self.lines: list[str] = []
-        self._main = 0
+        # Pages without <main>/<article> (many storefront themes) are read as
+        # a whole; nav/header/footer/aside/script are still skipped.
+        self._main = 1 if whole_page else 0
         self._skip = 0
         self._buf: list[str] | None = None
 
@@ -199,13 +207,33 @@ class _BodyLines(HTMLParser):
             self._buf.append(data)
 
 
+_META_RE = re.compile(
+    r"<meta\s[^>]*?(?:name|property)=[\"'](?:description|og:description|"
+    r"twitter:description)[\"'][^>]*?content=[\"']([^\"']*)[\"']",
+    re.I,
+)
+
+
+def _meta_descriptions(html_text: str) -> list[str]:
+    """Publisher-declared page descriptions (same page, same host)."""
+    seen: list[str] = []
+    for raw in _META_RE.findall(html_text):
+        text = " ".join(html.unescape(raw).split())
+        if text and text not in seen:
+            seen.append(text)
+    return [t[: _MAX_CLAUSE * 4] for t in seen]
+
+
 def page_atoms(page) -> list[Atom]:
     """Atoms from a verified page: identity fields plus bounded body spec lines."""
     source = host_label(page.url)
     texts = [page.title, page.h1, getattr(page, "meta_title", "")]
-    parser = _BodyLines()
+    html_text = getattr(page, "html_text", "") or ""
+    texts.extend(_meta_descriptions(html_text))
+    has_region = re.search(r"<(main|article)[\s>]", html_text, re.I) is not None
+    parser = _BodyLines(whole_page=not has_region)
     try:
-        parser.feed(getattr(page, "html_text", "") or "")
+        parser.feed(html_text)
     except Exception:  # malformed HTML: identity fields only
         parser.lines = []
     texts.extend(line for line in parser.lines[:200] if len(line) <= _MAX_CLAUSE)
