@@ -458,3 +458,90 @@ class TestGetSystemFont:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+def test_font_size_scales_with_frame_width():
+    from autoshorts.modules.subtitle_system import FONT_SIZE, _effective_font_size
+
+    assert _effective_font_size(720) == FONT_SIZE  # calibrated baseline unchanged
+    assert _effective_font_size(1080) == round(FONT_SIZE * 1.5)
+    assert _effective_font_size(360) == max(1, round(FONT_SIZE / 2))
+    assert _effective_font_size(1) >= 1
+
+
+class TestVerticalFitClamp:
+    """Scaled fonts must shift subtitle blocks up, never clip past the bottom."""
+
+    LONG_VTT = """WEBVTT
+
+00:00.000 --> 00:02.000
+Clarence Seedorf chega ao Corinthians em meio a uma crise gigante no clube
+
+00:02.000 --> 00:04.000
+Torcida protesta contra a diretoria enquanto o time afunda na tabela
+"""
+
+    SHORT_VTT = """WEBVTT
+
+00:00.000 --> 00:02.000
+Gol aos 40 do segundo tempo
+"""
+
+    def _vtt_file(self, tmp_path, content):
+        p = tmp_path / "cap.vtt"
+        p.write_text(content)
+        return str(p)
+
+    def test_simple_path_never_clips_bottom_at_1080(self, tmp_path):
+        from autoshorts.modules.config import BOTTOM_MARGIN
+
+        r = SubtitleRenderer()
+        clips = r._create_simple_subtitles(
+            self._vtt_file(tmp_path, self.LONG_VTT), (1080, 1920)
+        )
+        assert clips, "expected subtitle clips"
+        for c in clips:
+            _, y = c.pos(0)
+            assert y >= 0
+            assert y + c.size[1] <= 1920 - BOTTOM_MARGIN
+
+    def test_simple_path_short_cue_keeps_baseline_position_at_720(self, tmp_path):
+        r = SubtitleRenderer()
+        clips = r._create_simple_subtitles(
+            self._vtt_file(tmp_path, self.SHORT_VTT), (720, 1280)
+        )
+        assert clips, "expected subtitle clips"
+        _, y = clips[0].pos(0)
+        assert y == int(1280 * 0.65)  # calibrated baseline untouched
+
+    def test_highlight_path_block_stays_above_bottom_margin(self, tmp_path):
+        from autoshorts.modules.config import BOTTOM_MARGIN, LINE_SPACING
+
+        positions = []
+
+        class FakeClip:
+            def __init__(self, text=None, font_size=None, **kw):
+                self.size = (max(len(text or ""), 1) * font_size // 2, font_size)
+
+            def with_position(self, xy):
+                positions.append((xy[1], self.size[1]))
+                return self
+
+            def with_start(self, t):
+                return self
+
+            def with_duration(self, d):
+                return self
+
+            def close(self):
+                pass
+
+        r = SubtitleRenderer()
+        with patch("autoshorts.modules.subtitle_system.TextClip", FakeClip):
+            r._create_highlight_subtitles(
+                self._vtt_file(tmp_path, self.LONG_VTT), (1080, 1920)
+            )
+        assert positions, "expected positioned clips"
+        for y, h in positions:
+            assert y >= 0
+            assert y + h <= 1920 - BOTTOM_MARGIN + LINE_SPACING
