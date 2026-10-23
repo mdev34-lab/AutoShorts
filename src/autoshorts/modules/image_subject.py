@@ -164,7 +164,7 @@ def check_subject(path: Path, subject: str) -> str | None:
 # for it and the pipeline falls back (AI image).
 _FUNCTION_WORDS = frozenset(
     "a an the of in on at with and or for to from by de da do das dos e em no na "
-    "nos nas com para por um uma o as os ao aos sobre over under near".split()
+    "nos nas com para por um uma o as os ao aos à às sobre over under near".split()
 )
 _GENERIC_WORDS = frozenset(
     """
