@@ -163,8 +163,8 @@ def synthesize(
     """
     sentences = _sentences(text)  # validates before any heavy work
     try:
-        from piper import PiperVoice
-        from piper.config import SynthesisConfig
+        from piper import PiperVoice  # type: ignore[import-not-found]
+        from piper.config import SynthesisConfig  # type: ignore[import-not-found]
     except ImportError as e:
         raise PiperError(
             "piper-tts is not installed. Install with "
