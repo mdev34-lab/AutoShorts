@@ -526,3 +526,51 @@ def test_short_clip_last_encoded_frame_transparent_at_any_fps():
             assert px[0] > 195 and px[1] < 6 and px[2] < 6, (
                 f"ghost at fps={fps} dur={duration}: {px}"
             )
+
+
+def test_zoomed_overlay_edge_has_no_colour_fringe_from_transparent_pixels():
+    """Straight-alpha Lanczos mixed the colour hidden under transparent pixels
+    into the visible edge. Every pixel with real alpha, edge band included,
+    must keep the opaque region's colour."""
+    from moviepy import ImageClip
+
+    from autoshorts.modules import video_compositor as vc
+
+    w, h, boundary = 400, 72, 60
+    rgba = np.zeros((h, w, 4), dtype="uint8")
+    rgba[:, :boundary] = (0, 255, 0, 0)
+    rgba[:, boundary:] = (108, 0, 117, 255)
+    overlay = vc.VideoCompositor()._apply_overlay_animation(
+        ImageClip(rgba).with_duration(1.0), 1.0
+    )
+    t = 0.5
+    rgb = overlay.get_frame(t).astype(float)
+    alpha = overlay.mask.get_frame(t)
+    row, arow = rgb[h // 2], alpha[h // 2]
+    visible = np.where(arow > 0.02)[0]
+    assert len(visible) > 0
+    for x in visible:
+        assert (
+            abs(row[x][0] - 108) <= 3 and row[x][1] <= 3 and abs(row[x][2] - 117) <= 3
+        ), f"fringe at x={x} alpha={arow[x]:.2f}: {row[x]}"
+
+
+def test_short_clip_fade_out_has_partial_opacity_frames():
+    from moviepy import ImageClip
+
+    from autoshorts.modules import video_compositor as vc
+
+    compositor = vc.VideoCompositor()
+    for fps in (24, 30):
+        duration = 0.5
+        white = ImageClip(np.full((36, 64, 3), 255, dtype="uint8")).with_duration(
+            duration
+        )
+        overlay = compositor._apply_overlay_animation(white, duration)
+        n = int(round(duration * fps))
+        ops = [float(overlay.mask.get_frame(i / fps).max()) for i in range(n)]
+        assert ops[-1] == 0.0
+        partial = [o for o in ops if 0.05 < o < 0.95]
+        assert len(partial) >= 2, f"fade is a cut at fps={fps}: {ops}"
+        after_peak = ops[ops.index(max(ops)) :]
+        assert all(a >= b - 1e-9 for a, b in zip(after_peak, after_peak[1:])), ops

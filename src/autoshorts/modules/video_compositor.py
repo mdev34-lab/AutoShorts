@@ -185,11 +185,17 @@ class VideoCompositor:
             # t = duration. Finish the fade in absolute time, 1.5 frames
             # before the end, so ANY clip length encodes a truly transparent
             # final frame (a fixed 0.95 fraction left 0.0185 on 0.5 s clips).
-            fade_out_start_t = fade_out_start * duration
-            fade_out_end_t = max(
-                fade_out_start_t + 1e-3,
-                min(0.95 * duration, duration - 1.5 / max(1, VIDEO_FPS)),
+            fps = max(1, VIDEO_FPS)
+            fade_out_end_t = min(0.95 * duration, duration - 1.5 / fps)
+            # The ramp must span at least two frame periods so a short clip
+            # shows partial opacities instead of cutting from 1 to 0 in one
+            # frame (0.5 s at 24 fps otherwise had a 0.0125 s window).
+            fade_out_start_t = min(
+                fade_out_start * duration, fade_out_end_t - 2.0 / fps
             )
+            fade_out_start_t = max(fade_out_start_t, fade_in_end * duration + 1e-3)
+            fade_out_end_t = max(fade_out_end_t, fade_out_start_t + 1e-3)
+            fade_out_start = fade_out_start_t / duration
 
             if progress < fade_in_end:
                 return self._ease_in_out_cubic(progress / fade_in_end)
@@ -224,9 +230,34 @@ class VideoCompositor:
             if arr.dtype == np.uint8:
                 img = Image.fromarray(cropped)
                 return np.array(img.resize((w, h), Image.Resampling.LANCZOS))
+            return np.clip(_zoom_float(arr, scale), 0.0, 1.0).astype(float)
+
+        def _zoom_float(arr, scale):
+            h, w = arr.shape[:2]
+            crop_w = max(1, int(round(w / scale)))
+            crop_h = max(1, int(round(h / scale)))
+            x1 = (w - crop_w) // 2
+            y1 = (h - crop_h) // 2
+            cropped = arr[y1 : y1 + crop_h, x1 : x1 + crop_w]
             img = Image.fromarray(np.asarray(cropped, dtype=np.float32), mode="F")
-            out = np.array(img.resize((w, h), Image.Resampling.BILINEAR))
-            return np.clip(out, 0.0, 1.0).astype(float)
+            return np.array(img.resize((w, h), Image.Resampling.BILINEAR))
+
+        def _zoom_premultiplied(rgb, alpha, scale):
+            """Zoom RGB and its alpha together in premultiplied space.
+
+            Resampling straight RGB blends the colour hidden under fully
+            transparent pixels into visible edges (coloured fringes), so the
+            colour is weighted by alpha, resized with the same filter as the
+            alpha, then divided back out.
+            """
+            a = np.clip(np.asarray(alpha, dtype=np.float32), 0.0, 1.0)
+            pre = rgb.astype(np.float32) * a[..., None]
+            chans = [_zoom_float(pre[..., i], scale) for i in range(pre.shape[-1])]
+            a2 = _zoom_float(a, scale)
+            safe = np.where(a2 > 1e-4, a2, 1.0)
+            out = np.stack(chans, axis=-1) / safe[..., None]
+            out = np.where(a2[..., None] > 1e-4, out, 0.0)
+            return np.clip(np.rint(out), 0, 255).astype(np.uint8), a2
 
         def apply_overlay(get_frame, t):
             frame = get_frame(t)
@@ -234,7 +265,10 @@ class VideoCompositor:
 
             # Zoom: center-crop + resize (constant frame size)
             if scale > 1.001 and _pil:
-                frame = _zoom_array(frame, scale)
+                if base_mask is not None:
+                    frame, _ = _zoom_premultiplied(frame, base_mask.get_frame(t), scale)
+                else:
+                    frame = _zoom_array(frame, scale)
 
             # Motion blur: velocity-driven Gaussian
             if _pil and max_sigma > 0:
