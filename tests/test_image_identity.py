@@ -353,3 +353,24 @@ def test_dotsegment_file_is_not_a_portrait_filename(name):
         "https://upload.wikimedia.org/wikipedia/commons/a/ab/" + name
     )
     assert extract(page, media) is None
+
+
+@pytest.mark.parametrize("pageid", [111425118, 25807031])
+def test_actual_commons_positive_claims_without_datatype_are_evidence(pageid):
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).parent / "fixtures"
+    page = json.loads((root / f"commons-file{pageid}.json").read_text())
+    media = json.loads((root / f"commons-M{pageid}.json").read_text())
+    assert all("datatype" not in c["mainsnak"] for c in media["statements"]["P180"])
+    e = extract(page, media)
+    assert e and e.entity_id == "Q484909"
+
+
+def test_missing_datatype_cannot_mask_wrong_explicit_datavalue_type():
+    page, media = fixture()
+    snak = media["statements"]["P180"][0]["mainsnak"]
+    del snak["datatype"]
+    snak["datavalue"]["type"] = "string"
+    assert extract(page, media) is None

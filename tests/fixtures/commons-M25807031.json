@@ -1,0 +1,447 @@
+{
+  "pageid": 25807031,
+  "ns": 6,
+  "title": "File:Clarence Seedorf 1 (4867567772).jpg",
+  "lastrevid": 1159047280,
+  "modified": "2026-02-03T22:59:28Z",
+  "type": "mediainfo",
+  "id": "M25807031",
+  "labels": {},
+  "descriptions": {},
+  "statements": {
+    "P275": [
+      {
+        "mainsnak": {
+          "snaktype": "value",
+          "property": "P275",
+          "hash": "82d5b402aa0a79040483a8c9264bd484c6c13f67",
+          "datavalue": {
+            "value": {
+              "entity-type": "item",
+              "numeric-id": 19125117,
+              "id": "Q19125117"
+            },
+            "type": "wikibase-entityid"
+          }
+        },
+        "type": "statement",
+        "id": "M25807031$EE789F3A-0405-4D31-B01A-268ACFE52A56",
+        "rank": "normal"
+      }
+    ],
+    "P6216": [
+      {
+        "mainsnak": {
+          "snaktype": "value",
+          "property": "P6216",
+          "hash": "5570347fdc76d2a80732f51ea10ee4b144a084e0",
+          "datavalue": {
+            "value": {
+              "entity-type": "item",
+              "numeric-id": 50423863,
+              "id": "Q50423863"
+            },
+            "type": "wikibase-entityid"
+          }
+        },
+        "type": "statement",
+        "id": "M25807031$D3B850CE-1BE6-4FD0-AF73-1FF092BD41AC",
+        "rank": "normal"
+      }
+    ],
+    "P4082": [
+      {
+        "mainsnak": {
+          "snaktype": "value",
+          "property": "P4082",
+          "hash": "9366b6ed26332b5ea024bc03f437d3718b2b8b10",
+          "datavalue": {
+            "value": {
+              "entity-type": "item",
+              "numeric-id": 66219,
+              "id": "Q66219"
+            },
+            "type": "wikibase-entityid"
+          }
+        },
+        "type": "statement",
+        "id": "M25807031$1D15AFB9-71A8-4448-8A6B-8E43FA84AACA",
+        "rank": "normal"
+      }
+    ],
+    "P7482": [
+      {
+        "mainsnak": {
+          "snaktype": "value",
+          "property": "P7482",
+          "hash": "b82dd47222a210c6dc1f428b693c2fbf7b0e0d6e",
+          "datavalue": {
+            "value": {
+              "entity-type": "item",
+              "numeric-id": 74228490,
+              "id": "Q74228490"
+            },
+            "type": "wikibase-entityid"
+          }
+        },
+        "type": "statement",
+        "qualifiers": {
+          "P137": [
+            {
+              "snaktype": "value",
+              "property": "P137",
+              "hash": "3d8cd4c1ab91d3d9a14900210faaebf1a98b947b",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 103204,
+                  "id": "Q103204"
+                },
+                "type": "wikibase-entityid"
+              }
+            }
+          ],
+          "P973": [
+            {
+              "snaktype": "value",
+              "property": "P973",
+              "hash": "bdaf6a220aa5691327f119f7e5c38413491f3229",
+              "datavalue": {
+                "value": "https://www.flickr.com/photos/ronmacphotos/4867567772/",
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "qualifiers-order": [
+          "P137",
+          "P973"
+        ],
+        "id": "M25807031$7794A837-5ECD-4B8E-9A4C-2FD0A6B83E44",
+        "rank": "normal"
+      }
+    ],
+    "P170": [
+      {
+        "mainsnak": {
+          "snaktype": "somevalue",
+          "property": "P170",
+          "hash": "d3550e860f988c6675fff913440993f58f5c40c5"
+        },
+        "type": "statement",
+        "qualifiers": {
+          "P2699": [
+            {
+              "snaktype": "value",
+              "property": "P2699",
+              "hash": "b545f67044fa8a1f55b910a00e26ac5ffd78b24e",
+              "datavalue": {
+                "value": "https://www.flickr.com/people/7332125@N04",
+                "type": "string"
+              }
+            }
+          ],
+          "P3267": [
+            {
+              "snaktype": "value",
+              "property": "P3267",
+              "hash": "f57919195b111213d26cce8223fd6d6a3afbfc20",
+              "datavalue": {
+                "value": "7332125@N04",
+                "type": "string"
+              }
+            }
+          ],
+          "P2093": [
+            {
+              "snaktype": "value",
+              "property": "P2093",
+              "hash": "c50f0f63902991a3b226cfa887e1d42543f77ed3",
+              "datavalue": {
+                "value": "Ronnie Macdonald",
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "qualifiers-order": [
+          "P2699",
+          "P3267",
+          "P2093"
+        ],
+        "id": "M25807031$FDDE7300-DDB5-456F-9010-9537B058A45E",
+        "rank": "normal"
+      }
+    ],
+    "P1259": [
+      {
+        "mainsnak": {
+          "snaktype": "value",
+          "property": "P1259",
+          "hash": "1443dadc1bdfffe260a4823375ac12ad4d777cfd",
+          "datavalue": {
+            "value": {
+              "latitude": 51.555047,
+              "longitude": -0.109026,
+              "altitude": null,
+              "precision": 1e-06,
+              "globe": "http://www.wikidata.org/entity/Q2"
+            },
+            "type": "globecoordinate"
+          }
+        },
+        "type": "statement",
+        "id": "M25807031$28AF859E-6777-4AF7-AEED-62B3F1CEB2D3",
+        "rank": "normal"
+      }
+    ],
+    "P571": [
+      {
+        "mainsnak": {
+          "snaktype": "value",
+          "property": "P571",
+          "hash": "49d968c494430e6e7f3b772d633a757cdcac8c8d",
+          "datavalue": {
+            "value": {
+              "time": "+2010-07-31T00:00:00Z",
+              "timezone": 0,
+              "before": 0,
+              "after": 0,
+              "precision": 11,
+              "calendarmodel": "http://www.wikidata.org/entity/Q1985727"
+            },
+            "type": "time"
+          }
+        },
+        "type": "statement",
+        "id": "M25807031$6BACE4B2-1C36-4550-9440-BA51CFCABA1B",
+        "rank": "normal"
+      }
+    ],
+    "P1163": [
+      {
+        "mainsnak": {
+          "snaktype": "value",
+          "property": "P1163",
+          "hash": "723d30b878d4a8deb968b0db429888e5353661a2",
+          "datavalue": {
+            "value": "image/jpeg",
+            "type": "string"
+          }
+        },
+        "type": "statement",
+        "id": "M25807031$03AB714E-023A-455A-BA6A-FE0FBBB5A949",
+        "rank": "normal"
+      }
+    ],
+    "P4092": [
+      {
+        "mainsnak": {
+          "snaktype": "value",
+          "property": "P4092",
+          "hash": "c0b8d459ca2db4f4f1a8fe536d77033132adfc14",
+          "datavalue": {
+            "value": "b0552a8dc746301cee73e836df334992d5e9fc5a",
+            "type": "string"
+          }
+        },
+        "type": "statement",
+        "qualifiers": {
+          "P459": [
+            {
+              "snaktype": "value",
+              "property": "P459",
+              "hash": "75dff03c151b13fbab93742164121c16a6aa0de1",
+              "datavalue": {
+                "value": {
+                  "entity-type": "item",
+                  "numeric-id": 13414952,
+                  "id": "Q13414952"
+                },
+                "type": "wikibase-entityid"
+              }
+            }
+          ]
+        },
+        "qualifiers-order": [
+          "P459"
+        ],
+        "id": "M25807031$C18DDA0F-D808-4D31-99EF-9E8CAF9CB1D0",
+        "rank": "normal"
+      }
+    ],
+    "P3575": [
+      {
+        "mainsnak": {
+          "snaktype": "value",
+          "property": "P3575",
+          "hash": "b1227ee0ca4febe7e1a8f9a23945e647c44de911",
+          "datavalue": {
+            "value": {
+              "amount": "+13778978",
+              "unit": "http://www.wikidata.org/entity/Q8799"
+            },
+            "type": "quantity"
+          }
+        },
+        "type": "statement",
+        "id": "M25807031$4FA7BF02-9CC6-4C87-A211-C4EE4F0B6D63",
+        "rank": "normal"
+      }
+    ],
+    "P2048": [
+      {
+        "mainsnak": {
+          "snaktype": "value",
+          "property": "P2048",
+          "hash": "2dd6b096faca450958eec70a3d2df2659cad1a59",
+          "datavalue": {
+            "value": {
+              "amount": "+3456",
+              "unit": "http://www.wikidata.org/entity/Q355198"
+            },
+            "type": "quantity"
+          }
+        },
+        "type": "statement",
+        "id": "M25807031$6EDB01E5-1054-47BD-B7ED-43734325AC00",
+        "rank": "normal"
+      }
+    ],
+    "P2049": [
+      {
+        "mainsnak": {
+          "snaktype": "value",
+          "property": "P2049",
+          "hash": "4e12cb14e88830bd5bf6741bcd73b18c6ccf1303",
+          "datavalue": {
+            "value": {
+              "amount": "+5184",
+              "unit": "http://www.wikidata.org/entity/Q355198"
+            },
+            "type": "quantity"
+          }
+        },
+        "type": "statement",
+        "id": "M25807031$F66E3262-88EE-4ABF-B915-4967754CD3E5",
+        "rank": "normal"
+      }
+    ],
+    "P180": [
+      {
+        "mainsnak": {
+          "snaktype": "value",
+          "property": "P180",
+          "hash": "53a5ce97fc92966d579f331fee35a73df85b991d",
+          "datavalue": {
+            "value": {
+              "entity-type": "item",
+              "numeric-id": 484909,
+              "id": "Q484909"
+            },
+            "type": "wikibase-entityid"
+          }
+        },
+        "type": "statement",
+        "id": "M25807031$A84C949B-5667-445D-8FCA-EFE253BCD5F3",
+        "rank": "normal"
+      }
+    ],
+    "P6757": [
+      {
+        "mainsnak": {
+          "snaktype": "value",
+          "property": "P6757",
+          "hash": "e02b2e59dee4b763c5c898b3ca62b151bd93afbe",
+          "datavalue": {
+            "value": {
+              "amount": "+0.001",
+              "unit": "http://www.wikidata.org/entity/Q11574"
+            },
+            "type": "quantity"
+          }
+        },
+        "type": "statement",
+        "id": "M25807031$FA79FCBD-2FD2-41FE-98FA-E612EC6612CE",
+        "rank": "normal"
+      }
+    ],
+    "P6790": [
+      {
+        "mainsnak": {
+          "snaktype": "value",
+          "property": "P6790",
+          "hash": "a347516a2175e5364bf5db4621b9e3dfe0aba33e",
+          "datavalue": {
+            "value": {
+              "amount": "+16",
+              "unit": "1"
+            },
+            "type": "quantity"
+          }
+        },
+        "type": "statement",
+        "id": "M25807031$8EDECF2F-8960-41E5-9822-51256F502DDE",
+        "rank": "normal"
+      }
+    ],
+    "P6789": [
+      {
+        "mainsnak": {
+          "snaktype": "value",
+          "property": "P6789",
+          "hash": "c11fd5f4cad36aa53dcf992e9af04d7ab61d9e41",
+          "datavalue": {
+            "value": {
+              "amount": "+1250",
+              "unit": "1"
+            },
+            "type": "quantity"
+          }
+        },
+        "type": "statement",
+        "id": "M25807031$537022DB-09D2-4E87-B9B9-C1B1819207CF",
+        "rank": "normal"
+      }
+    ],
+    "P31": [
+      {
+        "mainsnak": {
+          "snaktype": "value",
+          "property": "P31",
+          "hash": "78817782cf2abc9d185934ba3b526591e12840f2",
+          "datavalue": {
+            "value": {
+              "entity-type": "item",
+              "numeric-id": 125191,
+              "id": "Q125191"
+            },
+            "type": "wikibase-entityid"
+          }
+        },
+        "type": "statement",
+        "id": "M25807031$3A5D9E94-8FA8-4990-8AEE-A53DCDA2CD37",
+        "rank": "normal"
+      }
+    ],
+    "P2151": [
+      {
+        "mainsnak": {
+          "snaktype": "value",
+          "property": "P2151",
+          "hash": "8d94c47bed5544061ad5e4b2238b406878f20c18",
+          "datavalue": {
+            "value": {
+              "amount": "+110",
+              "unit": "http://www.wikidata.org/entity/Q174789"
+            },
+            "type": "quantity"
+          }
+        },
+        "type": "statement",
+        "id": "M25807031$4E0CDEE3-0307-4ED2-B71C-8054105AB114",
+        "rank": "normal"
+      }
+    ]
+  }
+}

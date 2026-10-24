@@ -89,3 +89,11 @@ first HTML decode boundary, including repeatedly encoded hidden restrictions.
 Nothing is recursively stripped into an accepted license. Canonical source
 URLs exclude userinfo, ports and query overrides; dot-segment filenames reject.
 Original image URLs may keep the Commons API's observed tracking query.
+
+Live positive fixtures for MediaInfo M111425118 and M25807031 are now recorded
+alongside their file metadata. Commons omits mainsnak.datatype on these P180
+claims. The prototype accepts that absent key only while requiring the strict
+wikibase-entityid datavalue, item entity, matching numeric ID, property, rank and
+file/source binding. Explicit wrong datatype values reject. Both real positive
+fixtures failed before this compatibility fix and pass afterward; synthetic
+fixtures alone had masked the regression.

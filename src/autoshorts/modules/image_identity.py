@@ -119,7 +119,9 @@ def portrait_evidence(
         if (
             snak.get("snaktype") == "value"
             and snak.get("property") == "P180"
-            and snak.get("datatype") == "wikibase-item"
+            # MediaInfo's live API omits datatype; an explicit wrong value
+            # still rejects. The datavalue/entity shape below is mandatory.
+            and ("datatype" not in snak or snak["datatype"] == "wikibase-item")
             and data.get("type") == "wikibase-entityid"
             and isinstance(value, dict)
             and value.get("id") == entity_id
