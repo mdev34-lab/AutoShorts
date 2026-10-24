@@ -230,6 +230,14 @@ def model_codes(text: str) -> list[str]:
     return list(dict.fromkeys(codes))
 
 
+def scope_codes(text: str) -> list[str]:
+    """Codes that may name a product in `text`, for deciding whose facts a text
+    carries: the model codes plus ambiguous spec-looking ones ("HD 200 lumens"
+    with no resolution word before HD). Uncertainty fails closed: such a text is
+    treated as possibly naming another model, never silently as plain spec."""
+    return list(dict.fromkeys(model_codes(text) + ambiguous_spec_models(text)))
+
+
 def primary_model_code(product_name: str) -> str:
     codes = model_codes(product_name)
     if not codes:
@@ -441,7 +449,7 @@ def verify_product_identity(
         ("h1", page.h1),
         ("meta title", page.meta_title),
     ):
-        codes = model_codes(text) if isinstance(text, str) and text else []
+        codes = scope_codes(text) if isinstance(text, str) and text else []
         if codes and (expected not in codes or other_model_codes(codes, expected)):
             raise ProductNotFoundError(
                 f"Match rejected for {label}: the page {field_name} names a different "

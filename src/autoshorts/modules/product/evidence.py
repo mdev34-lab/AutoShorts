@@ -298,18 +298,15 @@ def _disputed_near_code(html_text: str, codes: list[str]) -> set[tuple]:
 
 
 def _names_other_model(text: str, expected_code: str) -> bool:
-    from .provenance import model_codes, other_model_codes
+    from .provenance import other_model_codes, scope_codes
 
-    return bool(other_model_codes(model_codes(text), expected_code))
+    return bool(other_model_codes(scope_codes(text), expected_code))
 
 
 def _heading_names_other_model(text: str, expected_code: str) -> bool:
     """Section headings fail closed: an ambiguous "HD 200 lumens" heading may
     be a model name, so it scopes its section out unless it is the expected one."""
-    from .provenance import ambiguous_spec_models, model_codes, other_model_codes
-
-    codes = model_codes(text) + ambiguous_spec_models(text)
-    return bool(other_model_codes(codes, expected_code))
+    return _names_other_model(text, expected_code)
 
 
 def page_atoms(page, expected_code: str | None = None) -> list[Atom]:

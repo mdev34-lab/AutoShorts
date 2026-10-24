@@ -504,3 +504,56 @@ def test_unit_label_after_comma_or_colon_is_not_attached_to_the_model_number():
     for title in ("HY300 Pro vs HD200 lumens 290", "HY300 Pro vs HD200"):
         with pytest.raises(ProductNotFoundError):
             verify_product_identity("HY300 Pro", page(title), label="x")
+
+
+def test_ambiguous_hd_model_fails_closed_in_identity_and_inline_facts():
+    from autoshorts.modules.product.errors import ProductNotFoundError
+    from autoshorts.modules.product.evidence import page_atoms
+    from autoshorts.modules.product.provenance import (
+        PageEvidence,
+        scope_codes,
+        verify_product_identity,
+    )
+
+    def page(title):
+        return PageEvidence(
+            url="https://m.example/p",
+            status=200,
+            title=title,
+            h1=title,
+            meta_title="",
+            identity_codes=scope_codes(title),
+        )
+
+    for title in (
+        "HY300 Pro vs HD200 lumens",
+        "HY300 Pro vs HD200 lumens (290)",
+        "HY300 Pro vs HD 200 W",
+        "HY300 Pro vs HD200\tlumens",
+    ):
+        with pytest.raises(ProductNotFoundError):
+            verify_product_identity("HY300 Pro", page(title), label="x")
+    # neutral resolution wording in a title stays valid
+    for title in (
+        "HY300 Pro Projector Native 720P HD, 290 ANSI",
+        "HY300 Pro Full HD 1080 Projector",
+        "HY300 Pro 720P HD 290 ANSI",
+    ):
+        assert verify_product_identity("HY300 Pro", page(title), label="x")
+
+    def atoms(body):
+        html = f"<main><p>HY300 Pro: Wi-Fi.</p>{body}</main>"
+        return {a.surface for a in page_atoms(_ProPage(html), expected_code="hy300pro")}
+
+    # an inline fact line about a possibly-other model never feeds this one
+    for line in (
+        "Model HD200 lumens with Bluetooth HDMI laser.",
+        "HD 200 lumens: Bluetooth, HDMI and laser.",
+    ):
+        assert atoms(f"<p>{line}</p>") == {"Wi-Fi"}, line
+    # neutral spec lines keep their facts
+    for line in (
+        "Native 720P HD, 200 ANSI with Bluetooth.",
+        "Full HD 1080 projector with Bluetooth.",
+    ):
+        assert "Bluetooth" in atoms(f"<p>{line}</p>"), line
