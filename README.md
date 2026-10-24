@@ -89,7 +89,7 @@ MODEL_IMAGE=zimage
 VOICE=pt-BR-AntonioNeural
 TTS_RATE=+20%
 OUTPUT_DIR=output
-DEFAULT_FONT=fonts/BebasNeue-Regular.ttf
+DEFAULT_FONT=src/autoshorts/fonts/BebasNeue-Regular.ttf
 VIDEO_WIDTH=1080
 VIDEO_HEIGHT=1920
 VIDEO_FPS=24
@@ -138,7 +138,7 @@ AutoShorts/
 │   ├── test_video_compositor.py    # Video compositor (11 tests)
 │   ├── test_web_search.py
 │   └── conftest.py
-├── fonts/                          # Bundled Bebas Neue font
+├── src/autoshorts/fonts/           # Bundled Bebas Neue font (package data)
 ├── .env.example
 ├── pyproject.toml
 ├── uv.lock

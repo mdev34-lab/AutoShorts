@@ -21,6 +21,7 @@ from moviepy import TextClip
 from PIL import Image, ImageDraw, ImageFont
 
 from .config import (
+    BOTTOM_MARGIN,
     COLOR_HIGHLIGHT,
     COLOR_STROKE,
     COLOR_TEXT,
@@ -31,7 +32,18 @@ from .config import (
     SUBTITLE_MODE,
     SUBTITLE_START_Y_RATIO,
 )
+from .logging_system import log
 from .utils import strip_markdown
+
+# SUBTITLE_FONT_SIZE is calibrated for a 720px-wide frame. Scale it with the
+# actual video width so subtitles keep their intended relative size at any
+# output resolution (e.g. 1080px wide -> 1.5x), instead of shrinking relative
+# to the frame as resolution increases.
+_SUBTITLE_BASE_WIDTH = 720
+
+
+def _effective_font_size(frame_width: int) -> int:
+    return max(1, round(FONT_SIZE * frame_width / _SUBTITLE_BASE_WIDTH))
 
 
 def get_system_font():
@@ -70,20 +82,48 @@ def get_system_font():
     return "arial.ttf"
 
 
+_WARNED_FONTS: set[str] = set()
+
+
 def _load_pil_font(
     font_path: str, size: int
 ) -> ImageFont.ImageFont | ImageFont.FreeTypeFont:
-    """Load PIL font with fallback to default."""
-    try:
-        return ImageFont.truetype(font_path, size)
-    except Exception:
+    """Load a SCALABLE font honoring `size`, or say loudly what happened.
+
+    Order: configured path, the other configured fallbacks, arial.ttf, then
+    Pillow's built-in scalable default. Never the fixed ~10px bitmap font,
+    which ignores the requested size and silently breaks every measurement.
+    """
+    from .config import FALLBACK_FONTS
+
+    for candidate in (font_path, *FALLBACK_FONTS, "arial.ttf"):
         try:
-            return ImageFont.truetype("arial.ttf", size)
+            font = ImageFont.truetype(candidate, size)
         except Exception:
-            try:
-                return ImageFont.load_default()
-            except Exception:
-                return ImageFont.load("arial.ttf")
+            continue
+        if candidate != font_path and font_path not in _WARNED_FONTS:
+            _WARNED_FONTS.add(font_path)
+            log(
+                f"Subtitle font {font_path!r} not found; using {candidate!r}",
+                "WARNING",
+            )
+        return font
+    if font_path not in _WARNED_FONTS:
+        _WARNED_FONTS.add(font_path)
+        log(
+            f"No subtitle font found (tried {font_path!r} and fallbacks); "
+            "using Pillow's built-in scalable font",
+            "WARNING",
+        )
+    try:
+        return ImageFont.load_default(size)  # Pillow >= 10.1: scalable
+    except TypeError:
+        log(
+            "Pillow < 10.1 has no scalable built-in font; subtitle size cannot "
+            "be honoured. Upgrade Pillow or install a TTF font.",
+            "WARNING",
+        )
+        return ImageFont.load_default()
 
 
 @lru_cache(maxsize=512)
@@ -308,7 +348,7 @@ class SubtitleRenderer:
         clips = []
 
         base_y = int(height * SUBTITLE_START_Y_RATIO)
-        font_size = FONT_SIZE
+        font_size = _effective_font_size(width)
         stroke_width = max(STROKE_WIDTH, 1)
         canvas_pad = 60
 
@@ -385,7 +425,10 @@ class SubtitleRenderer:
                 buf.seek(0)
 
                 clip = ImageClip(buf).with_duration(duration)
-                clip = clip.with_position(((width - canvas_w) // 2, base_y))
+                # Vertical-fit clamp: scaled fonts grow the canvas, so shift the
+                # block up instead of letting the frame edge clip it.
+                pos_y = min(base_y, max(0, height - canvas_h - BOTTOM_MARGIN))
+                clip = clip.with_position(((width - canvas_w) // 2, pos_y))
 
                 clips.append(clip.with_start(start_time))
 
@@ -407,7 +450,7 @@ class SubtitleRenderer:
         clips = []
 
         base_y = int(height * SUBTITLE_START_Y_RATIO)
-        font_size = FONT_SIZE
+        font_size = _effective_font_size(width)
         stroke_width = STROKE_WIDTH
         space_width = int(font_size * 0.25)
 
@@ -431,13 +474,21 @@ class SubtitleRenderer:
                 word_count = max(len(words), 1)
                 word_duration = duration / word_count
 
-                current_y = max(base_y, int(height * 0.3))
-
                 line_heights = []
                 for line_words in lines:
                     line_text = " ".join(line_words)
                     _, h = _get_line_dimensions_cached(line_text, self.font, font_size)
                     line_heights.append(max(h, font_size))
+
+                # Vertical-fit clamp: keep the whole block above the bottom
+                # margin; scaled fonts must shift the block up, not clip it.
+                total_block_h = sum(line_heights) + LINE_SPACING * max(
+                    0, len(lines) - 1
+                )
+                current_y = min(
+                    max(base_y, int(height * 0.3)),
+                    max(0, height - total_block_h - BOTTOM_MARGIN),
+                )
 
                 for line_idx, line_words in enumerate(lines):
                     line_clips_data: list[dict[str, Any]] = []

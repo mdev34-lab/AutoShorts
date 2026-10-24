@@ -1,4 +1,5 @@
 import hashlib
+import json
 import random
 import re
 from pathlib import Path
@@ -7,17 +8,21 @@ from urllib.parse import quote
 import requests
 from PIL import Image
 
+from . import image_content, image_sources, image_subject
 from .config import (
+    ALLOW_UNVERIFIED_IMAGES,
     API_KEY,
     API_TIMEOUT_IMAGE,
     IMAGE_CACHE_DIR,
     IMAGE_MIN_HEIGHT,
     IMAGE_MIN_WIDTH,
+    IMAGE_PROVIDERS,
     IMAGE_SEARCH_PER_QUERY,
     IMAGE_SEARCH_SAFE,
     IMAGE_TEXT_REMOVAL,
     IMG_URL,
     MODEL_IMAGE,
+    OUTPUT_DIR,
     SUBJECT_FRAMING,
     TARGET_IMAGE_HEIGHT,
     TARGET_IMAGE_WIDTH,
@@ -55,6 +60,10 @@ BLOCKED_KEYWORDS: set[str] = {
     "naked",
     "seductive",
 }
+
+
+# Bump when acceptance rules change so older cache entries are refetched.
+ACCEPTANCE_POLICY = "specific-requests-fall-back-v1"
 
 
 class ImageSearcher:
@@ -176,6 +185,86 @@ class ImageSearcher:
         img.save(output_path, "JPEG", quality=85)
         img.close()
 
+    @staticmethod
+    def _cache_key(prompt: str) -> str:
+        # Versioned by provider config: legacy hashes predate provenance/fit
+        # gating and must never be reused, and a provider change invalidates.
+        # The acceptance policy is part of the key: entries made under the
+        # ALLOW_UNVERIFIED_IMAGES opt-in, or under an older/laxer policy
+        # version, are never served to a stricter run.
+        policy = "optin" if ALLOW_UNVERIFIED_IMAGES else "strict"
+        scheme = (
+            f"img3|{ACCEPTANCE_POLICY}|{policy}|{','.join(IMAGE_PROVIDERS)}|{prompt}"
+        )
+        return hashlib.sha256(scheme.encode()).hexdigest()[:16]
+
+    @staticmethod
+    def _sidecar_path(image_path: Path) -> Path:
+        return image_path.with_suffix(".credits.json")
+
+    @classmethod
+    def _read_sidecar(cls, image_path: Path) -> dict | None:
+        """Parsed provenance record, or None unless it is complete and valid.
+
+        An empty, unparsable or incomplete sidecar is NOT provenance: the
+        image is treated as having none."""
+        try:
+            data = json.loads(cls._sidecar_path(image_path).read_text("utf-8"))
+        except Exception:
+            return None
+        if not isinstance(data, dict) or data.get("schema") != 1:
+            return None
+        kind = data.get("kind")
+        if kind == "ai":
+            return data if data.get("license") and data.get("provider") else None
+        if kind != "web":
+            return None
+        required = ("title", "source_page", "image_url", "license", "provider")
+        if not all(isinstance(data.get(k), str) and data[k].strip() for k in required):
+            return None
+        for key in ("source_page", "image_url"):
+            if not data[key].startswith(("http://", "https://")):
+                return None
+        if not isinstance(data.get("license_verified"), bool):
+            return None
+        return data
+
+    @staticmethod
+    def _content_rejection(path: Path, prompt: str) -> str | None:
+        """Pixel gate on the downloaded bytes; fails closed if OCR is missing."""
+        try:
+            reason = image_content.check_image_content(path, prompt)
+        except image_content.ContentUnavailableError as exc:
+            return f"pixel content could not be checked ({exc})"
+        if reason or ALLOW_UNVERIFIED_IMAGES:
+            return reason
+        try:
+            # Broad-class similarity only (see image_subject.VERIFICATION_SCOPE).
+            return image_subject.check_subject(path, prompt)
+        except image_subject.SubjectUnavailableError as exc:
+            return f"pictured subject could not be verified ({exc})"
+
+    @classmethod
+    def _usable_cache(cls, cached_path: Path, prompt: str) -> bool:
+        """Reusable only with a valid provenance record that is still allowed
+        (legacy stock, interrupted runs, empty/UNVERIFIED records are refetched)."""
+        if not cached_path.exists():
+            return False
+        record = cls._read_sidecar(cached_path)
+        if record is None:
+            return False
+        if record["kind"] == "web":
+            if not ALLOW_UNVERIFIED_IMAGES:
+                # A cache hit must pass the same specificity gate as a fresh
+                # download, and an opt-in entry is never reused without opt-in.
+                if record.get(
+                    "unverified_opt_in"
+                ) or not image_subject.is_broad_request(prompt):
+                    return False
+            if not record["license_verified"]:
+                return ALLOW_UNVERIFIED_IMAGES
+        return True
+
     def get_images(self, prompts: list[str]) -> list[str]:
         img_paths = []
         total = len(prompts)
@@ -183,19 +272,37 @@ class ImageSearcher:
         for i, prompt in enumerate(prompts):
             log(f"Searching web image {i + 1}/{total}: '{prompt[:60]}...'", "INFO")
 
-            cache_key = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+            cache_key = self._cache_key(prompt)
             cached_path = IMAGE_CACHE_DIR / f"{cache_key}.jpg"
-            if cached_path.exists():
+            if self._usable_cache(cached_path, prompt):
                 img_paths.append(str(cached_path))
                 log(f"  Using cached: {cached_path.name}", "INFO")
                 continue
 
-            results = self.search_images(prompt)
-            results = [r for r in results if not self._is_nsfw(r)]
+            candidates = self._candidates(prompt)
+            if candidates and not ALLOW_UNVERIFIED_IMAGES:
+                # No free local check can verify a specific person, team, model,
+                # year or event in a picture; only broad classes are acceptable.
+                if not image_subject.is_broad_request(prompt):
+                    log(
+                        "  Request names a specific entity/date/event; web images "
+                        "cannot be verified, using the fallback instead",
+                        "WARNING",
+                    )
+                    candidates = []
             downloaded = False
-            for r in results:
-                url = r.get("image", "")
+            for candidate in candidates:
+                url = candidate.url
                 if not url:
+                    continue
+                # Without the opt-in a web image needs verified reuse rights AND
+                # a passing pictured-subject check on the downloaded pixels.
+                if not candidate.license and not ALLOW_UNVERIFIED_IMAGES:
+                    log(
+                        f"  Skipping {candidate.provider} image without verified "
+                        "reuse rights (set ALLOW_UNVERIFIED_IMAGES=1 to opt in)",
+                        "WARNING",
+                    )
                     continue
                 temp_path = (
                     IMAGE_CACHE_DIR
@@ -212,10 +319,25 @@ class ImageSearcher:
                             )
                             temp_path.unlink(missing_ok=True)
                             continue
+                        reason = self._content_rejection(temp_path, prompt)
+                        if reason:
+                            log(
+                                f"  Rejected by pixel content check: {reason}",
+                                "WARNING",
+                            )
+                            temp_path.unlink(missing_ok=True)
+                            continue
                         self.resize_to_fill(temp_path, cached_path)
                         temp_path.unlink(missing_ok=True)
                         img_paths.append(str(cached_path))
-                        log(f"  Downloaded & processed: {cached_path.name}", "INFO")
+                        self._write_provenance_sidecar(cached_path, candidate, prompt)
+                        log(
+                            f"  Downloaded & processed: {cached_path.name} "
+                            f"({candidate.provider}, license: "
+                            f"{candidate.license or 'unverified'}, "
+                            f"fit: {candidate.fit_evidence})",
+                            "INFO",
+                        )
                         downloaded = True
                         break
                     except Exception as e:
@@ -229,7 +351,133 @@ class ImageSearcher:
                 )
                 self._fallback_to_ai([prompt], img_paths)
 
+        self._write_credits_file(img_paths)
         return img_paths
+
+    @classmethod
+    def _write_provenance_sidecar(
+        cls, image_path: Path, candidate: "image_sources.SourceCandidate", prompt: str
+    ) -> None:
+        """Persist provenance next to the cached image so credits survive cache hits."""
+        try:
+            extra = candidate.extra or {}
+            is_ai = candidate.provider == "ai"
+            record = {
+                "schema": 1,
+                "kind": "ai" if is_ai else "web",
+                "provider": candidate.provider,
+                "prompt": prompt,
+                "title": candidate.title or ("AI-generated image" if is_ai else ""),
+                "image_url": candidate.url,
+                "source_page": extra.get("source_page") or "",
+                "creator": extra.get("creator") or "",
+                "license": candidate.license or "",
+                "license_url": extra.get("license_url") or "",
+                "license_verified": bool(candidate.license) and not is_ai,
+                "fit": candidate.fit_evidence,
+                # Say exactly what was (not) verified; never "subject verified".
+                "pictured_subject_check": (
+                    "not-run"
+                    if is_ai
+                    else "not-run (ALLOW_UNVERIFIED_IMAGES opt-in)"
+                    if ALLOW_UNVERIFIED_IMAGES
+                    else image_subject.VERIFICATION_SCOPE
+                ),
+                "unverified_opt_in": bool(ALLOW_UNVERIFIED_IMAGES and not is_ai),
+                "modification": (
+                    "Resized and cropped to the video frame; overlay text may "
+                    "have been removed and framing adjusted."
+                ),
+            }
+            if not is_ai and not record["source_page"]:
+                # The image URL is the only locator some providers expose.
+                record["source_page"] = candidate.url
+            cls._sidecar_path(image_path).write_text(
+                json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except Exception as e:
+            log(f"  Could not write provenance sidecar: {e}", "WARNING")
+
+    @classmethod
+    def _write_credits_file(cls, img_paths: list[str]) -> None:
+        """Deliver per-image credits next to the video output.
+
+        Reusable-license obligations (title, creator, source page, license and
+        its URL, modification notice) come from validated sidecars only. Any
+        image without a valid record, or without verified rights, makes the
+        file start with a PUBLICATION REVIEW REQUIRED status.
+        """
+        try:
+            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            blocks: list[str] = []
+            needs_review = 0
+            for p in img_paths:
+                record = cls._read_sidecar(Path(p))
+                name = Path(p).name
+                if record is None:
+                    needs_review += 1
+                    blocks.append(
+                        f"{name}\nUNVERIFIED: no valid provenance record; "
+                        "review before publishing"
+                    )
+                    continue
+                if record["kind"] == "ai":
+                    blocks.append(
+                        f"{name}\nAI-generated ({record['provider']}); no "
+                        "third-party source or license claimed."
+                    )
+                    continue
+                if not record["license_verified"]:
+                    needs_review += 1
+                lines = [
+                    name,
+                    f"Title: {record['title']}",
+                    f"Creator: {record.get('creator') or 'not provided by source'}",
+                    f"Source: {record['source_page']}",
+                    f"Image file: {record['image_url']}",
+                    "License: "
+                    + (
+                        record["license"]
+                        if record["license_verified"]
+                        else "UNVERIFIED - reuse rights unknown"
+                    ),
+                ]
+                if record.get("license_url"):
+                    lines.append(f"License URL: {record['license_url']}")
+                lines.append(f"Changes: {record['modification']}")
+                blocks.append("\n".join(lines))
+            status = (
+                f"PUBLICATION REVIEW REQUIRED: {needs_review} image(s) without "
+                "verified reuse rights"
+                if needs_review
+                else "Rights status: all web images carry a verified reusable license"
+            )
+            (OUTPUT_DIR / "image_credits.txt").write_text(
+                status + "\n\n" + "\n\n".join(blocks) + "\n", encoding="utf-8"
+            )
+            if needs_review:
+                log(status, "WARNING")
+        except Exception as e:
+            log(f"Could not write image credits file: {e}", "WARNING")
+
+    def _candidates(self, query: str) -> list[image_sources.SourceCandidate]:
+        """Provider-ordered candidates with provenance and fit evidence."""
+        candidates: list[image_sources.SourceCandidate] = []
+        for provider in IMAGE_PROVIDERS:
+            if provider == "commons":
+                candidates.extend(self._commons_candidates(query))
+            elif provider == "ddg":
+                raw = [r for r in self.search_images(query) if not self._is_nsfw(r)]
+                candidates.extend(image_sources.filter_ddg_results(query, raw))
+        return candidates
+
+    def _commons_candidates(self, query: str) -> list[image_sources.SourceCandidate]:
+        return image_sources.search_commons(
+            query,
+            limit=self.max_per_query,
+            min_width=self.min_width,
+            min_height=self.min_height,
+        )
 
     def _fallback_to_ai(
         self, remaining_prompts: list[str], collected_paths: list[str]
@@ -241,9 +489,9 @@ class ImageSearcher:
         headers = {"Authorization": f"Bearer {API_KEY}"}
 
         for prompt in remaining_prompts:
-            cache_key = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+            cache_key = self._cache_key(prompt)
             cached_path = IMAGE_CACHE_DIR / f"{cache_key}.jpg"
-            if cached_path.exists():
+            if self._usable_cache(cached_path, prompt):
                 collected_paths.append(str(cached_path))
                 continue
 
@@ -256,6 +504,17 @@ class ImageSearcher:
                 if resp.status_code == 200:
                     with open(cached_path, "wb") as f:
                         f.write(resp.content)
+                    self._write_provenance_sidecar(
+                        cached_path,
+                        image_sources.SourceCandidate(
+                            url=url.split("?")[0],
+                            provider="ai",
+                            license="AI-generated - no source license",
+                            attribution=None,
+                            fit_evidence="generated-for-prompt",
+                        ),
+                        prompt,
+                    )
                     collected_paths.append(str(cached_path))
                 else:
                     raise Exception(f"HTTP {resp.status_code}")

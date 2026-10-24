@@ -32,9 +32,14 @@ dependencies = [
     "opencv-python-headless>=4.8,<5",
     "pytesseract>=0.3.10",
     "num2words>=0.5.12",
+    "pillow>=10.1",
 ]
 
 [project.optional-dependencies]
+subject = [
+    "onnxruntime>=1.17",
+    "tokenizers>=0.15",
+]
 piper = [
     "piper-tts>=1.2,<2",
 ]
@@ -52,6 +57,9 @@ autoshorts = "autoshorts.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+autoshorts = ["fonts/*.ttf"]
 
 [tool.setuptools.package-dir]
 "" = "src"

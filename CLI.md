@@ -14,7 +14,7 @@ autoshorts new explainer [SUBJECT] [OPTIONS]
 | `-y, --youtube-url URL` | Direct YouTube URL (skips web search for background) |
 | `--images-only` | AI-generated images only, no YouTube background |
 | `--no-images` | Skip image overlays entirely |
-| `--images {web,ai}` | Image source: `web` (DDGS) or `ai` (Pollinations). Default: `web` |
+| `--images {web,ai}` | Image source: `web` or `ai` (Pollinations). Default: `web`. Web photos are used only for broad generic requests that pass the license allowlist, an OCR pixel gate and a local CLIP class check (optional `subject` extra and an explicit model download; the model mirror declares no license, the upstream OpenAI CLIP repo is MIT). Requests naming people, teams, products, dates or events use AI images. `ALLOW_UNVERIFIED_IMAGES=1` disables all of these gates; entries it creates are marked `unverified_opt_in` in their credits record. |
 | `--no-web-search` | Disable web search (model knowledge only) |
 | `--batch "topic1; topic2"` | Semicolon-separated subjects for batch mode |
 | `-c, --custom-instructions TEXT` | Extra instructions for the AI scriptwriter |
