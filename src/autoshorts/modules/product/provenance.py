@@ -223,7 +223,7 @@ def _parse_page_html(raw: str, url: str, status: int) -> PageEvidence:
         raise MediaProcessingError(f"Could not parse the evidence page: {exc}") from exc
     raw_title = re.sub(r"\s+", " ", html.unescape(" ".join(parser.title_parts))).strip()
     h1 = re.sub(r"\s+", " ", html.unescape(" ".join(parser.h1_parts))).strip()
-    title = re.sub(r"\s+", " ", html.unescape(parser.meta_title or raw_title)).strip()
+    title = raw_title or re.sub(r"\s+", " ", html.unescape(parser.meta_title)).strip()
     identity = " ".join(x for x in (title, h1, parser.meta_title) if x)
     return PageEvidence(
         url=url,
@@ -285,6 +285,17 @@ def fetch_page_evidence(
     return _parse_page_html(raw, url=response.url, status=response.status_code)
 
 
+_STRICT_CODE = re.compile(r"[a-z]{1,4}\d{3,}[a-z]*")
+
+
+def other_model_codes(codes: list[str], expected: str) -> list[str]:
+    """Codes naming a DIFFERENT model than `expected`. A brand-prefixed form of
+    the same code ('magcubichy300pro') is the same model; a comparison title
+    ('HY300 Pro vs HY300 ProPlus') carries a second model and is ambiguous."""
+    strict = [c for c in codes if _STRICT_CODE.fullmatch(c)]
+    return [c for c in strict if c != expected and not c.endswith(expected)]
+
+
 def verify_product_identity(
     product_name: str, page: PageEvidence, *, label: str
 ) -> dict:
@@ -298,7 +309,7 @@ def verify_product_identity(
         ("meta title", page.meta_title),
     ):
         codes = model_codes(text) if isinstance(text, str) and text else []
-        if codes and expected not in codes:
+        if codes and (expected not in codes or other_model_codes(codes, expected)):
             raise ProductNotFoundError(
                 f"Match rejected for {label}: the page {field_name} names a different "
                 f"model variant (codes seen: {codes}), the slug requires {expected!r}. "

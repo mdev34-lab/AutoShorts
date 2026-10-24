@@ -157,7 +157,7 @@ def atoms_from_text(text: str, source: str) -> list[Atom]:
                     surface = f"resolução {spec}"
                 else:
                     surface = spec
-                key = ("spec", number, unit, attribute)
+                key: tuple = ("spec", number, unit, attribute)
                 atoms.setdefault(key, Atom(key, surface, source))
         for feature in _features_in(clause):
             if feature in ("bateria", "battery"):
@@ -252,7 +252,13 @@ def _disputed_near_code(html_text: str, codes: list[str]) -> set[tuple]:
     return seen
 
 
-def page_atoms(page) -> list[Atom]:
+def _names_other_model(text: str, expected_code: str) -> bool:
+    from .provenance import model_codes, other_model_codes
+
+    return bool(other_model_codes(model_codes(text), expected_code))
+
+
+def page_atoms(page, expected_code: str | None = None) -> list[Atom]:
     """Atoms from a verified page: identity fields plus bounded body spec lines."""
     source = host_label(page.url)
     texts = [page.title, page.h1, getattr(page, "meta_title", "")]
@@ -268,6 +274,8 @@ def page_atoms(page) -> list[Atom]:
     merged: dict[tuple, Atom] = {}
     for text in texts:
         if isinstance(text, str) and text:
+            if expected_code and _names_other_model(text, expected_code):
+                continue  # a line about another product never feeds this one
             for atom in atoms_from_text(text, source):
                 merged.setdefault(atom.key, atom)
     atoms = list(merged.values())

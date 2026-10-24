@@ -325,7 +325,13 @@ def assert_script_within_atoms(paragraphs: list[str], atoms: list) -> None:
         raise ProductPipelineError("Script makes an ungroundable or price claim.")
     allowed_specs = {a.key[1:] for a in atoms if a.key[0] == "spec"}
     allowed_feats = {a.key[1] for a in atoms if a.key[0] == "feature"}
-    for sentence in re.split(r"(?<=[.!?])\s+", text):
+    clauses = [
+        c
+        for sentence in re.split(r"(?<=[.!?])\s+", text)
+        for c in re.split(r"[,;:]|\s+e\s+", sentence)
+        if c.strip()
+    ]
+    for sentence in clauses:
         for number, unit, attribute in _spec_claims(sentence):
             if (number, unit, attribute) not in allowed_specs and (
                 number,

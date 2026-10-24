@@ -21,13 +21,13 @@ from ..modules.logging_system import log
 from ..modules.product.discovery import search_image_candidates
 from ..modules.product.errors import ProductPipelineError
 from ..modules.product.evidence import host_label, page_atoms, reconcile_atoms
-from ..modules.product.llm_copy import polish_script
 from ..modules.product.narration import compose_showcase_script
 from ..modules.product.network import safe_get
 from ..modules.product.product import parse_product_link
 from ..modules.product.pronunciation import load_dictionary, prepare_for_tts
 from ..modules.product.provenance import (
     fetch_page_evidence,
+    primary_model_code,
     verify_image_sources,
     verify_product_identity,
 )
@@ -94,7 +94,7 @@ class ProductGenerator(ExplainerGenerator):
                 if host in seen_hosts:
                     continue
                 seen_hosts.add(host)
-                atoms.extend(page_atoms(page))
+                atoms.extend(page_atoms(page, primary_model_code(product.name)))
                 if len(seen_hosts) >= MAX_EVIDENCE_PAGES:
                     break
             if evidence_page is None:
@@ -128,9 +128,6 @@ class ProductGenerator(ExplainerGenerator):
                     "ERROR",
                 )
                 return False
-            paragraphs = polish_script(
-                paragraphs, atoms, paragraphs[0].removeprefix("Conheça o ").rstrip(".")
-            )
             try:
                 assert_script_within_atoms(paragraphs, atoms)
             except ProductPipelineError as exc:

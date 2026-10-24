@@ -119,3 +119,82 @@ def test_same_model_listed_with_another_value_elsewhere_on_the_page_is_disputed(
     surfaces = {a.surface for a in page_atoms(P(html))}
     assert not any("ANSI" in s for s in surfaces)  # 290 vs 200 for the same model
     assert "resolução 720P" in surfaces  # no dispute on resolution
+
+
+def test_composer_output_passes_its_own_guard_for_multi_attribute_facts():
+    from autoshorts.modules.product.evidence import atoms_from_text
+    from autoshorts.modules.product.narration import compose_showcase_script
+    from autoshorts.modules.product.script_guard import assert_script_within_atoms
+
+    atoms = atoms_from_text(
+        "8GB memória, 256GB armazenamento, 20W potência", "m.example"
+    )
+    assert {a.key[3] for a in atoms} == {"memory", "storage", "power"}
+    paragraphs = compose_showcase_script("Magcubic HY300 Pro", atoms)
+    assert_script_within_atoms(paragraphs, atoms)  # must not raise
+
+
+def test_guard_still_rejects_swapped_attribute_across_commas():
+    import pytest
+
+    from autoshorts.modules.product.errors import ProductPipelineError
+    from autoshorts.modules.product.evidence import atoms_from_text
+    from autoshorts.modules.product.script_guard import assert_script_within_atoms
+
+    atoms = atoms_from_text("8GB memória, 256GB armazenamento", "m.example")
+    with pytest.raises(ProductPipelineError):
+        assert_script_within_atoms(["O HY300 Pro traz 256GB de memória."], atoms)
+
+
+def test_lines_about_another_model_never_feed_atoms():
+    from autoshorts.modules.product.evidence import page_atoms
+    from autoshorts.modules.product.provenance import _parse_page_html
+
+    html_doc = (
+        "<html><head><title>Magcubic HY300 Pro</title></head><body><main>"
+        "<h1>Magcubic HY300 Pro</h1><p>HY300 Pro: Wi-Fi.</p>"
+        "<p>HY320: Bluetooth HDMI laser.</p></main></body></html>"
+    )
+    page = _parse_page_html(html_doc, url="https://m.example/p", status=200)
+    keys = {a.key for a in page_atoms(page, "hy300pro")}
+    assert ("feature", "wi-fi") in keys
+    assert not keys & {
+        ("feature", "bluetooth"),
+        ("feature", "hdmi"),
+        ("feature", "laser"),
+    }
+
+
+def test_comparison_title_and_raw_title_conflicts_are_rejected():
+    import pytest
+
+    from autoshorts.modules.product.errors import ProductNotFoundError
+    from autoshorts.modules.product.provenance import (
+        _parse_page_html,
+        verify_product_identity,
+    )
+
+    def page(title, h1, og=""):
+        meta = f'<meta property="og:title" content="{og}">' if og else ""
+        return _parse_page_html(
+            f"<html><head><title>{title}</title>{meta}</head><body><h1>{h1}</h1></body></html>",
+            url="https://m.example/p",
+            status=200,
+        )
+
+    for p in (
+        page("HY300 Pro vs HY300 ProPlus", "HY300 Pro vs HY300 ProPlus"),
+        page("HY300 ProPlus", "HY300 Pro", og="HY300 Pro"),
+    ):
+        with pytest.raises(ProductNotFoundError):
+            verify_product_identity("Magcubic HY300 Pro", p, label="t")
+    ok = page("Magcubic HY300 Pro", "Magcubic HY300 Pro")
+    assert verify_product_identity("Magcubic HY300 Pro", ok, label="t")[
+        "identity_match"
+    ]
+
+
+def test_generator_has_no_free_text_model_path():
+    import autoshorts.generators.product as gen
+
+    assert not hasattr(gen, "polish_script")
