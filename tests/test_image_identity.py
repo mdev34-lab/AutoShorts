@@ -313,3 +313,43 @@ def test_co_depiction_is_not_single_person_portrait():
     }
     media["statements"]["P180"].append(other)
     assert extract(page, media) is None
+
+
+@pytest.mark.parametrize(
+    "license_text",
+    [
+        "CC BY 4.0 &lt;non-commercial&gt;",
+        "CC BY 4.0 &amp;lt;non-commercial&amp;gt;",
+        "CC BY 4.0 &amp;amp;lt;non-commercial&amp;amp;gt;",
+    ],
+)
+def test_encoded_markup_cannot_hide_license_restrictions(license_text):
+    page, media = fixture()
+    page["imageinfo"][0]["extmetadata"]["LicenseShortName"]["value"] = license_text
+    assert extract(page, media) is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://@commons.wikimedia.org/wiki/File:Clarence_Seedorf_2021.jpg",
+        "https://commons.wikimedia.org:/wiki/File:Clarence_Seedorf_2021.jpg",
+        "https://commons.wikimedia.org/wiki/File:Clarence_Seedorf_2021.jpg?title=File:Other.jpg",
+    ],
+)
+def test_source_authority_and_query_are_canonical(url):
+    page, media = fixture()
+    page["imageinfo"][0]["descriptionurl"] = url
+    assert extract(page, media) is None
+
+
+@pytest.mark.parametrize("name", [".", ".."])
+def test_dotsegment_file_is_not_a_portrait_filename(name):
+    page, media = fixture()
+    page["imageinfo"][0]["descriptionurl"] = (
+        "https://commons.wikimedia.org/wiki/File:" + name
+    )
+    page["imageinfo"][0]["url"] = (
+        "https://upload.wikimedia.org/wikipedia/commons/a/ab/" + name
+    )
+    assert extract(page, media) is None

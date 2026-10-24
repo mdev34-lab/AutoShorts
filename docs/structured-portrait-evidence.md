@@ -83,3 +83,9 @@ statement properties and absent P180. The passing extractor regression preserves
 that rejection. A separate strict expected-failure candidate lookup test exposes
 the unresolved origin-chain recall gap; it does not ask P180 to accept missing
 identity evidence. No production caller or admission rule has been added.
+
+License short names must now be plain text: entity-bearing values reject at the
+first HTML decode boundary, including repeatedly encoded hidden restrictions.
+Nothing is recursively stripped into an accepted license. Canonical source
+URLs exclude userinfo, ports and query overrides; dot-segment filenames reject.
+Original image URLs may keep the Commons API's observed tracking query.

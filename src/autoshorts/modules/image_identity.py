@@ -156,11 +156,15 @@ def portrait_evidence(
         return None
     if image_parts.scheme != "https" or image_parts.hostname != "upload.wikimedia.org":
         return None
+    if source_parts.netloc != "commons.wikimedia.org" or source_parts.query:
+        return None
+    if image_parts.netloc != "upload.wikimedia.org":
+        return None
     prefix = "/wiki/File:"
     if not source_parts.path.startswith(prefix):
         return None
     filename = unquote(source_parts.path[len(prefix) :]).replace(" ", "_")
-    if not filename or "/" in filename:
+    if not filename or "/" in filename or filename in (".", ".."):
         return None
     for record in (page, media_entity):
         if "title" in record and record["title"] != "File:" + filename.replace(
@@ -197,6 +201,11 @@ def portrait_evidence(
         if restrictions:
             if not isinstance(restrictions, dict) or restrictions.get("value"):
                 return None
+    # LicenseShortName must be plain text, not encoded presentation markup.
+    # Reject entity-bearing values at the first decode boundary rather than
+    # recursively stripping them into a misleading allowlisted license.
+    if html.unescape(license_name) != license_name:
+        return None
     if "<" in license_name or ">" in license_name:
         return None
     creator = html.unescape(re.sub(r"<[^>]*>", " ", creator)).strip()
