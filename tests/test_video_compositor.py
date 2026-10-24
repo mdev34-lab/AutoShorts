@@ -214,6 +214,18 @@ class TestFitFgSize:
     """Overlay foreground band: aspect preserved, fitted inside the frame,
     always positive and even."""
 
+    @pytest.fixture(autouse=True)
+    def fixed_output_resolution(self, monkeypatch):
+        # These regressions assert 720x1280 geometry and pixel coordinates.
+        # Pin that contract instead of inheriting the caller's .env values.
+        for module in (
+            "autoshorts.modules.config",
+            "autoshorts.modules.video_compositor",
+            "autoshorts.generators.explainer",
+        ):
+            monkeypatch.setattr(f"{module}.VIDEO_WIDTH", 720)
+            monkeypatch.setattr(f"{module}.VIDEO_HEIGHT", 1280)
+
     def test_landscape_source_fills_width(self):
         # 640x338 -> 720x380 (the original smear-case source)
         assert VideoCompositor._fit_fg_size(640, 338) == (720, 380)
@@ -326,6 +338,18 @@ def _frame_pixel(path, x, y, seek="0.5"):
 
 class TestRealPathComposition:
     """Short real renders through create_output_video (smear regression #10)."""
+
+    @pytest.fixture(autouse=True)
+    def fixed_output_resolution(self, monkeypatch):
+        # These regressions assert 720x1280 geometry and pixel coordinates.
+        # Pin that contract instead of inheriting the caller's .env values.
+        for module in (
+            "autoshorts.modules.config",
+            "autoshorts.modules.video_compositor",
+            "autoshorts.generators.explainer",
+        ):
+            monkeypatch.setattr(f"{module}.VIDEO_WIDTH", 720)
+            monkeypatch.setattr(f"{module}.VIDEO_HEIGHT", 1280)
 
     def test_overlay_render_not_smeared(self, tmp_path, monkeypatch):
         monkeypatch.setattr("autoshorts.modules.video_compositor.BG_MODE", "speed")
