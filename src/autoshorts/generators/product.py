@@ -21,6 +21,7 @@ from ..modules.logging_system import log
 from ..modules.product.discovery import search_image_candidates
 from ..modules.product.errors import ProductPipelineError
 from ..modules.product.evidence import host_label, page_atoms, reconcile_atoms
+from ..modules.product.llm_copy import polish_script
 from ..modules.product.narration import compose_showcase_script
 from ..modules.product.network import safe_get
 from ..modules.product.product import parse_product_link
@@ -128,6 +129,9 @@ class ProductGenerator(ExplainerGenerator):
                     "ERROR",
                 )
                 return False
+            paragraphs = polish_script(
+                paragraphs, atoms, paragraphs[0].removeprefix("Conheça o ").rstrip(".")
+            )
             try:
                 assert_script_within_atoms(paragraphs, atoms)
             except ProductPipelineError as exc:

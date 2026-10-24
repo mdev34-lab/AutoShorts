@@ -25,15 +25,35 @@ from .config import (
 from .logging_system import log
 
 BLOCKED_DOMAINS: set[str] = {
-    "crossdresser", "sissy", "femboy", "hentai", "rule34",
-    "xvideos", "xnxx", "xhamster", "pornhub", "onlyfans",
-    "redtube", "youporn", "erotic", "nsfw",
+    "crossdresser",
+    "sissy",
+    "femboy",
+    "hentai",
+    "rule34",
+    "xvideos",
+    "xnxx",
+    "xhamster",
+    "pornhub",
+    "onlyfans",
+    "redtube",
+    "youporn",
+    "erotic",
+    "nsfw",
 }
 
 BLOCKED_KEYWORDS: set[str] = {
-    "crossdresser", "sissy", "femboy", "hentai", "rule34",
-    "nsfw", "xxx", "18+", "erotic",
-    "nude", "naked", "seductive",
+    "crossdresser",
+    "sissy",
+    "femboy",
+    "hentai",
+    "rule34",
+    "nsfw",
+    "xxx",
+    "18+",
+    "erotic",
+    "nude",
+    "naked",
+    "seductive",
 }
 
 

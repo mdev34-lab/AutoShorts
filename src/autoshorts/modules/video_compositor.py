@@ -239,7 +239,9 @@ class VideoCompositor:
 
         return clip.transform(apply_overlay).with_position(("center", "center"))
 
-    def _apply_opening_animation(self, clip, duration: float = OPENING_ANIMATION_DURATION):
+    def _apply_opening_animation(
+        self, clip, duration: float = OPENING_ANIMATION_DURATION
+    ):
         """Cold-open: ease-out zoom-out + per-frame motion-blur-style blur.
 
         Starts at OPENING_ZOOM_START (e.g. 1.25) and decelerates to 1.0

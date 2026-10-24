@@ -91,17 +91,28 @@ _AMBIGUOUS = object()
 def _bound_attribute(clause: str, start: int, end: int, window: int = 2):
     """Attribute word nearest to the number inside ONE clause, or _AMBIGUOUS
     when two different attributes are equally near ("suporta 2kg peso")."""
-    before = _WORD_RE.findall(_normalize(clause[:start]))[-window:]
+    all_before = _WORD_RE.findall(_normalize(clause[:start]))
+    before = all_before[-window:]
     after = _WORD_RE.findall(_normalize(clause[end:]))[:window]
     near_before = near_after = None
     for d, word in enumerate(reversed(before), start=1):
         if word in _ATTRIBUTE_WORDS:
-            near_before = (d, _ATTRIBUTE_WORDS[word])
+            index = len(all_before) - d
+            # "8GB RAM 128GB ...": RAM belongs to the quantity before it, not
+            # to the next one.
+            owned = index > 0 and any(ch.isdigit() for ch in all_before[index - 1])
+            near_before = (d, _ATTRIBUTE_WORDS[word], owned)
             break
     for d, word in enumerate(after, start=1):
         if word in _ATTRIBUTE_WORDS:
             near_after = (d, _ATTRIBUTE_WORDS[word])
             break
+    if near_before and near_before[2]:
+        # only yield to an attribute written after this number; with none
+        # after it, keep the old nearest-word behaviour.
+        near_before = None if near_after else near_before
+    if near_before:
+        near_before = near_before[:2]
     if near_before and near_after:
         if near_before[1] == near_after[1]:
             return near_before[1]

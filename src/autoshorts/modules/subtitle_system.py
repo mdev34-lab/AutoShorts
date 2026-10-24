@@ -133,7 +133,9 @@ class SubtitleGenerator:
     ) -> str:
         """Generate VTT subtitle file from paragraphs and audio duration."""
         combined_text = " ".join(paragraphs)
-        cleaned_text = strip_markdown(combined_text.replace('"', "").replace("\n", " ")).strip()
+        cleaned_text = strip_markdown(
+            combined_text.replace('"', "").replace("\n", " ")
+        ).strip()
 
         words = cleaned_text.split()
         chunks = []

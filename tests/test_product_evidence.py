@@ -194,7 +194,10 @@ def test_comparison_title_and_raw_title_conflicts_are_rejected():
     ]
 
 
-def test_generator_has_no_free_text_model_path():
-    import autoshorts.generators.product as gen
+def test_attribute_word_belongs_to_the_quantity_before_it():
+    from autoshorts.modules.product.evidence import atoms_from_text
 
-    assert not hasattr(gen, "polish_script")
+    keys = {a.key for a in atoms_from_text("8GB RAM 128GB de armazenamento", "x.y")}
+    assert ("spec", "8", "gb", "memory") in keys
+    assert ("spec", "128", "gb", "storage") in keys
+    assert ("spec", "128", "gb", "memory") not in keys

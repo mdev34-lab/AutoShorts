@@ -14,16 +14,18 @@ from ..new import new_app
 @new_app.command(name="explainer")
 def explainer_command(
     subject: str = typer.Argument(None, help="Video subject"),
-    output: str = typer.Option(
-        "output", "--output", "-o", help="Output directory"
-    ),
+    output: str = typer.Option("output", "--output", "-o", help="Output directory"),
     youtube_url: str = typer.Option(
         None, "--youtube-url", "-y", help="Direct YouTube URL"
     ),
     goodnight: bool = typer.Option(
         False, "--goodnight", help="Shutdown after processing"
     ),
-    batch: str = typer.Option(None, "--batch", help="Batch: semicolon-separated subjects (e.g. 'topic1; topic2')"),
+    batch: str = typer.Option(
+        None,
+        "--batch",
+        help="Batch: semicolon-separated subjects (e.g. 'topic1; topic2')",
+    ),
     no_web_search: bool = typer.Option(
         False, "--no-web-search", help="Disable web search (use model knowledge only)"
     ),
@@ -63,6 +65,7 @@ def explainer_command(
     output_path = Path(output)
     success_count = 0
     total_count = len(subjects)
+
     def _sanitize(s):
         return re.sub(r'[\\/*?:"<>|]', "", s).replace(" ", "_").lower()[:20]
 
@@ -81,16 +84,19 @@ def explainer_command(
 
             metadata = VideoMetadata(
                 title=subj,
-                comment=json.dumps({
-                    "subject": subj,
-                    "youtube_url": youtube_url,
-                    "no_images": no_images,
-                    "images_only": images_only,
-                    "image_source": images,
-                    "no_web_search": no_web_search,
-                    "batch": batch,
-                    "custom_instructions": custom_instructions,
-                }, ensure_ascii=False),
+                comment=json.dumps(
+                    {
+                        "subject": subj,
+                        "youtube_url": youtube_url,
+                        "no_images": no_images,
+                        "images_only": images_only,
+                        "image_source": images,
+                        "no_web_search": no_web_search,
+                        "batch": batch,
+                        "custom_instructions": custom_instructions,
+                    },
+                    ensure_ascii=False,
+                ),
             )
 
             gen = VIDEO_TYPES["explainer"](
