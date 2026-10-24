@@ -294,17 +294,20 @@ _VALID_RECORD = {
 }
 
 
+PROMPT = "a bowl of fruit on a table"  # broad request: passes the specificity gate
+
+
 class TestCacheProvenance:
     def test_legacy_cache_without_sidecar_is_not_reused(self, tmp_path, monkeypatch):
         from autoshorts.modules import image_searcher as mod
         from autoshorts.modules.image_searcher import ImageSearcher
 
         monkeypatch.setattr(mod, "IMAGE_CACHE_DIR", tmp_path)
-        key = ImageSearcher._cache_key("qualquer prompt")
+        key = ImageSearcher._cache_key(PROMPT)
         legacy = tmp_path / f"{key}.jpg"
         legacy.write_bytes(b"old-stock")
         sidecar = legacy.with_suffix(".credits.json")
-        assert ImageSearcher._usable_cache(legacy) is False
+        assert ImageSearcher._usable_cache(legacy, PROMPT) is False
         # empty / unparsable / incomplete / unverified records are not provenance
         for bad in (
             "",
@@ -316,13 +319,13 @@ class TestCacheProvenance:
             json.dumps({**_VALID_RECORD, "license_verified": False}),
         ):
             sidecar.write_text(bad)
-            assert ImageSearcher._usable_cache(legacy) is False, bad
+            assert ImageSearcher._usable_cache(legacy, PROMPT) is False, bad
         sidecar.write_text(json.dumps(_VALID_RECORD))
-        assert ImageSearcher._usable_cache(legacy) is True
+        assert ImageSearcher._usable_cache(legacy, PROMPT) is True
         # unverified rights are reusable only under the explicit opt-in
         sidecar.write_text(json.dumps({**_VALID_RECORD, "license_verified": False}))
         monkeypatch.setattr(mod, "ALLOW_UNVERIFIED_IMAGES", True)
-        assert ImageSearcher._usable_cache(legacy) is True
+        assert ImageSearcher._usable_cache(legacy, PROMPT) is True
 
     def test_unverified_candidates_skipped_without_opt_in(self, tmp_path, monkeypatch):
         from autoshorts.modules import image_searcher as mod

@@ -366,7 +366,11 @@ class TestExplainerGenerator:
         gen = ExplainerGenerator(subject="test", image_source="ai")
         mock_script = Mock()
         mock_script.generate_script.return_value = ["Para 1", "Para 2", "Para 3"]
-        mock_script.generate_script_from_metadata.return_value = ["Para 1", "Para 2", "Para 3"]
+        mock_script.generate_script_from_metadata.return_value = [
+            "Para 1",
+            "Para 2",
+            "Para 3",
+        ]
         gen.script_generator = mock_script
 
         mock_bg = Mock()
@@ -817,3 +821,113 @@ class TestImageSearcher:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+class TestCacheRespectsAcceptancePolicy:
+    def _web_record(self, path, **extra):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"cached_data")
+        rec = {
+            "schema": 1,
+            "kind": "web",
+            "provider": "commons",
+            "title": "File:X.jpg",
+            "image_url": "https://upload.wikimedia.org/x.jpg",
+            "source_page": "https://commons.wikimedia.org/wiki/File:X.jpg",
+            "license": "CC BY 4.0",
+            "license_verified": True,
+        }
+        rec.update(extra)
+        path.with_suffix(".credits.json").write_text(json.dumps(rec))
+
+    def test_opt_in_entry_is_not_served_after_opt_in_is_turned_off(self):
+        prompt = "Clarence Seedorf Corinthians 2012 cache regression"
+        with patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", True):
+            on_key = ImageSearcher._cache_key(prompt)
+        with patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", False):
+            off_key = ImageSearcher._cache_key(prompt)
+        assert on_key != off_key
+
+    def test_specific_request_cache_hit_is_refused_without_opt_in(self):
+        prompt = "Clarence Seedorf Corinthians 2012 hit regression"
+        with patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", False):
+            path = IMAGE_CACHE_DIR / f"{ImageSearcher._cache_key(prompt)}.jpg"
+            self._web_record(path)
+            try:
+                assert ImageSearcher._usable_cache(path, prompt) is False
+            finally:
+                path.unlink(missing_ok=True)
+                path.with_suffix(".credits.json").unlink(missing_ok=True)
+
+    def test_opt_in_marked_entry_is_refused_without_opt_in(self):
+        prompt = "a bowl of fruit on a table"
+        with patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", False):
+            path = IMAGE_CACHE_DIR / f"{ImageSearcher._cache_key(prompt)}.jpg"
+            self._web_record(path, unverified_opt_in=True)
+            try:
+                assert ImageSearcher._usable_cache(path, prompt) is False
+            finally:
+                path.unlink(missing_ok=True)
+                path.with_suffix(".credits.json").unlink(missing_ok=True)
+
+    def test_broad_verified_entry_is_reused(self):
+        prompt = "a bowl of fruit on a table"
+        with patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", False):
+            path = IMAGE_CACHE_DIR / f"{ImageSearcher._cache_key(prompt)}.jpg"
+            self._web_record(path)
+            try:
+                assert ImageSearcher._usable_cache(path, prompt) is True
+            finally:
+                path.unlink(missing_ok=True)
+                path.with_suffix(".credits.json").unlink(missing_ok=True)
+
+    def test_sidecar_says_clip_did_not_run_under_opt_in(self, tmp_path):
+        from autoshorts.modules import image_sources
+
+        cand = image_sources.SourceCandidate(
+            url="https://x.example/i.jpg",
+            provider="ddg",
+            fit_evidence="test",
+            title="t",
+            license="CC0",
+            extra={"source_page": "https://x.example/p"},
+        )
+        img = tmp_path / "a.jpg"
+        img.write_bytes(b"x")
+        with patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", True):
+            ImageSearcher._write_provenance_sidecar(img, cand, "any prompt")
+        rec = json.loads(img.with_suffix(".credits.json").read_text())
+        assert rec["pictured_subject_check"].startswith("not-run")
+        assert rec["unverified_opt_in"] is True
+        with patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", False):
+            ImageSearcher._write_provenance_sidecar(img, cand, "any prompt")
+        rec = json.loads(img.with_suffix(".credits.json").read_text())
+        assert "clip" in rec["pictured_subject_check"]
+        assert rec["unverified_opt_in"] is False
+
+
+class TestSpecificRequestsNeverUseWebImages:
+    def test_get_images_falls_back_for_a_specific_request_even_with_a_licensed_candidate(
+        self,
+    ):
+        from autoshorts.modules import image_sources
+
+        searcher = ImageSearcher()
+        cand = image_sources.SourceCandidate(
+            url="https://upload.wikimedia.org/seedorf.jpg",
+            provider="commons",
+            fit_evidence="all tokens",
+            license="CC BY 4.0",
+            title="File:Seedorf.jpg",
+        )
+        prompt = "Clarence Seedorf Corinthians 2012 integration regression"
+        with (
+            patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", False),
+            patch.object(searcher, "_candidates", return_value=[cand]),
+            patch.object(searcher, "download_image") as dl,
+            patch("autoshorts.modules.image_searcher.requests.get") as mock_get,
+            patch.object(searcher, "resize_to_fill"),
+        ):
+            mock_get.return_value = Mock(status_code=200, content=b"ai_fake_image")
+            searcher.get_images([prompt])
+        dl.assert_not_called()  # the web candidate was never downloaded

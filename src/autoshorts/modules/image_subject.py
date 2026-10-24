@@ -122,7 +122,7 @@ def subject_probability(path: Path, subject: str) -> float:
         img = raw.convert("RGB")
     w, h = img.size
     scale = 224 / min(w, h)
-    img = img.resize((round(w * scale), round(h * scale)), Image.BICUBIC)
+    img = img.resize((round(w * scale), round(h * scale)), Image.Resampling.BICUBIC)
     w, h = img.size
     left, top = (w - 224) // 2, (h - 224) // 2
     img = img.crop((left, top, left + 224, top + 224))

@@ -62,6 +62,10 @@ BLOCKED_KEYWORDS: set[str] = {
 }
 
 
+# Bump when acceptance rules change so older cache entries are refetched.
+ACCEPTANCE_POLICY = "specific-requests-fall-back-v1"
+
+
 class ImageSearcher:
     def __init__(
         self,
@@ -185,7 +189,13 @@ class ImageSearcher:
     def _cache_key(prompt: str) -> str:
         # Versioned by provider config: legacy hashes predate provenance/fit
         # gating and must never be reused, and a provider change invalidates.
-        scheme = f"img2|{','.join(IMAGE_PROVIDERS)}|{prompt}"
+        # The acceptance policy is part of the key: entries made under the
+        # ALLOW_UNVERIFIED_IMAGES opt-in, or under an older/laxer policy
+        # version, are never served to a stricter run.
+        policy = "optin" if ALLOW_UNVERIFIED_IMAGES else "strict"
+        scheme = (
+            f"img3|{ACCEPTANCE_POLICY}|{policy}|{','.join(IMAGE_PROVIDERS)}|{prompt}"
+        )
         return hashlib.sha256(scheme.encode()).hexdigest()[:16]
 
     @staticmethod
@@ -235,7 +245,7 @@ class ImageSearcher:
             return f"pictured subject could not be verified ({exc})"
 
     @classmethod
-    def _usable_cache(cls, cached_path: Path) -> bool:
+    def _usable_cache(cls, cached_path: Path, prompt: str) -> bool:
         """Reusable only with a valid provenance record that is still allowed
         (legacy stock, interrupted runs, empty/UNVERIFIED records are refetched)."""
         if not cached_path.exists():
@@ -243,8 +253,16 @@ class ImageSearcher:
         record = cls._read_sidecar(cached_path)
         if record is None:
             return False
-        if record["kind"] == "web" and not record["license_verified"]:
-            return ALLOW_UNVERIFIED_IMAGES
+        if record["kind"] == "web":
+            if not ALLOW_UNVERIFIED_IMAGES:
+                # A cache hit must pass the same specificity gate as a fresh
+                # download, and an opt-in entry is never reused without opt-in.
+                if record.get(
+                    "unverified_opt_in"
+                ) or not image_subject.is_broad_request(prompt):
+                    return False
+            if not record["license_verified"]:
+                return ALLOW_UNVERIFIED_IMAGES
         return True
 
     def get_images(self, prompts: list[str]) -> list[str]:
@@ -256,7 +274,7 @@ class ImageSearcher:
 
             cache_key = self._cache_key(prompt)
             cached_path = IMAGE_CACHE_DIR / f"{cache_key}.jpg"
-            if self._usable_cache(cached_path):
+            if self._usable_cache(cached_path, prompt):
                 img_paths.append(str(cached_path))
                 log(f"  Using cached: {cached_path.name}", "INFO")
                 continue
@@ -359,8 +377,13 @@ class ImageSearcher:
                 "fit": candidate.fit_evidence,
                 # Say exactly what was (not) verified; never "subject verified".
                 "pictured_subject_check": (
-                    "not-run" if is_ai else image_subject.VERIFICATION_SCOPE
+                    "not-run"
+                    if is_ai
+                    else "not-run (ALLOW_UNVERIFIED_IMAGES opt-in)"
+                    if ALLOW_UNVERIFIED_IMAGES
+                    else image_subject.VERIFICATION_SCOPE
                 ),
+                "unverified_opt_in": bool(ALLOW_UNVERIFIED_IMAGES and not is_ai),
                 "modification": (
                     "Resized and cropped to the video frame; overlay text may "
                     "have been removed and framing adjusted."
@@ -468,7 +491,7 @@ class ImageSearcher:
         for prompt in remaining_prompts:
             cache_key = self._cache_key(prompt)
             cached_path = IMAGE_CACHE_DIR / f"{cache_key}.jpg"
-            if self._usable_cache(cached_path):
+            if self._usable_cache(cached_path, prompt):
                 collected_paths.append(str(cached_path))
                 continue
 
