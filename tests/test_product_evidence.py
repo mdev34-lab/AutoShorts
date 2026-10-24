@@ -280,3 +280,68 @@ def test_compound_variant_spelling_is_bound_like_the_spaced_one():
         )
         with pytest.raises(ProductNotFoundError):
             verify_product_identity("HY300", page, label="x")
+
+
+def test_section_boundaries_keep_own_model_and_positive_labels():
+    # a heading that names THIS model is not "another model"
+    assert "Android" in _pro_surfaces("<h2>HY300 Pro</h2><p>Android.</p>")
+    # a positive label after a negative one replaces it
+    out = _pro_surfaces(
+        "<p>Não possui:</p><ul><li>HDMI</li></ul>"
+        "<p>Possui:</p><ul><li>Bluetooth</li></ul>"
+    )
+    assert "Bluetooth" in out and "HDMI" not in out
+    # a new heading ends a label's scope
+    out = _pro_surfaces(
+        "<p>Sem:</p><ul><li>HDMI</li></ul><h2>Recursos</h2><p>Wi-Fi.</p>"
+    )
+    assert "Wi-Fi" in out and "HDMI" not in out
+    # deeper headings stay inside a negative or other-model section ...
+    out = _pro_surfaces(
+        "<h2>Not included</h2><h3>Recursos</h3><p>HDMI.</p>"
+        "<h2>HY320</h2><h3>Recursos</h3><p>Laser.</p>"
+    )
+    assert not {"HDMI", "laser"} & out
+    # ... and a sibling heading closes them
+    assert "Android" in _pro_surfaces(
+        "<h2>Not included</h2><p>HDMI.</p><h2>Recursos</h2><p>Android.</p>"
+    )
+
+
+def test_negative_vocabulary_variants_in_headings_and_labels():
+    for label in (
+        "<h3>Not included</h3>",
+        "<h3>Without</h3>",
+        "<h3>Sem</h3>",
+        "<h3>Não inclui</h3>",
+        "<p>Não vem com:</p>",
+        "<p>Does not have:</p>",
+    ):
+        out = _pro_surfaces(f"<p>Android.</p>{label}<ul><li>HDMI</li></ul>")
+        assert "HDMI" not in out, label
+        assert "Android" in out, label
+
+
+def test_other_model_heading_variants_and_unrelated_headings():
+    for heading in ("HY320", "HY 320", "Magcubic HY320 Pro", "HY300 ProPlus"):
+        out = _pro_surfaces(f"<h2>{heading}</h2><p>Laser.</p>")
+        assert "laser" not in out, heading
+    # generic spec words in a heading are not another model
+    out = _pro_surfaces("<h2>Native 720P HD, 200 ANSI</h2><p>Android.</p>")
+    assert "Android" in out
+
+
+def test_variant_suffix_lookalikes_are_not_variants():
+    from autoshorts.modules.product.provenance import model_codes
+
+    for word in ("Pronto", "Maxim", "Proton", "Plusieurs", "Neon"):
+        assert "hy300" in model_codes(f"HY300 {word}"), word
+        assert not any(
+            c.startswith("hy300")
+            and c != "hy300"
+            and len(c) > 5
+            and c.endswith(word.lower())
+            for c in model_codes(f"HY300 {word}")
+        ), word
+    for glued in ("proplus", "promax", "ultraplus", "proultramax"):
+        assert f"hy300{glued}" in model_codes(f"HY300 {glued}"), glued

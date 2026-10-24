@@ -306,6 +306,11 @@ _SPEC_WORDS = frozenset(
 )
 
 
+def _alpha_prefix(code: str) -> str:
+    match = re.match(r"[a-z]+", code)
+    return match.group() if match else ""
+
+
 def other_model_codes(codes: list[str], expected: str) -> list[str]:
     """Codes naming a DIFFERENT model than `expected`. A brand-prefixed form of
     the same code ('magcubichy300pro') is the same model; a comparison title
@@ -313,8 +318,7 @@ def other_model_codes(codes: list[str], expected: str) -> list[str]:
     strict = [
         c
         for c in codes
-        if _STRICT_CODE.fullmatch(c)
-        and re.match(r"[a-z]+", c).group() not in _SPEC_WORDS
+        if _STRICT_CODE.fullmatch(c) and _alpha_prefix(c) not in _SPEC_WORDS
     ]
     return [c for c in strict if c != expected and not c.endswith(expected)]
 
