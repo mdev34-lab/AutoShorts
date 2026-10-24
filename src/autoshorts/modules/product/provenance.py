@@ -288,11 +288,23 @@ def fetch_page_evidence(
 _STRICT_CODE = re.compile(r"[a-z]{1,4}\d{3,}[a-z]*")
 
 
+# Generic spec words that precede a number ("HD 290 ANSI", "USB 3"): they are
+# not product family prefixes, so "hd290" must not read as another model.
+_SPEC_WORDS = frozenset(
+    "hd fhd uhd usb hdmi ram rom lcd led ips dc ac ansi gb tb mb wifi".split()
+)
+
+
 def other_model_codes(codes: list[str], expected: str) -> list[str]:
     """Codes naming a DIFFERENT model than `expected`. A brand-prefixed form of
     the same code ('magcubichy300pro') is the same model; a comparison title
     ('HY300 Pro vs HY300 ProPlus') carries a second model and is ambiguous."""
-    strict = [c for c in codes if _STRICT_CODE.fullmatch(c)]
+    strict = [
+        c
+        for c in codes
+        if _STRICT_CODE.fullmatch(c)
+        and re.match(r"[a-z]+", c).group() not in _SPEC_WORDS
+    ]
     return [c for c in strict if c != expected and not c.endswith(expected)]
 
 

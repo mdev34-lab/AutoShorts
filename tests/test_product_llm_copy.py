@@ -28,8 +28,8 @@ def test_closed_form_lines_are_kept_and_extend_the_script():
         ]
     )
     out = polish_script(BASE, ATOMS, CODE, caller=_caller(raw))
-    assert out[0] == BASE[0] and out[-1] == BASE[-1]
-    assert len(out) == 5
+    assert out != BASE and out[0] == BASE[0] and out[-1] == BASE[-1]
+    assert "128GB de armazenamento" in " ".join(out)
 
 
 @pytest.mark.parametrize(
@@ -79,15 +79,31 @@ def test_host_attribution_must_match_the_fact_source():
     )
 
 
-def test_too_few_accepted_lines_fall_back_to_base():
+def test_compact_two_line_output_that_covers_every_fact_is_accepted():
+    covered = "\n".join(
+        [
+            "Segundo o site a.example.org, o HY300 Pro tem resolução 4K, Wi-Fi e 8GB de memória.",
+            "O HY300 Pro também traz 128GB de armazenamento.",
+        ]
+    )
+    out = polish_script(BASE, ATOMS, CODE, caller=_caller(covered))
+    assert len(out) == 4 and out != BASE
+
+
+def test_valid_lines_that_drop_a_required_fact_fall_back():
+    partial = "O HY300 Pro tem Wi-Fi."
+    assert polish_script(BASE, ATOMS, CODE, caller=_caller(partial)) == BASE
+
+
+def test_invalid_or_empty_output_falls_back_to_base():
     raw = "\n".join(
         [
             "O HY300 Pro tem mais memória que outro modelo.",
             "HY300 Pro: no Bluetooth.",
-            "O HY300 Pro tem Wi-Fi.",
         ]
     )
     assert polish_script(BASE, ATOMS, CODE, caller=_caller(raw)) == BASE
+    assert polish_script(BASE, ATOMS, CODE, caller=_caller("")) == BASE
 
 
 def test_failing_model_falls_back_to_base():
@@ -95,3 +111,28 @@ def test_failing_model_falls_back_to_base():
         raise RuntimeError("no credits")
 
     assert polish_script(BASE, ATOMS, CODE, caller=boom) == BASE
+
+
+def test_coverage_requires_the_same_fact_identity_not_similar_words():
+    """A line reusing the words 'memória' and '8GB' for another fact must not
+    count as covering the 8GB-memory fact; the 16GB claim is also not a fact."""
+    out = polish_script(
+        BASE,
+        ATOMS,
+        CODE,
+        caller=_caller(
+            "Segundo o site a.example.org, o HY300 Pro tem Wi-Fi e resolução 4K.\n"
+            "O HY300 Pro tem 16GB de memória e 128GB de armazenamento."
+        ),
+    )
+    assert out == BASE
+
+
+def test_attribution_to_the_base_source_must_survive():
+    no_host = "\n".join(
+        [
+            "O HY300 Pro tem resolução 4K, Wi-Fi e 8GB de memória.",
+            "O HY300 Pro também traz 128GB de armazenamento.",
+        ]
+    )
+    assert polish_script(BASE, ATOMS, CODE, caller=_caller(no_host)) == BASE

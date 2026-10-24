@@ -118,21 +118,45 @@ def _call(prompt: str, timeout: float = 60.0) -> str:
     return resp.json()["choices"][0]["message"]["content"] or ""
 
 
+def _stated(text: str, atoms: list) -> tuple[set[tuple], set[str]]:
+    """Fact identities (atom key) and source hosts a text states.
+
+    Lines in the closed grammar can only assert positive possession, and a
+    named host is already checked to be the real source of every fact in the
+    line, so identity = which atom (number, unit, attribute / feature) is
+    stated plus which host is named."""
+    squashed = f" {_squash(text)} "
+    keys = {a.key for a in atoms if f" {_squash(a.surface)} " in squashed}
+    hosts = {
+        src for src in {a.source for a in atoms} if f" {_squash(src)} " in squashed
+    }
+    return keys, hosts
+
+
 def polish_script(
     base: list[str], atoms: list, code: str, *, caller=_call, attempts: int = 2
 ) -> list[str]:
-    """Return the base script extended with contained LLM lines, or base."""
+    """Return the generated fact lines around the base opening/closing, or base.
+
+    Acceptance is by content, not line count: an attempt is used when it yields
+    at least one grammar-valid line AND those lines state every fact identity
+    (atom key) and name every source host the deterministic script does, so the
+    model may group facts compactly but never drops one or its attribution. Empty, invalid, partial or failed attempts fall back to
+    the deterministic script."""
     if not atoms or not API_KEY and caller is _call:
         return base
-    kept: list[str] = []
+    required_keys, required_hosts = _stated(" ".join(base[1:-1]), atoms)
+    if not required_keys:
+        return base
     for _ in range(attempts):
         try:
             raw = caller(_prompt(code, atoms))
         except Exception:
             continue
+        kept: list[str] = []
         for line in raw.splitlines():
             line = re.sub(r"^[\s\-*\d.)]+", "", line).strip()
-            if line in kept:
+            if not line or line in kept:
                 continue
             if not line_matches_grammar(line, atoms, code):
                 continue
@@ -141,8 +165,11 @@ def polish_script(
             except ProductPipelineError:
                 continue
             kept.append(line)
-        if len(kept) >= 6:
-            break
-    if len(kept) < 3:
-        return base
-    return [base[0], *kept[:9], base[-1]]
+        if not kept:
+            continue
+        keys, hosts = _stated(" ".join(kept), atoms)
+        # every fact the deterministic script states, with every source it
+        # attributes them to, must survive the rewrite
+        if required_keys <= keys and required_hosts <= hosts:
+            return [base[0], *kept, base[-1]]
+    return base

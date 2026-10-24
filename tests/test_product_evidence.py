@@ -201,3 +201,21 @@ def test_attribute_word_belongs_to_the_quantity_before_it():
     assert ("spec", "8", "gb", "memory") in keys
     assert ("spec", "128", "gb", "storage") in keys
     assert ("spec", "128", "gb", "memory") not in keys
+
+
+def test_spec_words_before_numbers_are_not_other_models():
+    from autoshorts.modules.product.evidence import page_atoms
+    from autoshorts.modules.product.provenance import _parse_page_html
+
+    desc = (
+        "Portable mini projector Magcubic HY300Pro+ delivers 720P HD, 290 ANSI "
+        "brightness, WiFi 6, Bluetooth 5.4, Android 14."
+    )
+    html_doc = (
+        "<html><head><title>Magcubic HY300 Pro+</title>"
+        f'<meta property="og:description" content="{desc}"></head>'
+        "<body><h1>Magcubic HY300 Pro+</h1></body></html>"
+    )
+    page = _parse_page_html(html_doc, url="https://m.example/p", status=200)
+    keys = {a.key for a in page_atoms(page, "hy300proplus")}
+    assert ("feature", "bluetooth") in keys and ("feature", "android") in keys
