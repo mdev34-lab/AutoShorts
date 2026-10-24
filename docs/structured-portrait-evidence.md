@@ -64,3 +64,22 @@ origin-photo-chain strategy would need exact crop/source-image binding and
 source caption/license checks. It must not use filename resemblance, shared
 publisher prose or a generic face score as a substitute. Neither this file nor
 the earlier2021sample establishes a2012match scene.
+
+## Review hardening (draft iteration)
+
+Inputs now require literal boolean identity confirmation and an explicitly typed
+empty tuple of contextual constraints. URL parsing fails closed; only bound
+original Commons file paths are accepted, not thumbnails, archives, other wiki
+uploads or cross-file record splices. Optional live API title/namespace/page-ID
+fields must agree. Rights metadata cannot conceal markup restrictions or empty
+visible creators; unknown/anonymous creator placeholders reject conservatively.
+P180 preferred statements supersede normal statements. Malformed ranks/claims,
+co-depicted subjects and qualifiers reject this narrow single-person prototype.
+The disclaimer is not caller-overridable.
+
+The two public JSON fixtures preserve the actual file 166913476 / MediaInfo
+M166913476 payloads, including its nine origin/rights/date/dimension/checksum
+statement properties and absent P180. The passing extractor regression preserves
+that rejection. A separate strict expected-failure candidate lookup test exposes
+the unresolved origin-chain recall gap; it does not ask P180 to accept missing
+identity evidence. No production caller or admission rule has been added.

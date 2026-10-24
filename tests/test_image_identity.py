@@ -27,11 +27,20 @@ def fixture():
         "statements": {
             "P180": [
                 {
+                    "type": "statement",
                     "rank": "normal",
                     "mainsnak": {
                         "snaktype": "value",
                         "property": "P180",
-                        "datavalue": {"value": {"id": "Q484909"}},
+                        "datatype": "wikibase-item",
+                        "datavalue": {
+                            "type": "wikibase-entityid",
+                            "value": {
+                                "entity-type": "item",
+                                "numeric-id": 484909,
+                                "id": "Q484909",
+                            },
+                        },
                     },
                 }
             ]
@@ -147,14 +156,160 @@ def test_malformed_provider_payload_is_not_evidence(field, value):
     assert extract(page, media) is None
 
 
-def test_documented_portrait_without_structured_identity_remains_unproven():
-    # Live alternate file166913476 has a source/creator/license and portrait
-    # pixels, but no P180. Those fields must not fill the missing identity ID.
-    page, media = fixture()
-    page["pageid"] = 166913476
-    page["imageinfo"][0]["descriptionurl"] = (
-        "https://commons.wikimedia.org/wiki/File:Clarence_Seedorf_"
-        "Introductory_Press_Conferences,_2_June_2025_-_40_(cropped).jpg"
+def real_origin_chain_fixture():
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).parent / "fixtures"
+    return (
+        json.loads((root / "commons-file166913476.json").read_text()),
+        json.loads((root / "commons-M166913476.json").read_text()),
     )
-    media = {"id": "M166913476", "statements": {}}
+
+
+def test_documented_portrait_without_structured_identity_remains_unproven():
+    page, media = real_origin_chain_fixture()
+    assert page["pageid"] == 166913476
+    assert (
+        page["imageinfo"][0]["extmetadata"]["LicenseShortName"]["value"] == "CC BY 4.0"
+    )
+    assert extract(page, media) is None
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Known #13 recall gap: source-faithful 2025 portrait has origin chain and reusable license but no P180; origin-chain evidence lookup not implemented",
+)
+def test_candidate_evidence_lookup_covers_documented_origin_chain():
+    page, media = real_origin_chain_fixture()
+    assert extract(page, media) is not None
+
+
+@pytest.mark.parametrize("flag", ["false", "0", 2, [True], 1])
+def test_identity_flag_requires_literal_boolean_true(flag):
+    assert (
+        portrait_evidence(*fixture(), entity_id="Q484909", identity_unambiguous=flag)
+        is None
+    )
+
+
+@pytest.mark.parametrize("constraints", [None, [], "", {}, False])
+def test_context_requires_explicit_typed_tuple(constraints):
+    assert extract(*fixture(), context_constraints=constraints) is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://[bad/wiki/File:x.jpg",
+        "https://upload.wikimedia.org/",
+        "https://upload.wikimedia.org/wikipedia/en/a/ab/x.jpg",
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/x.jpg/200px-x.jpg",
+        "https://upload.wikimedia.org/wikipedia/commons/a/ab/Other.jpg",
+    ],
+)
+def test_upload_must_bind_the_original_commons_file(url):
+    page, media = fixture()
+    page["imageinfo"][0]["url"] = url
+    assert extract(page, media) is None
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("Artist", "<span></span>"),
+        ("LicenseShortName", '<span title="CC BY-NC 4.0">CC BY 4.0</span>'),
+        ("NonFreeRestrictions", "non-commercial use only"),
+    ],
+)
+def test_rights_fields_cannot_hide_restrictions_or_empty_creator(field, value):
+    page, media = fixture()
+    page["imageinfo"][0]["extmetadata"][field] = {"value": value}
+    assert extract(page, media) is None
+
+
+def test_actual_rich_origin_chain_without_depicts_is_not_identity():
+    import json
+    from pathlib import Path
+
+    media = json.loads(
+        (Path(__file__).parent / "fixtures/commons-M166913476.json").read_text()
+    )
+    assert sum(len(v) for v in media["statements"].values()) == 9
+    assert "P180" not in media["statements"]
+    assert "P7482" in media["statements"]  # rich source chain is not depicts
+    page, _ = fixture()
+    page["pageid"] = 166913476
+    assert extract(page, media) is None
+
+
+def test_preferred_other_subject_supersedes_stale_normal_target():
+    page, media = fixture()
+    other = deepcopy(media["statements"]["P180"][0])
+    other["rank"] = "preferred"
+    other["mainsnak"]["datavalue"]["value"] = {
+        "id": "Q11571",
+        "entity-type": "item",
+        "numeric-id": 11571,
+    }
+    media["statements"]["P180"].append(other)
+    assert extract(page, media) is None
+
+
+@pytest.mark.parametrize(
+    "mutation", ["invalid-rank", "numeric-mismatch", "wrong-type", "wrong-datatype"]
+)
+def test_corrupted_claim_is_not_exact_identity(mutation):
+    page, media = fixture()
+    claim = media["statements"]["P180"][0]
+    if mutation == "invalid-rank":
+        claim["rank"] = "garbage"
+    elif mutation == "numeric-mismatch":
+        claim["mainsnak"]["datavalue"]["value"]["numeric-id"] = 42
+    elif mutation == "wrong-type":
+        claim["type"] = "garbage"
+    else:
+        claim["mainsnak"]["datatype"] = "string"
+    assert extract(page, media) is None
+
+
+@pytest.mark.parametrize(
+    "record,field,value",
+    [
+        ("page", "title", "File:Wrong.jpg"),
+        ("page", "ns", 0),
+        ("page", "missing", ""),
+        ("media", "pageid", 999),
+        ("media", "title", "File:Wrong.jpg"),
+        ("media", "invalid", ""),
+    ],
+)
+def test_optional_live_record_fields_must_bind(record, field, value):
+    page, media = fixture()
+    (page if record == "page" else media)[field] = value
+    assert extract(page, media) is None
+
+
+@pytest.mark.parametrize("key", ["NonFree", "Restrictions"])
+def test_additional_nonfree_flags_reject(key):
+    page, media = fixture()
+    page["imageinfo"][0]["extmetadata"][key] = {"value": "true"}
+    assert extract(page, media) is None
+
+
+def test_corrupt_sibling_does_not_allow_valid_target():
+    page, media = fixture()
+    media["statements"]["P180"].insert(0, "bad")
+    assert extract(page, media) is None
+
+
+def test_co_depiction_is_not_single_person_portrait():
+    page, media = fixture()
+    other = deepcopy(media["statements"]["P180"][0])
+    other["mainsnak"]["datavalue"]["value"] = {
+        "id": "Q11571",
+        "entity-type": "item",
+        "numeric-id": 11571,
+    }
+    media["statements"]["P180"].append(other)
     assert extract(page, media) is None
