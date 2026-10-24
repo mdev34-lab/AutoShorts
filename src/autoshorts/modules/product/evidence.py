@@ -111,15 +111,14 @@ def _bound_attribute(clause: str, start: int, end: int, window: int = 2):
         # only yield to an attribute written after this number; with none
         # after it, keep the old nearest-word behaviour.
         near_before = None if near_after else near_before
-    if near_before:
-        near_before = near_before[:2]
-    if near_before and near_after:
-        if near_before[1] == near_after[1]:
-            return near_before[1]
-        if near_before[0] == near_after[0]:
+    before_pair = (near_before[0], near_before[1]) if near_before else None
+    if before_pair and near_after:
+        if before_pair[1] == near_after[1]:
+            return before_pair[1]
+        if before_pair[0] == near_after[0]:
             return _AMBIGUOUS
-        return min(near_before, near_after)[1]
-    found = near_before or near_after
+        return min(before_pair, near_after)[1]
+    found = before_pair or near_after
     return found[1] if found else None
 
 
@@ -179,8 +178,15 @@ def atoms_from_text(text: str, source: str) -> list[Atom]:
     return list(atoms.values())
 
 
+_HEADING = {"h1", "h2", "h3", "h4", "h5", "h6"}
+
+
 class _BodyLines(HTMLParser):
-    """Short text lines from list/table/description cells inside <main>/<article>."""
+    """Short text lines from list/table/description cells inside <main>/<article>.
+
+    Each line remembers the headings (and "Label:" lines) it sits under, so a
+    caller can tell which product or polarity section it belongs to.
+    """
 
     _SKIP = {"script", "style", "nav", "footer", "header", "aside", "noscript"}
     _LINE = {"li", "td", "th", "dd", "p"}
@@ -188,17 +194,26 @@ class _BodyLines(HTMLParser):
     def __init__(self, whole_page: bool = False) -> None:
         super().__init__(convert_charrefs=True)
         self.lines: list[str] = []
+        # Parallel to `lines`: the section headings in force for each line.
+        self.contexts: list[tuple[str, ...]] = []
         # Pages without <main>/<article> (many storefront themes) are read as
         # a whole; nav/header/footer/aside/script are still skipped.
         self._main = 1 if whole_page else 0
         self._skip = 0
         self._buf: list[str] | None = None
+        self._heading_level: int | None = None
+        self._heading_buf: list[str] = []
+        self._stack: list[tuple[int, str]] = []
+        self._label: str | None = None
 
     def handle_starttag(self, tag, attrs):
         if tag in ("main", "article"):
             self._main += 1
         elif tag in self._SKIP:
             self._skip += 1
+        elif tag in _HEADING and self._main and not self._skip:
+            self._heading_level = int(tag[1])
+            self._heading_buf = []
         elif tag in self._LINE and self._main and not self._skip:
             self._buf = []
 
@@ -207,14 +222,33 @@ class _BodyLines(HTMLParser):
             self._main = max(0, self._main - 1)
         elif tag in self._SKIP:
             self._skip = max(0, self._skip - 1)
+        elif tag in _HEADING and self._heading_level is not None:
+            text = " ".join("".join(self._heading_buf).split())
+            level = self._heading_level
+            self._heading_level = None
+            self._stack = [(lv, t) for lv, t in self._stack if lv < level]
+            if text:
+                self._stack.append((level, text))
+            self._label = None
         elif tag in self._LINE and self._buf is not None:
             line = " ".join("".join(self._buf).split())
-            if line:
-                self.lines.append(line)
             self._buf = None
+            if not line:
+                return
+            if line.endswith(":") and len(line) <= 60:
+                # "Não possui:" / "Modelo HY320:" introduces the lines below it
+                self._label = line
+                return
+            context = tuple(t for _lv, t in self._stack)
+            if self._label:
+                context += (self._label,)
+            self.lines.append(line)
+            self.contexts.append(context)
 
     def handle_data(self, data):
-        if self._buf is not None and not self._skip:
+        if self._heading_level is not None:
+            self._heading_buf.append(data)
+        elif self._buf is not None and not self._skip:
             self._buf.append(data)
 
 
@@ -281,7 +315,16 @@ def page_atoms(page, expected_code: str | None = None) -> list[Atom]:
         parser.feed(html_text)
     except Exception:  # malformed HTML: identity fields only
         parser.lines = []
-    texts.extend(line for line in parser.lines[:200] if len(line) <= _MAX_CLAUSE)
+    for line, context in list(zip(parser.lines, parser.contexts, strict=True))[:200]:
+        if len(line) > _MAX_CLAUSE:
+            continue
+        # A section about another model, or one listing what the product does
+        # NOT have, never feeds this product's atoms.
+        if any(_has_negation(c) for c in context):
+            continue
+        if expected_code and any(_names_other_model(c, expected_code) for c in context):
+            continue
+        texts.append(line)
     merged: dict[tuple, Atom] = {}
     for text in texts:
         if isinstance(text, str) and text:

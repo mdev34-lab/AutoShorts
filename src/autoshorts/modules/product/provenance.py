@@ -62,6 +62,17 @@ def _words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", text.casefold())
 
 
+def _is_suffix_run(token: str) -> bool:
+    """True for a variant written glued together, e.g. 'proplus' = pro + plus."""
+    if token in _MODEL_SUFFIXES:
+        return True
+    return any(
+        token.startswith(suffix) and _is_suffix_run(token[len(suffix) :])
+        for suffix in _MODEL_SUFFIXES
+        if suffix != token
+    )
+
+
 def model_codes(text: str) -> list[str]:
     """Model-like alphanumeric codes, retaining explicit variant suffixes such as PLUS."""
     tokens = _words(text)
@@ -76,7 +87,7 @@ def model_codes(text: str) -> list[str]:
         # 'mini' is a category descriptor ("mini projector"), not a variant suffix.
         while (
             following < len(tokens)
-            and tokens[following] in _MODEL_SUFFIXES
+            and _is_suffix_run(tokens[following])
             and tokens[following] != "mini"
         ):
             code += tokens[following]
@@ -103,7 +114,7 @@ def model_codes(text: str) -> list[str]:
         ):
             code = token + next_token
             following = index + 2
-            while following < len(tokens) and tokens[following] in _MODEL_SUFFIXES:
+            while following < len(tokens) and _is_suffix_run(tokens[following]):
                 code += tokens[following]
                 following += 1
             if len(code) >= 4:

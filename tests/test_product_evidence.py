@@ -219,3 +219,64 @@ def test_spec_words_before_numbers_are_not_other_models():
     page = _parse_page_html(html_doc, url="https://m.example/p", status=200)
     keys = {a.key for a in page_atoms(page, "hy300proplus")}
     assert ("feature", "bluetooth") in keys and ("feature", "android") in keys
+
+
+class _ProPage(_Page):
+    url = "https://manufacturer.example/p/hy300pro"
+    title = "HY300 Pro Projector"
+    h1 = "HY300 Pro Projector"
+
+
+def _pro_surfaces(html_body, expected="hy300pro"):
+    from autoshorts.modules.product.evidence import page_atoms
+
+    html = f"<html><body><main>{html_body}</main></body></html>"
+    return {a.surface for a in page_atoms(_ProPage(html), expected_code=expected)}
+
+
+def test_features_under_another_models_heading_do_not_leak_to_this_model():
+    out = _pro_surfaces(
+        "<p>HY300 Pro: Wi-Fi.</p>"
+        "<section><h2>HY320</h2><p>Bluetooth HDMI laser.</p></section>"
+    )
+    assert "Wi-Fi" in out
+    assert not {"Bluetooth", "HDMI", "laser"} & out
+
+
+def test_heading_scope_ends_at_the_next_heading_of_same_or_higher_level():
+    out = _pro_surfaces(
+        "<h2>HY320</h2><p>Bluetooth.</p><h2>HY300 Pro</h2><p>Android.</p>"
+    )
+    assert "Android" in out and "Bluetooth" not in out
+
+
+def test_items_under_a_negative_section_are_not_positive_atoms():
+    for label in ("<h2>Não possui:</h2>", "<p><strong>Sem:</strong></p>"):
+        out = _pro_surfaces(
+            f"<p>HY300 Pro: Android Wi-Fi.</p>{label}"
+            "<ul><li>Bluetooth</li><li>HDMI</li></ul>"
+        )
+        assert {"Android", "Wi-Fi"} <= out
+        assert not {"Bluetooth", "HDMI"} & out, label
+
+
+def test_compound_variant_spelling_is_bound_like_the_spaced_one():
+    from autoshorts.modules.product.errors import ProductNotFoundError
+    from autoshorts.modules.product.provenance import (
+        PageEvidence,
+        model_codes,
+        verify_product_identity,
+    )
+
+    assert "hy300proplus" in model_codes("HY300 ProPlus")
+    for spelling in ("HY300 ProPlus", "HY300 Pro Plus"):
+        page = PageEvidence(
+            url="https://m.example/p",
+            status=200,
+            title=spelling,
+            h1=spelling,
+            meta_title="",
+            identity_codes=model_codes(spelling),
+        )
+        with pytest.raises(ProductNotFoundError):
+            verify_product_identity("HY300", page, label="x")
