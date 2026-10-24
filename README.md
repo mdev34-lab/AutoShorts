@@ -15,6 +15,7 @@ AI-powered tool for generating YouTube Shorts / TikTok videos with script genera
 - **Subject-aware image framing** — web images are framed around faces/salient regions; wide photos get a blurred-fill background instead of a hard center crop
 - **YouTube Integration** — download any video as background footage
 - **Two pipelines**: normal (YouTube bg + optional image overlays) and images-only (AI/web images + overlay animation, no YouTube bg)
+- **Product showcase videos** — `autoshorts new product <shopee-link>` builds a video from the link slug with fail-closed image sourcing (exact model code verified on the public source page) and TTS pronunciation respellings
 - **Typer CLI** — nested subcommands, auto-generated `--help`, shell completion
 - **Batch Processing** — semicolon-separated subjects for multi-video runs
 

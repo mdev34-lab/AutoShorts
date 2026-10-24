@@ -178,7 +178,9 @@ CRITICAL RULES:
         log("DDG search failed, falling back to yt-dlp search...", "WARNING")
         return self._search_with_ytdlp(search_query, subject)
 
-    def _search_with_ddg(self, search_query: str, subject: str | None = None) -> str | None:
+    def _search_with_ddg(
+        self, search_query: str, subject: str | None = None
+    ) -> str | None:
         """Search YouTube via DuckDuckGo and download with yt-dlp."""
         try:
             from ddgs import DDGS
@@ -188,8 +190,7 @@ CRITICAL RULES:
                 DDGS().text(f"site:youtube.com {search_query}", max_results=10)
             )
             urls = [
-                u for r in results
-                if (u := r.get("href")) and "youtube.com/watch" in u
+                u for r in results if (u := r.get("href")) and "youtube.com/watch" in u
             ]
             if not urls:
                 log("No YouTube URLs found via DDG", "WARNING")
@@ -218,7 +219,9 @@ CRITICAL RULES:
                 if not all_videos:
                     raise ValueError("No videos found in search results")
 
-                suitable_videos = [v for v in all_videos if self._is_suitable_video(v, subject=subject)]
+                suitable_videos = [
+                    v for v in all_videos if self._is_suitable_video(v, subject=subject)
+                ]
 
                 if not suitable_videos:
                     for v in info["entries"]:
@@ -246,7 +249,9 @@ CRITICAL RULES:
                 log(f"yt-dlp search failed: {e}", "ERROR")
                 raise
 
-    def _download_first_suitable(self, urls: list[str], subject: str | None = None) -> str | None:
+    def _download_first_suitable(
+        self, urls: list[str], subject: str | None = None
+    ) -> str | None:
         """Try URLs one by one, return path of first successful download."""
         download_temp_dir = create_temp_dir()
         ydl_opts_with_dir = self.ydl_opts.copy()
