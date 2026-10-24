@@ -482,9 +482,7 @@ class TestScriptGenerator:
 
     @patch("autoshorts.modules.script_generator.requests.post")
     @patch.object(ScriptGenerator, "_generate_title_from_script", return_value=None)
-    def test_generate_script_from_metadata_long_description(
-        self, mock_title, mock_post
-    ):
+    def test_generate_script_from_metadata_long_description(self, mock_title, mock_post):
         """Test script generation from metadata with very long description"""
         mock_response = Mock()
         mock_response.json.return_value = {
@@ -565,13 +563,11 @@ class TestScriptGenerator:
             "choices": [
                 {
                     "message": {
-                        "content": json.dumps(
-                            {
-                                "verified": True,
-                                "corrections": [],
-                                "paragraphs": [],
-                            }
-                        )
+                        "content": json.dumps({
+                            "verified": True,
+                            "corrections": [],
+                            "paragraphs": [],
+                        })
                     }
                 }
             ]
@@ -581,17 +577,16 @@ class TestScriptGenerator:
         title_response = Mock()
         title_response.json.return_value = {
             "choices": [
-                {"message": {"content": json.dumps({"title": "Cl\u00e1ssico"})}}
+                {
+                    "message": {
+                        "content": json.dumps({"title": "Cl\u00e1ssico"})
+                    }
+                }
             ]
         }
         title_response.raise_for_status.return_value = None
 
-        mock_post.side_effect = [
-            query_response,
-            text_response,
-            verification_response,
-            title_response,
-        ]
+        mock_post.side_effect = [query_response, text_response, verification_response, title_response]
 
         generator = ScriptGenerator(web_search=True)
         result = generator.generate_script("Flamengo x Fluminense")
@@ -645,7 +640,9 @@ class TestScriptGenerator:
             "choices": [
                 {
                     "message": {
-                        "content": json.dumps({"queries": ["palmeiras hist\u00f3ria"]})
+                        "content": json.dumps(
+                            {"queries": ["palmeiras hist\u00f3ria"]}
+                        )
                     }
                 }
             ]
@@ -749,7 +746,11 @@ class TestScriptGenerator:
         query_response = Mock()
         query_response.json.return_value = {
             "choices": [
-                {"message": {"content": json.dumps({"queries": ["query1", "query2"]})}}
+                {
+                    "message": {
+                        "content": json.dumps({"queries": ["query1", "query2"]})
+                    }
+                }
             ]
         }
         query_response.raise_for_status.return_value = None
@@ -766,13 +767,11 @@ class TestScriptGenerator:
             "choices": [
                 {
                     "message": {
-                        "content": json.dumps(
-                            {
-                                "verified": True,
-                                "corrections": [],
-                                "paragraphs": [],
-                            }
-                        )
+                        "content": json.dumps({
+                            "verified": True,
+                            "corrections": [],
+                            "paragraphs": [],
+                        })
                     }
                 }
             ]
@@ -781,16 +780,17 @@ class TestScriptGenerator:
 
         title_response = Mock()
         title_response.json.return_value = {
-            "choices": [{"message": {"content": json.dumps({"title": "Test Title"})}}]
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps({"title": "Test Title"})
+                    }
+                }
+            ]
         }
         title_response.raise_for_status.return_value = None
 
-        mock_post.side_effect = [
-            query_response,
-            final_response,
-            verification_response,
-            title_response,
-        ]
+        mock_post.side_effect = [query_response, final_response, verification_response, title_response]
 
         generator = ScriptGenerator(web_search=True)
         paragraphs, prompts = generator.generate_script_with_prompts("test")
