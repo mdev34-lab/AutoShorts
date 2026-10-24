@@ -482,7 +482,9 @@ class TestScriptGenerator:
 
     @patch("autoshorts.modules.script_generator.requests.post")
     @patch.object(ScriptGenerator, "_generate_title_from_script", return_value=None)
-    def test_generate_script_from_metadata_long_description(self, mock_title, mock_post):
+    def test_generate_script_from_metadata_long_description(
+        self, mock_title, mock_post
+    ):
         """Test script generation from metadata with very long description"""
         mock_response = Mock()
         mock_response.json.return_value = {
@@ -563,11 +565,13 @@ class TestScriptGenerator:
             "choices": [
                 {
                     "message": {
-                        "content": json.dumps({
-                            "verified": True,
-                            "corrections": [],
-                            "paragraphs": [],
-                        })
+                        "content": json.dumps(
+                            {
+                                "verified": True,
+                                "corrections": [],
+                                "paragraphs": [],
+                            }
+                        )
                     }
                 }
             ]
@@ -577,16 +581,17 @@ class TestScriptGenerator:
         title_response = Mock()
         title_response.json.return_value = {
             "choices": [
-                {
-                    "message": {
-                        "content": json.dumps({"title": "Cl\u00e1ssico"})
-                    }
-                }
+                {"message": {"content": json.dumps({"title": "Cl\u00e1ssico"})}}
             ]
         }
         title_response.raise_for_status.return_value = None
 
-        mock_post.side_effect = [query_response, text_response, verification_response, title_response]
+        mock_post.side_effect = [
+            query_response,
+            text_response,
+            verification_response,
+            title_response,
+        ]
 
         generator = ScriptGenerator(web_search=True)
         result = generator.generate_script("Flamengo x Fluminense")
@@ -640,9 +645,7 @@ class TestScriptGenerator:
             "choices": [
                 {
                     "message": {
-                        "content": json.dumps(
-                            {"queries": ["palmeiras hist\u00f3ria"]}
-                        )
+                        "content": json.dumps({"queries": ["palmeiras hist\u00f3ria"]})
                     }
                 }
             ]
@@ -746,11 +749,7 @@ class TestScriptGenerator:
         query_response = Mock()
         query_response.json.return_value = {
             "choices": [
-                {
-                    "message": {
-                        "content": json.dumps({"queries": ["query1", "query2"]})
-                    }
-                }
+                {"message": {"content": json.dumps({"queries": ["query1", "query2"]})}}
             ]
         }
         query_response.raise_for_status.return_value = None
@@ -767,11 +766,13 @@ class TestScriptGenerator:
             "choices": [
                 {
                     "message": {
-                        "content": json.dumps({
-                            "verified": True,
-                            "corrections": [],
-                            "paragraphs": [],
-                        })
+                        "content": json.dumps(
+                            {
+                                "verified": True,
+                                "corrections": [],
+                                "paragraphs": [],
+                            }
+                        )
                     }
                 }
             ]
@@ -780,17 +781,16 @@ class TestScriptGenerator:
 
         title_response = Mock()
         title_response.json.return_value = {
-            "choices": [
-                {
-                    "message": {
-                        "content": json.dumps({"title": "Test Title"})
-                    }
-                }
-            ]
+            "choices": [{"message": {"content": json.dumps({"title": "Test Title"})}}]
         }
         title_response.raise_for_status.return_value = None
 
-        mock_post.side_effect = [query_response, final_response, verification_response, title_response]
+        mock_post.side_effect = [
+            query_response,
+            final_response,
+            verification_response,
+            title_response,
+        ]
 
         generator = ScriptGenerator(web_search=True)
         paragraphs, prompts = generator.generate_script_with_prompts("test")
@@ -1006,6 +1006,66 @@ class TestScriptGeneratorEdgeCases:
 
         assert isinstance(result, list)
         assert len(result) == 0
+
+
+class TestVoiceAndFiller:
+    """Spoken-voice tone rules and bureaucratic-filler rejection."""
+
+    def test_tone_block_includes_pacing_and_spoken_language_rules(self):
+        gen = ScriptGenerator.__new__(ScriptGenerator)
+        gen.custom_instructions = None
+        tone = gen._tone_instructions()
+        assert "PACING" in tone
+        assert "SPOKEN LANGUAGE" in tone
+        assert "news reader" in tone
+
+    @pytest.mark.parametrize(
+        "paragraph",
+        [
+            "Recentes desenvolvimentos no mundo do futebol mudaram tudo.",
+            "O gol de Seedorf atraiu atenção de 40 mil torcedores.",
+            "A partida ganhou destaque após 3 gols em 20 minutos.",
+            "Nos últimos tempos o time venceu 7 jogos seguidos.",
+            # facts with NO digit, quote or attribution marker must survive too
+            "O Corinthians ganhou destaque na imprensa ao contratar Seedorf.",
+            "A final foi decidida nos pênaltis e o goleiro foi o herói.",
+            "A torcida tem sido tema de debate depois da demissão do técnico.",
+            "É importante notar que o clube jogou com um a menos o segundo tempo.",
+            "Vale ressaltar que o elenco estava completo e sem lesionados.",
+            'Segundo o técnico, o resultado "ganhou destaque" na imprensa.',
+        ],
+    )
+    def test_news_reader_phrasing_never_drops_a_paragraph(self, paragraph):
+        assert ScriptGenerator._is_filler(paragraph) is False
+        assert ScriptGenerator._validate_paragraphs([paragraph]) == [paragraph]
+
+    @pytest.mark.parametrize(
+        "paragraph",
+        [
+            "Neste vídeo, vamos explorar a trajetória do time.",
+            "No fim fica uma lição para todos.",
+        ],
+    )
+    def test_explicit_meta_filler_is_still_rejected(self, paragraph):
+        assert ScriptGenerator._is_filler(paragraph) is True
+
+    def test_validation_never_drops_fact_bearing_paragraph(self):
+        paragraphs = [
+            "O time venceu por 2 a 0 no sábado.",
+            "A partida atraiu atenção de 40 mil torcedores.",
+            "Seedorf marcou aos 12 e aos 78 minutos.",
+            "O técnico elogiou a entrega do elenco.",
+            "O clube sobe para 45 pontos na tabela.",
+        ]
+        cleaned = ScriptGenerator._validate_paragraphs(list(paragraphs))
+        assert cleaned == paragraphs  # no silent 5->4 fact drop
+
+    def test_concrete_fact_paragraph_is_not_filler(self):
+        paragraph = (
+            "O time venceu por 2 a 0 no sábado, com gols marcados "
+            "aos 12 e aos 78 minutos do segundo tempo."
+        )
+        assert ScriptGenerator._is_filler(paragraph) is False
 
 
 if __name__ == "__main__":
