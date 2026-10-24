@@ -396,3 +396,17 @@ def test_section_for_another_hd_model_does_not_leak():
     html = "<main><p>HD146X: Wi-Fi.</p><h2>HD200</h2><p>Bluetooth HDMI.</p></main>"
     out = {a.surface for a in page_atoms(P(html), expected_code="hd146x")}
     assert out == {"Wi-Fi"}
+
+
+def test_bare_hd_models_stay_identifiable_next_to_legit_units():
+    from autoshorts.modules.product.provenance import model_codes
+
+    for text, code in (
+        ("HD200 Projector, 290 ANSI", "hd200"),
+        ("HD146X 3600 lumens", "hd146x"),
+        ("Optoma HD146X 720P HD 3600 lumens", "hd146x"),
+        ("BenQ HD 200 Projector 4K", "hd200"),
+        ("HD200 and 290 ANSI brightness", "hd200"),
+        ("720P HD, 290 ANSI. HD200 Projector", "hd200"),
+    ):
+        assert code in model_codes(text), text
