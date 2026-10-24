@@ -345,3 +345,54 @@ def test_variant_suffix_lookalikes_are_not_variants():
         ), word
     for glued in ("proplus", "promax", "ultraplus", "proultramax"):
         assert f"hy300{glued}" in model_codes(f"HY300 {glued}"), glued
+
+
+def test_hd_is_a_model_prefix_unless_the_number_is_a_spec_value():
+    from autoshorts.modules.product.errors import ProductNotFoundError
+    from autoshorts.modules.product.provenance import (
+        PageEvidence,
+        model_codes,
+        verify_product_identity,
+    )
+
+    # spec fragments: resolution word + resolution or unit-bearing number
+    for text in (
+        "HY300 Pro, native 720P HD, 200 ANSI",
+        "720P HD, 290 ANSI brightness",
+        "Full HD 1080 native",
+        "HD290 ANSI",
+        "HD 200 lumens",
+    ):
+        assert not any(c.startswith(("hd", "fhd")) for c in model_codes(text)), text
+    # real model family: HD146X is a product, and HD200 is a DIFFERENT one
+    assert "hd146x" in model_codes("Optoma HD146X Projector")
+    assert "hd200" in model_codes("Projector HD200")
+
+    def page(title):
+        return PageEvidence(
+            url="https://m.example/p",
+            status=200,
+            title=title,
+            h1=title,
+            meta_title="",
+            identity_codes=model_codes(title),
+        )
+
+    assert verify_product_identity(
+        "HD146X", page("HD146X Projector 720P HD 290 ANSI"), label="x"
+    )
+    for wrong in ("HD200 Projector", "HD146X and HD200 compared", "Optoma HD 200"):
+        with pytest.raises(ProductNotFoundError):
+            verify_product_identity("HD146X", page(wrong), label="x")
+
+
+def test_section_for_another_hd_model_does_not_leak():
+    from autoshorts.modules.product.evidence import page_atoms
+
+    class P(_Page):
+        url = "https://manufacturer.example/p/hd146x"
+        title = h1 = "Optoma HD146X"
+
+    html = "<main><p>HD146X: Wi-Fi.</p><h2>HD200</h2><p>Bluetooth HDMI.</p></main>"
+    out = {a.surface for a in page_atoms(P(html), expected_code="hd146x")}
+    assert out == {"Wi-Fi"}

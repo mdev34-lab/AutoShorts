@@ -73,6 +73,24 @@ def _is_suffix_run(token: str) -> bool:
     )
 
 
+# "HD", "FHD", "UHD" are both generic resolution words ("720P HD, 290 ANSI",
+# "Full HD 1080") and real model-family prefixes ("HD146X"). They only count as
+# a spec fragment when the number is a spec value: a standard resolution, or a
+# number followed by a unit. Anywhere else they stay ordinary model prefixes.
+_AMBIGUOUS_SPEC_PREFIXES = frozenset({"hd", "fhd", "uhd"})
+_RESOLUTION_NUMBERS = frozenset({"480", "576", "720", "1080", "1440", "2160", "4320"})
+_UNIT_WORDS = frozenset(
+    "ansi lumens lumen lm lms w watt watts gb mb tb mah hz khz nits mp ms db "
+    "inch inches cm mm kg lux cd".split()
+)
+
+
+def _is_spec_fragment(prefix: str, number: str, next_token: str | None) -> bool:
+    if prefix not in _AMBIGUOUS_SPEC_PREFIXES:
+        return False
+    return number in _RESOLUTION_NUMBERS or (next_token or "") in _UNIT_WORDS
+
+
 def model_codes(text: str) -> list[str]:
     """Model-like alphanumeric codes, retaining explicit variant suffixes such as PLUS."""
     tokens = _words(text)
@@ -82,6 +100,13 @@ def model_codes(text: str) -> list[str]:
             continue
         if _SHOPEE_ITEM_ID.match(token) or _RESOLUTION_TOKEN.match(token):
             continue
+        glued = re.fullmatch(r"(hd|fhd|uhd)(\d+)", token)
+        if glued and _is_spec_fragment(
+            glued.group(1),
+            glued.group(2),
+            tokens[index + 1] if index + 1 < len(tokens) else None,
+        ):
+            continue  # "HD290 ANSI": a spec value, not a model
         code = token
         following = index + 1
         # 'mini' is a category descriptor ("mini projector"), not a variant suffix.
@@ -98,7 +123,8 @@ def model_codes(text: str) -> list[str]:
             and tokens[index - 1] not in _PREFIX_STOPWORDS
         ):
             prefix = tokens[index - 1]
-            if len(prefix) <= 8:
+            next_after = tokens[index + 1] if index + 1 < len(tokens) else None
+            if len(prefix) <= 8 and not _is_spec_fragment(prefix, token, next_after):
                 codes.append(prefix + code)
         if len(code) >= 4 and any(ch.isalpha() for ch in code):
             codes.append(code)
@@ -112,6 +138,9 @@ def model_codes(text: str) -> list[str]:
             and len(next_token) >= 2
             and not _RESOLUTION_TOKEN.match(token + next_token)
         ):
+            nxt = tokens[index + 2] if index + 2 < len(tokens) else None
+            if _is_spec_fragment(token, next_token, nxt):
+                continue
             code = token + next_token
             following = index + 2
             while following < len(tokens) and _is_suffix_run(tokens[following]):
@@ -301,9 +330,7 @@ _STRICT_CODE = re.compile(r"[a-z]{1,4}\d{3,}[a-z]*")
 
 # Generic spec words that precede a number ("HD 290 ANSI", "USB 3"): they are
 # not product family prefixes, so "hd290" must not read as another model.
-_SPEC_WORDS = frozenset(
-    "hd fhd uhd usb hdmi ram rom lcd led ips dc ac ansi gb tb mb wifi".split()
-)
+_SPEC_WORDS = frozenset("usb hdmi ram rom lcd led ips dc ac ansi gb tb mb wifi".split())
 
 
 def _alpha_prefix(code: str) -> str:
