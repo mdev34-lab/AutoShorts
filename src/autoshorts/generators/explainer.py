@@ -14,6 +14,7 @@ from moviepy import (
     AudioFileClip,
     CompositeVideoClip,
     ImageClip,
+    VideoClip,
     concatenate_videoclips,
 )
 
@@ -277,7 +278,9 @@ class ExplainerGenerator:
                 return False
 
             log("Step 6: Composing video...")
-            self._create_flux_video(img_paths, audio_path, paragraphs, self.output, self.metadata)
+            self._create_flux_video(
+                img_paths, audio_path, paragraphs, self.output, self.metadata
+            )
 
             elapsed = time.time() - start_time
             title = getattr(self.script_generator, "generated_title", None)
@@ -334,17 +337,34 @@ class ExplainerGenerator:
                 out_progress = (progress - fade_out_start) / (1.0 - fade_out_start)
                 return max(1.0 - self._ease_in_out_cubic(out_progress), 0.0)
 
-        def apply_opacity(get_frame, t):
-            frame = get_frame(t)
-            opacity = opacity_anim(t)
-            return np.minimum(255, frame * opacity).astype("uint8")
+        # Fade through an alpha mask, never by multiplying RGB: that yields an
+        # opaque near-black frame and the "faded" image covered the previous
+        # scene with black (issue #12). The mask is attached BEFORE the zoom so
+        # Resize scales mask and picture together.
+        width, height = clip.size
+        base_mask = clip.mask if isinstance(clip.mask, VideoClip) else None
 
+        def _opacity_frame(t):
+            fade = opacity_anim(t)
+            if base_mask is not None:
+                return np.asarray(base_mask.get_frame(t), dtype=float) * fade
+            return np.full((height, width), fade, dtype=float)
+
+        mask = VideoClip(
+            frame_function=_opacity_frame,
+            is_mask=True,
+            duration=getattr(clip, "duration", None),
+        )
+        clip = clip.with_mask(mask)
         clip = clip.with_effects([vfx.Resize(scale_anim)])
-        clip = clip.transform(apply_opacity)
         return clip.with_position(("center", "center"))
 
     def _create_flux_video(
-        self, img_paths: list, audio_path: str, paragraphs: list, output_path: str,
+        self,
+        img_paths: list,
+        audio_path: str,
+        paragraphs: list,
+        output_path: str,
         metadata: VideoMetadata | None = None,
     ):
         log("Composing video with U-curve zoom...")
@@ -363,7 +383,9 @@ class ExplainerGenerator:
                 .resized(new_size=(1080, 1920))
             )
             if i == 0 and OPENING_ANIMATION_ENABLED:
-                clip = compositor._apply_opening_animation(clip, OPENING_ANIMATION_DURATION)
+                clip = compositor._apply_opening_animation(
+                    clip, OPENING_ANIMATION_DURATION
+                )
             else:
                 clip = self._apply_overlay_animation(clip, dur_per_img)
             if i > 0:

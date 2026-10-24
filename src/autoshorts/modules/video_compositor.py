@@ -137,7 +137,14 @@ class VideoCompositor:
 
         Zoom is center-crop+resize (constant frame size), blur is a per-frame
         PIL Gaussian whose sigma tracks the ease curve's slope (velocity).
-        Opacity is applied as a multiply in the same pass.
+        Opacity is an alpha mask combined with the source's own alpha; the zoom
+        of RGB and alpha is done in premultiplied space.
+
+        Known limitation: the motion blur filters straight (unpremultiplied) RGB
+        and the mask is not blurred. For sources with a transparent region this
+        can tint a ~14 px band at the blur peak (measured up to ~16% on a
+        synthetic RGBA edge). Production overlays are opaque RGB JPEGs
+        (no mask), where the blur is exact.
         """
 
         # An animation longer than the clip would end the clip at full

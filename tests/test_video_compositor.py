@@ -505,13 +505,14 @@ def test_overlay_source_alpha_is_zoomed_with_the_pixels():
             assert row[x][2] > 200 and row[x][1] < 60, f"x={x} not overlay: {row[x]}"
 
 
-def test_short_clip_last_encoded_frame_transparent_at_any_fps():
+def test_short_clip_last_encoded_frame_transparent_at_any_fps(monkeypatch):
     from moviepy import CompositeVideoClip, ImageClip
 
     from autoshorts.modules import video_compositor as vc
 
     compositor = vc.VideoCompositor()
     for fps in (24, 30):
+        monkeypatch.setattr(vc, "VIDEO_FPS", fps)
         for duration in (0.5, 0.8, 2.0):
             red_bg = ImageClip(
                 np.full((36, 64, 3), (200, 0, 0), dtype="uint8")
@@ -555,13 +556,14 @@ def test_zoomed_overlay_edge_has_no_colour_fringe_from_transparent_pixels():
         ), f"fringe at x={x} alpha={arow[x]:.2f}: {row[x]}"
 
 
-def test_short_clip_fade_out_has_partial_opacity_frames():
+def test_short_clip_fade_out_has_partial_opacity_frames(monkeypatch):
     from moviepy import ImageClip
 
     from autoshorts.modules import video_compositor as vc
 
     compositor = vc.VideoCompositor()
     for fps in (24, 30):
+        monkeypatch.setattr(vc, "VIDEO_FPS", fps)  # the module's fade reads this
         duration = 0.5
         white = ImageClip(np.full((36, 64, 3), 255, dtype="uint8")).with_duration(
             duration
@@ -573,4 +575,6 @@ def test_short_clip_fade_out_has_partial_opacity_frames():
         partial = [o for o in ops if 0.05 < o < 0.95]
         assert len(partial) >= 2, f"fade is a cut at fps={fps}: {ops}"
         after_peak = ops[ops.index(max(ops)) :]
-        assert all(a >= b - 1e-9 for a, b in zip(after_peak, after_peak[1:])), ops
+        assert all(
+            a >= b - 1e-9 for a, b in zip(after_peak, after_peak[1:], strict=False)
+        ), ops
