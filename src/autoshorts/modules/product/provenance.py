@@ -91,6 +91,42 @@ def _is_spec_fragment(prefix: str, number: str, next_token: str | None) -> bool:
     return number in _RESOLUTION_NUMBERS or (next_token or "") in _UNIT_WORDS
 
 
+_RESOLUTION_WORD = re.compile(r"(?:\d{3,4}p|\d{1,2}k|native|full|true|real)")
+
+
+def ambiguous_spec_models(text: str) -> list[str]:
+    """Codes like 'hd200' that model_codes treated as a spec fragment ("HD 200
+    lumens") but where nothing in the text shows HD is used as a resolution
+    word (no "720P"/"Native"/"Full" right before it). A section HEADING that
+    reads like this may really be a model name, so scoping callers fail closed
+    on it instead of trusting the spec reading."""
+    tokens = _words(text)
+    found: list[str] = []
+    for index, token in enumerate(tokens):
+        glued = re.fullmatch(r"(hd|fhd|uhd)(\d+)", token)
+        if glued:
+            prefix, number, prev = glued.group(1), glued.group(2), None
+            if index > 0:
+                prev = tokens[index - 1]
+            nxt = tokens[index + 1] if index + 1 < len(tokens) else None
+        elif (
+            token in _AMBIGUOUS_SPEC_PREFIXES
+            and index + 1 < len(tokens)
+            and tokens[index + 1].isdigit()
+        ):
+            prefix, number = token, tokens[index + 1]
+            prev = tokens[index - 1] if index > 0 else None
+            nxt = tokens[index + 2] if index + 2 < len(tokens) else None
+        else:
+            continue
+        if not _is_spec_fragment(prefix, number, nxt) or number in _RESOLUTION_NUMBERS:
+            continue
+        if prev and _RESOLUTION_WORD.fullmatch(prev):
+            continue  # "720P HD, 290 ANSI": HD is the resolution word
+        found.append(prefix + number)
+    return list(dict.fromkeys(found))
+
+
 def model_codes(text: str) -> list[str]:
     """Model-like alphanumeric codes, retaining explicit variant suffixes such as PLUS."""
     tokens = _words(text)

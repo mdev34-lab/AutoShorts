@@ -410,3 +410,32 @@ def test_bare_hd_models_stay_identifiable_next_to_legit_units():
         ("720P HD, 290 ANSI. HD200 Projector", "hd200"),
     ):
         assert code in model_codes(text), text
+
+
+def test_ambiguous_hd_heading_fails_closed_but_neutral_spec_headings_pass():
+    from autoshorts.modules.product.evidence import page_atoms
+
+    class P(_Page):
+        url = "https://manufacturer.example/p/hd146x"
+        title = h1 = "Optoma HD146X"
+
+    def surfaces(heading):
+        html = (
+            "<main><p>HD146X: Wi-Fi.</p>"
+            f"<h2>{heading}</h2><p>Bluetooth HDMI laser.</p></main>"
+        )
+        return {a.surface for a in page_atoms(P(html), expected_code="hd146x")}
+
+    # may be the name of another model: the section is scoped out
+    for heading in ("HD 200 lumens", "HD200 ANSI", "FHD 300 W", "HD 200 lumens Pro"):
+        assert not {"Bluetooth", "HDMI", "laser"} & surfaces(heading), heading
+    # HD used as the resolution word: a neutral spec heading, section kept
+    for heading in (
+        "Native 720P HD, 200 ANSI",
+        "720P HD 290 ANSI brightness",
+        "Full HD 1080",
+        "Especificações",
+    ):
+        assert {"Bluetooth", "HDMI", "laser"} <= surfaces(heading), heading
+    # the expected model's own heading is never "another model"
+    assert "Bluetooth" in surfaces("HD146X 3600 lumens")

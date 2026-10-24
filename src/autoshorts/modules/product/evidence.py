@@ -303,6 +303,15 @@ def _names_other_model(text: str, expected_code: str) -> bool:
     return bool(other_model_codes(model_codes(text), expected_code))
 
 
+def _heading_names_other_model(text: str, expected_code: str) -> bool:
+    """Section headings fail closed: an ambiguous "HD 200 lumens" heading may
+    be a model name, so it scopes its section out unless it is the expected one."""
+    from .provenance import ambiguous_spec_models, model_codes, other_model_codes
+
+    codes = model_codes(text) + ambiguous_spec_models(text)
+    return bool(other_model_codes(codes, expected_code))
+
+
 def page_atoms(page, expected_code: str | None = None) -> list[Atom]:
     """Atoms from a verified page: identity fields plus bounded body spec lines."""
     source = host_label(page.url)
@@ -322,7 +331,9 @@ def page_atoms(page, expected_code: str | None = None) -> list[Atom]:
         # NOT have, never feeds this product's atoms.
         if any(_has_negation(c) for c in context):
             continue
-        if expected_code and any(_names_other_model(c, expected_code) for c in context):
+        if expected_code and any(
+            _heading_names_other_model(c, expected_code) for c in context
+        ):
             continue
         texts.append(line)
     merged: dict[tuple, Atom] = {}
