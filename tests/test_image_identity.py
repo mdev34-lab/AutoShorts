@@ -145,3 +145,16 @@ def test_malformed_provider_payload_is_not_evidence(field, value):
     else:
         page["imageinfo"][0][field] = value
     assert extract(page, media) is None
+
+
+def test_documented_portrait_without_structured_identity_remains_unproven():
+    # Live alternate file166913476 has a source/creator/license and portrait
+    # pixels, but no P180. Those fields must not fill the missing identity ID.
+    page, media = fixture()
+    page["pageid"] = 166913476
+    page["imageinfo"][0]["descriptionurl"] = (
+        "https://commons.wikimedia.org/wiki/File:Clarence_Seedorf_"
+        "Introductory_Press_Conferences,_2_June_2025_-_40_(cropped).jpg"
+    )
+    media = {"id": "M166913476", "statements": {}}
+    assert extract(page, media) is None
