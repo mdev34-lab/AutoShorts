@@ -50,7 +50,7 @@ class VideoBackgroundManager:
         }
 
     def generate_search_query(self, subject: str) -> str:
-        """Generate an AI-optimized YouTube search query."""
+        """Optimize a YouTube query, retaining the subject if optimization fails."""
         log("Generating AI-optimized search query...")
 
         system_prompt = """You are an expert at crafting YouTube search queries. Output ONLY the query, nothing else.
@@ -88,12 +88,10 @@ CRITICAL RULES:
             response.raise_for_status()
             data = response.json()
 
-            raw_content = (
-                data.get("choices", [{}])[0]
-                .get("message", {})
-                .get("content", "")
-                .strip()
-            )
+            content = data.get("choices", [{}])[0].get("message", {}).get("content")
+            if not isinstance(content, str):
+                raise ValueError("Query response contains no text")
+            raw_content = content.strip()
             log(f"Raw AI response: '{raw_content}'", "INFO")
 
             query = raw_content.replace('"', "").replace("'", "").strip()
@@ -105,8 +103,14 @@ CRITICAL RULES:
             return query
 
         except Exception as e:
-            log(f"Failed to generate AI query: {e}", "ERROR")
-            raise
+            # Optimization is optional. Do not abort a usable footage search,
+            # retry a model call, or print an external response body on failure.
+            log(
+                f"AI query optimization failed ({type(e).__name__}); "
+                "using the original subject",
+                "WARNING",
+            )
+            return subject
 
     def _is_suitable_video(
         self,
