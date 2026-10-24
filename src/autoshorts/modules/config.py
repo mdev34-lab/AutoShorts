@@ -38,6 +38,8 @@ __all__ = [
     "TEMP_DIR_PREFIX",
     "OUTPUT_DIR",
     "IMAGE_CACHE_DIR",
+    "IMAGE_PROVIDERS",
+    "ALLOW_UNVERIFIED_IMAGES",
     "IMAGE_SEARCH_SAFE",
     "IMAGE_SEARCH_PER_QUERY",
     "IMAGE_MIN_WIDTH",
@@ -159,6 +161,17 @@ IMAGE_CACHE_DIR = Path(tempfile.gettempdir()) / f"{TEMP_DIR_PREFIX}image_cache"
 
 # Image Search Configuration
 IMAGE_SEARCH_SAFE = os.getenv("IMAGE_SEARCH_SAFE", "on")
+# Image providers in preference order. "commons" returns license-verified
+# Wikimedia Commons images; "ddg" is DuckDuckGo (no license metadata -
+# stock-agency/watermarked domains are blocked and contextual fit is required).
+IMAGE_PROVIDERS = [
+    p.strip().lower()
+    for p in os.getenv("IMAGE_PROVIDERS", "commons").split(",")
+    if p.strip()
+]
+# Images without verified reuse rights (e.g. DDG results) are skipped unless
+# explicitly allowed; credits then mark the video "publication review required".
+ALLOW_UNVERIFIED_IMAGES = _get_env_bool("ALLOW_UNVERIFIED_IMAGES", False)
 IMAGE_SEARCH_PER_QUERY = _get_env_int("IMAGE_SEARCH_PER_QUERY", 5)
 IMAGE_MIN_WIDTH = _get_env_int("IMAGE_MIN_WIDTH", 720)
 IMAGE_MIN_HEIGHT = _get_env_int("IMAGE_MIN_HEIGHT", 720)
@@ -191,7 +204,8 @@ VIDEO_CODEC = os.getenv("VIDEO_CODEC", "libx264")
 AUDIO_CODEC = os.getenv("AUDIO_CODEC", "aac")
 
 # Font Configuration
-PROJECT_FONTS_DIR = Path(__file__).parent.parent.parent / "fonts"
+# Packaged with the wheel (package data), so installs find it too.
+PROJECT_FONTS_DIR = Path(__file__).parent.parent / "fonts"
 DEFAULT_FONT = os.getenv(
     "DEFAULT_FONT", str(PROJECT_FONTS_DIR / "BebasNeue-Regular.ttf")
 )

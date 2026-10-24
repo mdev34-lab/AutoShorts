@@ -2,7 +2,7 @@
 Test FluxImages module functionality
 """
 
-import hashlib
+import json
 import tempfile
 import warnings
 from pathlib import Path
@@ -685,20 +685,28 @@ class TestImageSearcher:
         assert result_img.size == (1080, 1920)
         result_img.close()
 
+    @patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", True)
+    @patch("autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["commons", "ddg"])
+    @patch(
+        "autoshorts.modules.image_searcher.ImageSearcher._commons_candidates",
+        return_value=[],
+    )
     @patch("autoshorts.modules.image_searcher.ImageSearcher.search_images")
     @patch("autoshorts.modules.image_searcher.ImageSearcher.download_image")
-    def test_get_images_all_from_web(self, mock_download, mock_search):
+    def test_get_images_all_from_web(self, mock_download, mock_search, _mock_commons):
         import time
 
         uid = str(time.time())
-        mock_search.return_value = [
-            {"image": "http://example.com/img1.jpg"},
+        mock_search.side_effect = lambda q: [
+            {"image": "http://example.com/img1.jpg", "title": f"{q} photo"},
         ]
         mock_download.return_value = True
 
         with (
             patch("autoshorts.modules.image_searcher.Image.open") as mock_open,
             patch.object(self.searcher, "resize_to_fill"),
+            # fixture downloads no real file; the pixel gate has its own tests
+            patch.object(self.searcher, "_content_rejection", return_value=None),
         ):
             mock_open.return_value.__enter__.return_value.size = (800, 600)
             paths = self.searcher.get_images(
@@ -709,23 +717,45 @@ class TestImageSearcher:
         assert mock_search.call_count == 3
         assert mock_download.call_count == 3
 
+    @patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", True)
+    @patch("autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["commons", "ddg"])
+    @patch(
+        "autoshorts.modules.image_searcher.ImageSearcher._commons_candidates",
+        return_value=[],
+    )
     @patch("autoshorts.modules.image_searcher.ImageSearcher.search_images")
     @patch("autoshorts.modules.image_searcher.ImageSearcher.download_image")
-    def test_get_images_uses_cache(self, mock_download, mock_search):
-        mock_search.return_value = [
-            {"image": "http://example.com/img.jpg"},
+    def test_get_images_uses_cache(self, mock_download, mock_search, _mock_commons):
+        mock_search.side_effect = lambda q: [
+            {"image": "http://example.com/img.jpg", "title": f"{q} image"},
         ]
         mock_download.return_value = True
 
         prompt = "cached prompt"
-        cache_key = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+        cache_key = ImageSearcher._cache_key(prompt)
         cached_path = IMAGE_CACHE_DIR / f"{cache_key}.jpg"
         cached_path.parent.mkdir(parents=True, exist_ok=True)
         cached_path.write_bytes(b"cached_data")
+        cached_path.with_suffix(".credits.json").write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "kind": "web",
+                    "provider": "commons",
+                    "title": "File:Cached.jpg",
+                    "image_url": "https://upload.wikimedia.org/cached.jpg",
+                    "source_page": "https://commons.wikimedia.org/wiki/File:Cached.jpg",
+                    "license": "CC BY 4.0",
+                    "license_verified": True,
+                }
+            )
+        )
 
         with (
             patch("autoshorts.modules.image_searcher.Image.open") as mock_open,
             patch.object(self.searcher, "resize_to_fill"),
+            # fixture downloads no real file; the pixel gate has its own tests
+            patch.object(self.searcher, "_content_rejection", return_value=None),
         ):
             mock_open.return_value.__enter__.return_value.size = (800, 600)
             paths = self.searcher.get_images(["uncached A", prompt, "uncached B"])
@@ -735,9 +765,15 @@ class TestImageSearcher:
         assert mock_search.call_count == 2  # cached prompt doesn't search
 
         cached_path.unlink(missing_ok=True)
+        cached_path.with_suffix(".credits.json").unlink(missing_ok=True)
 
+    @patch("autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["commons", "ddg"])
+    @patch(
+        "autoshorts.modules.image_searcher.ImageSearcher._commons_candidates",
+        return_value=[],
+    )
     @patch("autoshorts.modules.image_searcher.ImageSearcher.search_images")
-    def test_get_images_fallback_to_ai(self, mock_search):
+    def test_get_images_fallback_to_ai(self, mock_search, _mock_commons):
         mock_search.return_value = []
 
         with patch("autoshorts.modules.image_searcher.requests.get") as mock_get:
@@ -807,3 +843,113 @@ def test_images_only_overlay_fade_never_darkens_the_scene_behind():
         assert r >= 195, f"t={t}: darkened to {(r, g, b)}"  # never below the red scene
         assert g == b, f"t={t}: not a red-to-white mix: {(r, g, b)}"
     assert comp.get_frame(1.5)[18, 32].min() > 240  # fully shown mid-clip
+
+
+class TestCacheRespectsAcceptancePolicy:
+    def _web_record(self, path, **extra):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"cached_data")
+        rec = {
+            "schema": 1,
+            "kind": "web",
+            "provider": "commons",
+            "title": "File:X.jpg",
+            "image_url": "https://upload.wikimedia.org/x.jpg",
+            "source_page": "https://commons.wikimedia.org/wiki/File:X.jpg",
+            "license": "CC BY 4.0",
+            "license_verified": True,
+        }
+        rec.update(extra)
+        path.with_suffix(".credits.json").write_text(json.dumps(rec))
+
+    def test_opt_in_entry_is_not_served_after_opt_in_is_turned_off(self):
+        prompt = "Clarence Seedorf Corinthians 2012 cache regression"
+        with patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", True):
+            on_key = ImageSearcher._cache_key(prompt)
+        with patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", False):
+            off_key = ImageSearcher._cache_key(prompt)
+        assert on_key != off_key
+
+    def test_specific_request_cache_hit_is_refused_without_opt_in(self):
+        prompt = "Clarence Seedorf Corinthians 2012 hit regression"
+        with patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", False):
+            path = IMAGE_CACHE_DIR / f"{ImageSearcher._cache_key(prompt)}.jpg"
+            self._web_record(path)
+            try:
+                assert ImageSearcher._usable_cache(path, prompt) is False
+            finally:
+                path.unlink(missing_ok=True)
+                path.with_suffix(".credits.json").unlink(missing_ok=True)
+
+    def test_opt_in_marked_entry_is_refused_without_opt_in(self):
+        prompt = "a bowl of fruit on a table"
+        with patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", False):
+            path = IMAGE_CACHE_DIR / f"{ImageSearcher._cache_key(prompt)}.jpg"
+            self._web_record(path, unverified_opt_in=True)
+            try:
+                assert ImageSearcher._usable_cache(path, prompt) is False
+            finally:
+                path.unlink(missing_ok=True)
+                path.with_suffix(".credits.json").unlink(missing_ok=True)
+
+    def test_broad_verified_entry_is_reused(self):
+        prompt = "a bowl of fruit on a table"
+        with patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", False):
+            path = IMAGE_CACHE_DIR / f"{ImageSearcher._cache_key(prompt)}.jpg"
+            self._web_record(path)
+            try:
+                assert ImageSearcher._usable_cache(path, prompt) is True
+            finally:
+                path.unlink(missing_ok=True)
+                path.with_suffix(".credits.json").unlink(missing_ok=True)
+
+    def test_sidecar_says_clip_did_not_run_under_opt_in(self, tmp_path):
+        from autoshorts.modules import image_sources
+
+        cand = image_sources.SourceCandidate(
+            url="https://x.example/i.jpg",
+            provider="ddg",
+            fit_evidence="test",
+            title="t",
+            license="CC0",
+            extra={"source_page": "https://x.example/p"},
+        )
+        img = tmp_path / "a.jpg"
+        img.write_bytes(b"x")
+        with patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", True):
+            ImageSearcher._write_provenance_sidecar(img, cand, "any prompt")
+        rec = json.loads(img.with_suffix(".credits.json").read_text())
+        assert rec["pictured_subject_check"].startswith("not-run")
+        assert rec["unverified_opt_in"] is True
+        with patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", False):
+            ImageSearcher._write_provenance_sidecar(img, cand, "any prompt")
+        rec = json.loads(img.with_suffix(".credits.json").read_text())
+        assert "clip" in rec["pictured_subject_check"]
+        assert rec["unverified_opt_in"] is False
+
+
+class TestSpecificRequestsNeverUseWebImages:
+    def test_get_images_falls_back_for_a_specific_request_even_with_a_licensed_candidate(
+        self,
+    ):
+        from autoshorts.modules import image_sources
+
+        searcher = ImageSearcher()
+        cand = image_sources.SourceCandidate(
+            url="https://upload.wikimedia.org/seedorf.jpg",
+            provider="commons",
+            fit_evidence="all tokens",
+            license="CC BY 4.0",
+            title="File:Seedorf.jpg",
+        )
+        prompt = "Clarence Seedorf Corinthians 2012 integration regression"
+        with (
+            patch("autoshorts.modules.image_searcher.ALLOW_UNVERIFIED_IMAGES", False),
+            patch.object(searcher, "_candidates", return_value=[cand]),
+            patch.object(searcher, "download_image") as dl,
+            patch("autoshorts.modules.image_searcher.requests.get") as mock_get,
+            patch.object(searcher, "resize_to_fill"),
+        ):
+            mock_get.return_value = Mock(status_code=200, content=b"ai_fake_image")
+            searcher.get_images([prompt])
+        dl.assert_not_called()  # the web candidate was never downloaded
