@@ -191,7 +191,8 @@ VIDEO_CODEC = os.getenv("VIDEO_CODEC", "libx264")
 AUDIO_CODEC = os.getenv("AUDIO_CODEC", "aac")
 
 # Font Configuration
-PROJECT_FONTS_DIR = Path(__file__).parent.parent.parent / "fonts"
+# Packaged with the wheel (package data), so installs find it too.
+PROJECT_FONTS_DIR = Path(__file__).parent.parent / "fonts"
 DEFAULT_FONT = os.getenv(
     "DEFAULT_FONT", str(PROJECT_FONTS_DIR / "BebasNeue-Regular.ttf")
 )
