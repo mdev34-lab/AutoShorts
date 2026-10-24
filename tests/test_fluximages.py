@@ -535,14 +535,15 @@ class TestOverlayAnimation:
         mock_clip = Mock()
         mock_clip.size = (1080, 1920)
         mock_clip.with_effects = Mock(return_value=mock_clip)
-        mock_clip.transform = Mock(return_value=mock_clip)
+        mock_clip.with_mask = Mock(return_value=mock_clip)
         mock_clip.with_position = Mock(return_value=mock_clip)
 
         result = self.gen._apply_overlay_animation(mock_clip, 3.0)
 
         assert result is mock_clip
         mock_clip.with_effects.assert_called_once()
-        mock_clip.transform.assert_called_once()
+        # fade is an alpha mask now, not a pixel multiply (issue #12)
+        mock_clip.with_mask.assert_called_once()
         mock_clip.with_position.assert_called_once_with(("center", "center"))
 
     @patch("autoshorts.generators.explainer.vfx.Resize")
@@ -550,7 +551,7 @@ class TestOverlayAnimation:
         mock_clip = Mock()
         mock_clip.size = (1080, 1920)
         mock_clip.with_effects = Mock(return_value=mock_clip)
-        mock_clip.transform = Mock(return_value=mock_clip)
+        mock_clip.with_mask = Mock(return_value=mock_clip)
         mock_clip.with_position = Mock(return_value=mock_clip)
 
         result = self.gen._apply_overlay_animation(mock_clip, 0.0)
@@ -821,6 +822,27 @@ class TestImageSearcher:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+def test_images_only_overlay_fade_never_darkens_the_scene_behind():
+    """Real frames through the images-only overlay path: over a red scene a
+    fading white overlay must show red-to-white mixes, never the black the old
+    pixel multiply produced at the start and end of the fade."""
+    import numpy as np
+    from moviepy import CompositeVideoClip, ImageClip
+
+    gen = ExplainerGenerator(subject="t", images_only=True, image_source="ai")
+    size = (64, 36)
+    red = ImageClip(np.full((size[1], size[0], 3), (200, 0, 0), dtype="uint8"))
+    red = red.with_duration(3.0)
+    white = ImageClip(np.full((size[1], size[0], 3), 255, dtype="uint8"))
+    overlay = gen._apply_overlay_animation(white.with_duration(3.0), 3.0)
+    comp = CompositeVideoClip([red, overlay], size=size)
+    for t in (0.0, 0.075, 0.2, 1.5, 2.6, 2.9):
+        r, g, b = (int(v) for v in comp.get_frame(t)[18, 32])
+        assert r >= 195, f"t={t}: darkened to {(r, g, b)}"  # never below the red scene
+        assert g == b, f"t={t}: not a red-to-white mix: {(r, g, b)}"
+    assert comp.get_frame(1.5)[18, 32].min() > 240  # fully shown mid-clip
 
 
 class TestCacheRespectsAcceptancePolicy:
