@@ -204,7 +204,7 @@ class ExplainerGenerator:
         total = len(prompts)
 
         for i, prompt in enumerate(prompts):
-            cache_key = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+            cache_key = hashlib.sha256(f"ai1|{MODEL_IMAGE}|{prompt}".encode()).hexdigest()[:16]
             cached_path = IMAGE_CACHE_DIR / f"{cache_key}.jpg"
             if cached_path.exists():
                 img_paths.append(str(cached_path))
