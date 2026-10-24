@@ -1,0 +1,89 @@
+{
+  "pageid": 111425118,
+  "ns": 6,
+  "title": "File:Clarence Seedorf 2021.jpg",
+  "imagerepository": "local",
+  "imageinfo": [
+    {
+      "url": "https://upload.wikimedia.org/wikipedia/commons/c/ce/Clarence_Seedorf_2021.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "descriptionurl": "https://commons.wikimedia.org/wiki/File:Clarence_Seedorf_2021.jpg",
+      "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=111425118",
+      "extmetadata": {
+        "DateTime": {
+          "value": "2021-10-21 11:01:03",
+          "source": "mediawiki-metadata",
+          "hidden": ""
+        },
+        "ObjectName": {
+          "value": "Clarence Seedorf 2021",
+          "source": "mediawiki-metadata"
+        },
+        "CommonsMetadataExtension": {
+          "value": 1.2,
+          "source": "extension",
+          "hidden": ""
+        },
+        "Categories": {
+          "value": "GFDL|Clarence Seedorf|License migration redundant|Items with VRTS permission confirmed|Extracted images|Photos from soccer.ru|FC Zenit Saint Petersburg vs. Juventus, 20 October 2021",
+          "source": "commons-categories",
+          "hidden": ""
+        },
+        "Assessments": {
+          "value": "",
+          "source": "commons-categories",
+          "hidden": ""
+        },
+        "ImageDescription": {
+          "value": "Баннер в поддержку Семака, Маркизио и Зеедорф в качестве экспертов, Мората и Кьеза в центре внимания. «Зенит» в упорной борьбе уступил «Ювентусу» в Лиге чемпионов",
+          "source": "commons-desc-page"
+        },
+        "DateTimeOriginal": {
+          "value": "2021-10-20 00:59:36",
+          "source": "commons-desc-page"
+        },
+        "Credit": {
+          "value": "<a rel=\"nofollow\" class=\"external free\" href=\"https://www.soccer.ru/galery/1287369/photo/932368\">https://www.soccer.ru/galery/1287369/photo/932368</a>",
+          "source": "commons-desc-page"
+        },
+        "Artist": {
+          "value": "Кирилл Венедиктов",
+          "source": "commons-desc-page"
+        },
+        "LicenseShortName": {
+          "value": "CC BY-SA 3.0",
+          "source": "commons-desc-page",
+          "hidden": ""
+        },
+        "UsageTerms": {
+          "value": "Creative Commons Attribution-Share Alike 3.0",
+          "source": "commons-desc-page"
+        },
+        "AttributionRequired": {
+          "value": "true",
+          "source": "commons-desc-page",
+          "hidden": ""
+        },
+        "LicenseUrl": {
+          "value": "https://creativecommons.org/licenses/by-sa/3.0",
+          "source": "commons-desc-page"
+        },
+        "Copyrighted": {
+          "value": "True",
+          "source": "commons-desc-page",
+          "hidden": ""
+        },
+        "Restrictions": {
+          "value": "",
+          "source": "commons-desc-page",
+          "hidden": ""
+        },
+        "License": {
+          "value": "cc-by-sa-3.0",
+          "source": "commons-templates",
+          "hidden": ""
+        }
+      },
+      "mime": "image/jpeg"
+    }
+  ]
+}
