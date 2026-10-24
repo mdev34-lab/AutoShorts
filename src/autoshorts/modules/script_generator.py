@@ -679,7 +679,7 @@ class ScriptGenerator:
 
     @staticmethod
     def _is_filler(paragraph: str) -> bool:
-        """Check if a paragraph is generic filler or corporate language that should be rejected."""
+        """Flag possible filler for a warning, never a factual deletion decision."""
         filler_patterns = [
             "fica uma li\u00e7\u00e3o",
             "vale a pena conhecer",
@@ -705,14 +705,21 @@ class ScriptGenerator:
 
     @staticmethod
     def _validate_paragraphs(paragraphs: list) -> list:
-        """Remove filler paragraphs, strip markdown, and validate quality."""
+        """Strip markdown and warn about style without silently deleting facts."""
         if not paragraphs:
             return []
         cleaned = [
             strip_markdown(p)
             for p in paragraphs
-            if isinstance(p, str) and not ScriptGenerator._is_filler(p)
+            if isinstance(p, str)
         ]
+        legacy_flagged = sum(ScriptGenerator._is_filler(p) for p in cleaned)
+        if legacy_flagged:
+            log(
+                f"{legacy_flagged} paragraph(s) match legacy filler phrasing; kept "
+                "(never dropped: substring matches cannot establish absence of facts)",
+                "WARNING",
+            )
         flagged = sum(
             1
             for p in cleaned
@@ -726,7 +733,7 @@ class ScriptGenerator:
             )
         if len(cleaned) < 3:
             log(
-                f"Validation: {len(paragraphs)} input, {len(cleaned)} after removing filler",
+                f"Validation: {len(paragraphs)} input, {len(cleaned)} text paragraphs",
                 "WARNING",
             )
         return cleaned
