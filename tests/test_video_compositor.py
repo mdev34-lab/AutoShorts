@@ -56,6 +56,7 @@ class TestApplyOverlayAnimation:
         mock_clip.size = (1080, 1920)
         mock_clip.with_effects.return_value = mock_clip
         mock_clip.transform.return_value = mock_clip
+        mock_clip.with_mask.return_value = mock_clip
         mock_clip.with_position.return_value = mock_clip
 
         result = self.compositor._apply_overlay_animation(mock_clip, 3.0)
@@ -63,6 +64,8 @@ class TestApplyOverlayAnimation:
         assert result is mock_clip
         mock_clip.with_effects.assert_not_called()
         mock_clip.transform.assert_called_once()
+        # Fade is carried by an alpha mask, not by darkening pixels.
+        assert mock_clip.with_mask.call_args[0][0].is_mask
         mock_clip.with_position.assert_called_once_with(("center", "center"))
 
     def test_zero_duration(self):
@@ -70,6 +73,7 @@ class TestApplyOverlayAnimation:
         mock_clip.size = (1080, 1920)
         mock_clip.with_effects.return_value = mock_clip
         mock_clip.transform.return_value = mock_clip
+        mock_clip.with_mask.return_value = mock_clip
         mock_clip.with_position.return_value = mock_clip
 
         result = self.compositor._apply_overlay_animation(mock_clip, 0.0)
@@ -106,6 +110,7 @@ class TestOverlayAnimationFrameTransform:
         mock_clip.size = (100, 100)
         mock_clip.with_effects = Mock(return_value=mock_clip)
         mock_clip.transform = Mock(return_value=mock_clip)
+        mock_clip.with_mask = Mock(return_value=mock_clip)
         mock_clip.with_position = Mock(return_value=mock_clip)
 
         self.compositor._apply_overlay_animation(mock_clip, 1.0)
@@ -115,11 +120,17 @@ class TestOverlayAnimationFrameTransform:
         def dummy_get_frame(t):
             return np.ones((100, 100, 3), dtype=np.uint8) * 255
 
+        # The RGB transform never darkens for opacity; the fade lives in the mask.
         at_mid = transform_call(dummy_get_frame, 0.5)
         at_end = transform_call(dummy_get_frame, 1.0)
 
-        assert np.any(at_mid > 0)
-        assert np.all(at_end == 0)
+        assert np.all(at_mid == 255)
+        assert np.all(at_end == 255)
+
+        mask = mock_clip.with_mask.call_args[0][0]
+        assert mask.get_frame(0.5).max() == 1.0
+        assert mask.get_frame(1.0).max() == 0.0
+        assert 0.0 < mask.get_frame(0.05).max() < 1.0
 
 
 class TestVerticalCropBox:
@@ -360,3 +371,210 @@ class TestRealPathComposition:
         # Overlay mode must receive the untouched source (full source also
         # feeds the blurred-background path).
         assert overlay_exc.value.size == (640, 338)
+
+
+def test_overlay_fade_uses_alpha_not_black():
+    """The overlay fade must reveal the background, never dim the frame to black."""
+    import numpy as np
+    from moviepy import CompositeVideoClip, ImageClip
+
+    from autoshorts.modules.video_compositor import VideoCompositor
+
+    compositor = VideoCompositor()
+    red_bg = ImageClip(np.full((36, 64, 3), (200, 0, 0), dtype="uint8")).with_duration(
+        1.0
+    )
+    white_fg = ImageClip(np.full((36, 64, 3), 255, dtype="uint8")).with_duration(1.0)
+    overlay = compositor._apply_overlay_animation(white_fg, 1.0)
+    composite = CompositeVideoClip([red_bg, overlay], size=(64, 36))
+
+    # t=0: fade-in start -> background fully visible, not a black frame
+    px_start = composite.get_frame(0.0)[18, 32]
+    assert px_start[0] > 150 and px_start[1] < 60, f"fade start went dark: {px_start}"
+    # t=0.5: fully opaque overlay
+    px_mid = composite.get_frame(0.5)[18, 32]
+    assert all(c > 240 for c in px_mid), f"overlay not opaque mid-show: {px_mid}"
+    # t=0.075 (mid fade-in, opacity ~0.5): a blend of bg and overlay, never black
+    px_blend = composite.get_frame(0.075)[18, 32]
+    assert px_blend[1] > 60, f"mid-fade crushed to black: {px_blend}"
+
+
+def test_overlay_last_encoded_frame_fully_transparent():
+    """The final ENCODED frame (t = duration - 1/fps), not t=duration, must
+    show pure background - no ghost overlay from an incomplete fade."""
+    import numpy as np
+    from moviepy import CompositeVideoClip, ImageClip
+
+    from autoshorts.modules.video_compositor import VideoCompositor
+
+    fps, duration = 30, 1.0
+    compositor = VideoCompositor()
+    red_bg = ImageClip(np.full((36, 64, 3), (200, 0, 0), dtype="uint8")).with_duration(
+        duration
+    )
+    white_fg = ImageClip(np.full((36, 64, 3), 255, dtype="uint8")).with_duration(
+        duration
+    )
+    overlay = compositor._apply_overlay_animation(white_fg, duration)
+    composite = CompositeVideoClip([red_bg, overlay], size=(64, 36))
+
+    last_t = (int(duration * fps) - 1) / fps  # frame 29/30: what is actually encoded
+    px_last = composite.get_frame(last_t)[18, 32]
+    assert px_last[0] > 190 and px_last[1] < 20 and px_last[2] < 20, (
+        f"ghost overlay on final encoded frame: {px_last}"
+    )
+
+
+def test_overlay_fade_combines_with_source_alpha():
+    """A transparent PNG's own alpha must survive: the fade mask multiplies
+    it, never replaces it (a replacement resurrects transparent pixels)."""
+    import numpy as np
+    from moviepy import CompositeVideoClip, ImageClip
+
+    from autoshorts.modules.video_compositor import VideoCompositor
+
+    rgba = np.full((36, 64, 4), (255, 255, 255, 255), dtype="uint8")
+    rgba[:, :32, 3] = 0  # left half fully transparent
+    compositor = VideoCompositor()
+    red_bg = ImageClip(np.full((36, 64, 3), (200, 0, 0), dtype="uint8")).with_duration(
+        1.0
+    )
+    fg = ImageClip(rgba).with_duration(1.0)
+    assert fg.mask is not None, "RGBA source should carry its alpha as a mask"
+    overlay = compositor._apply_overlay_animation(fg, 1.0)
+    composite = CompositeVideoClip([red_bg, overlay], size=(64, 36))
+
+    # Mid-show (fully faded in): left half still shows the background...
+    px_left = composite.get_frame(0.5)[18, 8]
+    assert px_left[0] > 150 and px_left[1] < 60, (
+        f"source alpha was replaced, transparent pixels resurrected: {px_left}"
+    )
+    # ...right half shows the opaque overlay
+    px_right = composite.get_frame(0.5)[18, 48]
+    assert all(c > 240 for c in px_right), f"opaque region lost: {px_right}"
+
+
+def test_overlay_animation_duration_clamped_to_clip():
+    """An animation longer than the clip must not strand the clip at full
+    opacity past its own end - the fade completes within the clip's life."""
+    import numpy as np
+    from moviepy import ImageClip
+
+    from autoshorts.modules.video_compositor import VideoCompositor
+
+    compositor = VideoCompositor()
+    clip = ImageClip(np.full((36, 64, 3), 255, dtype="uint8")).with_duration(1.0)
+    result = compositor._apply_overlay_animation(clip, 10.0)
+    assert abs(result.mask.duration - 1.0) < 1e-6, (
+        f"mask runs past the clip: {result.mask.duration}"
+    )
+    # final encoded frame of the CLIP's life is transparent
+    last_t = 29 / 30
+    fade = result.mask.get_frame(last_t).max()
+    assert fade == 0.0, f"clip would end visible: alpha {fade}"
+
+
+def test_overlay_source_alpha_is_zoomed_with_the_pixels():
+    """The source alpha must be zoomed exactly like the RGB frame: with an
+    off-center transparent boundary, no pixel from the transparent (green)
+    region may show up and the opaque region must start where its pixels do."""
+    from moviepy import CompositeVideoClip, ImageClip
+
+    from autoshorts.modules import video_compositor as vc
+
+    w, h, boundary = 400, 72, 60
+    rgba = np.zeros((h, w, 4), dtype="uint8")
+    rgba[:, :boundary] = (0, 255, 0, 0)  # transparent, green RGB
+    rgba[:, boundary:] = (0, 0, 255, 255)  # opaque blue
+    compositor = vc.VideoCompositor()
+    red_bg = ImageClip(np.full((h, w, 3), (200, 0, 0), dtype="uint8")).with_duration(
+        1.0
+    )
+    fg = ImageClip(rgba).with_duration(1.0)
+    overlay = compositor._apply_overlay_animation(fg, 1.0)
+    frame = CompositeVideoClip([red_bg, overlay], size=(w, h)).get_frame(0.5)
+
+    scale = vc.MAX_ZOOM_FACTOR
+    assert scale > 1.01
+    edge = int(round(w / 2 + (boundary - w / 2) * scale))
+    row = frame[h // 2]
+    for x in range(0, w):
+        if x < edge - 4:
+            assert row[x][0] > 150 and row[x][1] < 60, f"x={x} not background: {row[x]}"
+        elif x > edge + 4:
+            assert row[x][2] > 200 and row[x][1] < 60, f"x={x} not overlay: {row[x]}"
+
+
+def test_short_clip_last_encoded_frame_transparent_at_any_fps(monkeypatch):
+    from moviepy import CompositeVideoClip, ImageClip
+
+    from autoshorts.modules import video_compositor as vc
+
+    compositor = vc.VideoCompositor()
+    for fps in (24, 30):
+        monkeypatch.setattr(vc, "VIDEO_FPS", fps)
+        for duration in (0.5, 0.8, 2.0):
+            red_bg = ImageClip(
+                np.full((36, 64, 3), (200, 0, 0), dtype="uint8")
+            ).with_duration(duration)
+            white = ImageClip(np.full((36, 64, 3), 255, dtype="uint8")).with_duration(
+                duration
+            )
+            overlay = compositor._apply_overlay_animation(white, duration)
+            comp = CompositeVideoClip([red_bg, overlay], size=(64, 36))
+            last_t = (int(round(duration * fps)) - 1) / fps
+            px = comp.get_frame(last_t)[18, 32]
+            assert px[0] > 195 and px[1] < 6 and px[2] < 6, (
+                f"ghost at fps={fps} dur={duration}: {px}"
+            )
+
+
+def test_zoomed_overlay_edge_has_no_colour_fringe_from_transparent_pixels():
+    """Straight-alpha Lanczos mixed the colour hidden under transparent pixels
+    into the visible edge. Every pixel with real alpha, edge band included,
+    must keep the opaque region's colour."""
+    from moviepy import ImageClip
+
+    from autoshorts.modules import video_compositor as vc
+
+    w, h, boundary = 400, 72, 60
+    rgba = np.zeros((h, w, 4), dtype="uint8")
+    rgba[:, :boundary] = (0, 255, 0, 0)
+    rgba[:, boundary:] = (108, 0, 117, 255)
+    overlay = vc.VideoCompositor()._apply_overlay_animation(
+        ImageClip(rgba).with_duration(1.0), 1.0
+    )
+    t = 0.5
+    rgb = overlay.get_frame(t).astype(float)
+    alpha = overlay.mask.get_frame(t)
+    row, arow = rgb[h // 2], alpha[h // 2]
+    visible = np.where(arow > 0.02)[0]
+    assert len(visible) > 0
+    for x in visible:
+        assert (
+            abs(row[x][0] - 108) <= 3 and row[x][1] <= 3 and abs(row[x][2] - 117) <= 3
+        ), f"fringe at x={x} alpha={arow[x]:.2f}: {row[x]}"
+
+
+def test_short_clip_fade_out_has_partial_opacity_frames(monkeypatch):
+    from moviepy import ImageClip
+
+    from autoshorts.modules import video_compositor as vc
+
+    compositor = vc.VideoCompositor()
+    for fps in (24, 30):
+        monkeypatch.setattr(vc, "VIDEO_FPS", fps)  # the module's fade reads this
+        duration = 0.5
+        white = ImageClip(np.full((36, 64, 3), 255, dtype="uint8")).with_duration(
+            duration
+        )
+        overlay = compositor._apply_overlay_animation(white, duration)
+        n = int(round(duration * fps))
+        ops = [float(overlay.mask.get_frame(i / fps).max()) for i in range(n)]
+        assert ops[-1] == 0.0
+        partial = [o for o in ops if 0.05 < o < 0.95]
+        assert len(partial) >= 2, f"fade is a cut at fps={fps}: {ops}"
+        after_peak = ops[ops.index(max(ops)) :]
+        assert all(
+            a >= b - 1e-9 for a, b in zip(after_peak, after_peak[1:], strict=False)
+        ), ops
