@@ -146,7 +146,7 @@ class TestGenerateSearchQuery:
         assert '"' not in query
 
     @patch("autoshorts.modules.video_background.requests.post")
-    def test_generate_query_too_generic_raises(self, mock_post):
+    def test_generate_query_too_generic_uses_subject(self, mock_post):
         mock_response = Mock()
         mock_response.json.return_value = {
             "choices": [{"message": {"content": "short"}}]
@@ -154,15 +154,13 @@ class TestGenerateSearchQuery:
         mock_response.raise_for_status.return_value = None
         mock_post.return_value = mock_response
 
-        with pytest.raises(Exception):
-            self.manager.generate_search_query("flamingo")
+        assert self.manager.generate_search_query("flamingo") == "flamingo"
 
     @patch("autoshorts.modules.video_background.requests.post")
-    def test_generate_query_api_error_raises(self, mock_post):
+    def test_generate_query_api_error_uses_subject(self, mock_post):
         mock_post.side_effect = Exception("API timeout")
 
-        with pytest.raises(Exception):
-            self.manager.generate_search_query("flamingo")
+        assert self.manager.generate_search_query("flamingo") == "flamingo"
 
 
 class TestDownloadFromUrl:
