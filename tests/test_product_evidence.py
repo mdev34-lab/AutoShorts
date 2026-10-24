@@ -439,3 +439,68 @@ def test_ambiguous_hd_heading_fails_closed_but_neutral_spec_headings_pass():
         assert {"Bluetooth", "HDMI", "laser"} <= surfaces(heading), heading
     # the expected model's own heading is never "another model"
     assert "Bluetooth" in surfaces("HD146X 3600 lumens")
+
+
+def test_unit_label_after_comma_or_colon_is_not_attached_to_the_model_number():
+    from autoshorts.modules.product.errors import ProductNotFoundError
+    from autoshorts.modules.product.evidence import page_atoms
+    from autoshorts.modules.product.provenance import (
+        PageEvidence,
+        model_codes,
+        verify_product_identity,
+    )
+
+    # a model number followed by a separate "label: value" is still a model
+    for text, code in (
+        ("Model: HD200, lumens: 290", "hd200"),
+        ("HD200 (lumens: 290)", "hd200"),
+        ("HD200; W: 20", "hd200"),
+        ("FHD200, lumens: 290", "fhd200"),
+        ("UHD200, lumens: 290", "uhd200"),
+        ("HY300 Pro vs HD200 lumens 290", "hd200"),
+    ):
+        codes = model_codes(text)
+        assert code in codes, text
+        # the unit label itself is never read as a model-family prefix
+        assert not any(c.startswith(("lumens", "w20")) for c in codes), text
+    # attached units and resolution words stay neutral / retained
+    for text, code in (
+        ("HD200 Projector, 290 ANSI", "hd200"),
+        ("HD200 Projector 290ANSI", "hd200"),
+        ("HD200 Projector, 20 W", "hd200"),
+        ("HD200 $290 ANSI", "hd200"),
+        ("Optoma HD146X 720P HD 3600 lumens", "hd146x"),
+    ):
+        assert code in model_codes(text), text
+    for text in ("HD 200 W", "HD200 lumens", "720P HD, 290 ANSI", "HD290 ANSI"):
+        assert not any(c.startswith(("hd", "fhd")) for c in model_codes(text)), text
+
+    # end to end: the section atoms of a foreign model never reach this one
+    for heading in (
+        "Model: HD200, lumens: 290",
+        "HD200 (lumens: 290)",
+        "HD200; W: 20",
+        "FHD200, lumens: 290",
+        "UHD200, lumens: 290",
+    ):
+        html = (
+            "<main><p>HY300 Pro: Wi-Fi.</p>"
+            f"<h2>{heading}</h2><p>Bluetooth HDMI laser.</p></main>"
+        )
+        out = {a.surface for a in page_atoms(_ProPage(html), expected_code="hy300pro")}
+        assert out == {"Wi-Fi"}, (heading, out)
+
+    # a comparison title with a labelled second model is rejected like a bare one
+    def page(title):
+        return PageEvidence(
+            url="https://m.example/p",
+            status=200,
+            title=title,
+            h1=title,
+            meta_title="",
+            identity_codes=model_codes(title),
+        )
+
+    for title in ("HY300 Pro vs HD200 lumens 290", "HY300 Pro vs HD200"):
+        with pytest.raises(ProductNotFoundError):
+            verify_product_identity("HY300 Pro", page(title), label="x")

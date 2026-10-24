@@ -55,11 +55,44 @@ _SHOPEE_ITEM_ID = re.compile(r"^i\d{6,}$")
 _RESOLUTION_TOKEN = re.compile(r"^(?:\d{3,4}p|[48]k)$")
 
 
-def _words(text: str) -> list[str]:
+def _normalized(text: str) -> str:
     text = html.unescape(text or "").replace("+", " plus ")
     text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    return re.findall(r"[a-z0-9]+", text.casefold())
+    return text.casefold()
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", _normalized(text))
+
+
+def _attached_units(text: str) -> list[str | None]:
+    """For each word, the measurement unit that is ATTACHED to it, if any.
+
+    A unit is attached only when it follows the word separated by whitespace
+    alone: "HD200 lumens" yes; "HD200, lumens: 290", "HD200 (lumens ...)" and
+    "HD200; W: 20" no, because there the unit is a new label whose value comes
+    next. A unit that is itself followed by ':'/'=' or by another number
+    ("HD200 lumens 290") is a label, not an attached unit either.
+    """
+    norm = _normalized(text)
+    spans = [m.span() for m in re.finditer(r"[a-z0-9]+", norm)]
+    words = [norm[a:b] for a, b in spans]
+    out: list[str | None] = []
+    for i in range(len(words)):
+        unit = None
+        if i + 1 < len(words) and words[i + 1] in _UNIT_WORDS:
+            gap = norm[spans[i][1] : spans[i + 1][0]]
+            after = norm[spans[i + 1][1] :]
+            number_next = (
+                i + 2 < len(words)
+                and not norm[spans[i + 1][1] : spans[i + 2][0]].strip()
+                and words[i + 2][0].isdigit()
+            )
+            if not gap.strip() and not re.match(r"\s*[:=]", after) and not number_next:
+                unit = words[i + 1]
+        out.append(unit)
+    return out
 
 
 def _is_suffix_run(token: str) -> bool:
@@ -101,6 +134,7 @@ def ambiguous_spec_models(text: str) -> list[str]:
     reads like this may really be a model name, so scoping callers fail closed
     on it instead of trusting the spec reading."""
     tokens = _words(text)
+    units = _attached_units(text)
     found: list[str] = []
     for index, token in enumerate(tokens):
         glued = re.fullmatch(r"(hd|fhd|uhd)(\d+)", token)
@@ -108,7 +142,7 @@ def ambiguous_spec_models(text: str) -> list[str]:
             prefix, number, prev = glued.group(1), glued.group(2), None
             if index > 0:
                 prev = tokens[index - 1]
-            nxt = tokens[index + 1] if index + 1 < len(tokens) else None
+            nxt = units[index]
         elif (
             token in _AMBIGUOUS_SPEC_PREFIXES
             and index + 1 < len(tokens)
@@ -116,7 +150,7 @@ def ambiguous_spec_models(text: str) -> list[str]:
         ):
             prefix, number = token, tokens[index + 1]
             prev = tokens[index - 1] if index > 0 else None
-            nxt = tokens[index + 2] if index + 2 < len(tokens) else None
+            nxt = units[index + 1]
         else:
             continue
         if not _is_spec_fragment(prefix, number, nxt) or number in _RESOLUTION_NUMBERS:
@@ -130,6 +164,7 @@ def ambiguous_spec_models(text: str) -> list[str]:
 def model_codes(text: str) -> list[str]:
     """Model-like alphanumeric codes, retaining explicit variant suffixes such as PLUS."""
     tokens = _words(text)
+    units = _attached_units(text)
     codes: list[str] = []
     for index, token in enumerate(tokens):
         if not any(ch.isdigit() for ch in token):
@@ -140,7 +175,7 @@ def model_codes(text: str) -> list[str]:
         if glued and _is_spec_fragment(
             glued.group(1),
             glued.group(2),
-            tokens[index + 1] if index + 1 < len(tokens) else None,
+            units[index],
         ):
             continue  # "HD290 ANSI": a spec value, not a model
         code = token
@@ -159,14 +194,23 @@ def model_codes(text: str) -> list[str]:
             and tokens[index - 1] not in _PREFIX_STOPWORDS
         ):
             prefix = tokens[index - 1]
-            next_after = tokens[index + 1] if index + 1 < len(tokens) else None
-            if len(prefix) <= 8 and not _is_spec_fragment(prefix, token, next_after):
+            next_after = units[index]
+            if (
+                len(prefix) <= 8
+                and prefix not in _UNIT_WORDS
+                and not _is_spec_fragment(prefix, token, next_after)
+            ):
                 codes.append(prefix + code)
         if len(code) >= 4 and any(ch.isalpha() for ch in code):
             codes.append(code)
     # Separated prefixes, e.g. "HY 300 Pro Plus".
     for index, token in enumerate(tokens[:-1]):
-        if not token.isalpha() or len(token) > 5 or token in _PREFIX_STOPWORDS:
+        if (
+            not token.isalpha()
+            or len(token) > 5
+            or token in _PREFIX_STOPWORDS
+            or token in _UNIT_WORDS
+        ):
             continue
         next_token = tokens[index + 1]
         if (
@@ -174,8 +218,7 @@ def model_codes(text: str) -> list[str]:
             and len(next_token) >= 2
             and not _RESOLUTION_TOKEN.match(token + next_token)
         ):
-            nxt = tokens[index + 2] if index + 2 < len(tokens) else None
-            if _is_spec_fragment(token, next_token, nxt):
+            if _is_spec_fragment(token, next_token, units[index + 1]):
                 continue
             code = token + next_token
             following = index + 2
