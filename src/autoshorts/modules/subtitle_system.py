@@ -115,7 +115,15 @@ def _load_pil_font(
             "using Pillow's built-in scalable font",
             "WARNING",
         )
-    return ImageFont.load_default(size)
+    try:
+        return ImageFont.load_default(size)  # Pillow >= 10.1: scalable
+    except TypeError:
+        log(
+            "Pillow < 10.1 has no scalable built-in font; subtitle size cannot "
+            "be honoured. Upgrade Pillow or install a TTF font.",
+            "WARNING",
+        )
+        return ImageFont.load_default()
 
 
 @lru_cache(maxsize=512)
