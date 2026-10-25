@@ -207,7 +207,7 @@ class SubtitleGenerator:
     ) -> str:
         """Generate VTT cues aligned to real per-sentence audio timings.
 
-        Each (sentence, start, end) entry is split into ~5-word chunks whose
+        Each (sentence, start, end) entry is split into balanced chunks of up to 5 words whose
         cue windows share the sentence's measured audio span proportionally,
         instead of spreading text evenly across the whole duration.
         """
@@ -217,7 +217,16 @@ class SubtitleGenerator:
             words = sentence.split()
             if not words:
                 continue
-            chunks = [" ".join(words[i : i + 5]) for i in range(0, len(words), 5)]
+            # Balanced chunks of at most 5 words: avoids a 1-word trailing cue
+            # that would flash on screen for a fraction of a second.
+            n_chunks = -(-len(words) // 5)
+            base, extra = divmod(len(words), n_chunks)
+            chunks = []
+            pos = 0
+            for i in range(n_chunks):
+                size = base + (1 if i < extra else 0)
+                chunks.append(" ".join(words[pos : pos + size]))
+                pos += size
             counts = [len(c.split()) for c in chunks]
             total = sum(counts)
             start_f, end_f = float(start), float(end)
