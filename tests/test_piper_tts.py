@@ -260,6 +260,7 @@ async def test_tts_system_piper_engine_writes_mp3(tmp_path, monkeypatch):
     assert cmd[cmd.index("-i") + 1].endswith("audio.wav")
     assert "libmp3lame" in cmd
     assert cmd[cmd.index("-q:a") + 1] == "4"
+    assert cmd[cmd.index("-af") + 1] == "alimiter=limit=0.89"
     assert cmd[-1].endswith("audio.mp3")
     # the configured TTS_RATE (+20% default) reaches Piper as a length_scale
     assert captured["length_scale"] == pytest.approx(1 / 1.2, abs=0.001)
@@ -406,3 +407,18 @@ def test_vtt_timing_straddling_duration_is_clamped(tmp_path):
         start_s, end_s = to_seconds(start_ts), to_seconds(end_ts)
         assert start_s < end_s <= 2.0
     assert to_seconds(cues[-1].split(" --> ")[1]) == pytest.approx(2.0)
+
+
+def test_vtt_has_no_one_word_trailing_cue(tmp_path):
+    from autoshorts.modules.subtitle_system import SubtitleGenerator
+
+    timings = [("Vem com estojo de carregamento e custa menos de 100 reais.", 0.0, 4.0)]
+    out = tmp_path / "subs.vtt"
+    SubtitleGenerator.generate_vtt_from_sentence_timings(timings, 4.0, str(out))
+    lines = out.read_text(encoding="utf-8-sig").splitlines()
+    texts = [lines[i + 1] for i, ln in enumerate(lines) if "-->" in ln]
+    assert (
+        " ".join(texts) == "Vem com estojo de carregamento e custa menos de 100 reais."
+    )
+    assert all(1 < len(t.split()) <= 5 for t in texts)
+    assert len(texts) == 3
