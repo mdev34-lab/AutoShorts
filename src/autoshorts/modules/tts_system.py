@@ -152,7 +152,7 @@ class TTSSystem:
             str(wav_path),
             # Keep headroom: Piper output can peak slightly above 0 dBFS.
             "-af",
-            "alimiter=limit=0.89",
+            "alimiter=limit=0.89:level=disabled",
             "-codec:a",
             "libmp3lame",
             "-q:a",

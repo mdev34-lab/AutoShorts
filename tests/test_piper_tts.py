@@ -260,7 +260,7 @@ async def test_tts_system_piper_engine_writes_mp3(tmp_path, monkeypatch):
     assert cmd[cmd.index("-i") + 1].endswith("audio.wav")
     assert "libmp3lame" in cmd
     assert cmd[cmd.index("-q:a") + 1] == "4"
-    assert cmd[cmd.index("-af") + 1] == "alimiter=limit=0.89"
+    assert cmd[cmd.index("-af") + 1] == "alimiter=limit=0.89:level=disabled"
     assert cmd[-1].endswith("audio.mp3")
     # the configured TTS_RATE (+20% default) reaches Piper as a length_scale
     assert captured["length_scale"] == pytest.approx(1 / 1.2, abs=0.001)
