@@ -134,3 +134,26 @@ def test_flux_video_duration_matches_audio(monkeypatch, num_images, audio_durati
         f"tail frame at t={audio_duration - 0.05}s is near-black "
         f"(mean {tail.mean():.1f})"
     )
+
+
+def test_flux_video_with_no_images_skips_render(monkeypatch):
+    recorded = []
+
+    class _RecordingComposite(CompositeVideoClip):
+        def write_videofile(self, filename, *args, **kwargs):
+            recorded.append(self)
+
+    monkeypatch.setattr(explainer, "CompositeVideoClip", _RecordingComposite)
+
+    generator = ExplainerGenerator.__new__(ExplainerGenerator)
+
+    result = generator._create_flux_video(
+        [],
+        "audio.wav",
+        ["first paragraph", "second paragraph", "third paragraph"],
+        "output.mp4",
+        None,
+    )
+
+    assert result is None
+    assert recorded == []

@@ -205,7 +205,9 @@ class ExplainerGenerator:
         total = len(prompts)
 
         for i, prompt in enumerate(prompts):
-            cache_key = hashlib.sha256(f"ai1|{MODEL_IMAGE}|{prompt}".encode()).hexdigest()[:16]
+            cache_key = hashlib.sha256(
+                f"ai1|{MODEL_IMAGE}|{prompt}".encode()
+            ).hexdigest()[:16]
             cached_path = IMAGE_CACHE_DIR / f"{cache_key}.jpg"
             if cached_path.exists():
                 img_paths.append(str(cached_path))
@@ -367,6 +369,9 @@ class ExplainerGenerator:
         output_path: str,
         metadata: VideoMetadata | None = None,
     ):
+        if not img_paths:
+            log("Cannot compose video: no image paths provided", "ERROR")
+            return
         log("Composing video with U-curve zoom...")
         audio = AudioFileClip(audio_path)
         num_imgs = len(img_paths)
