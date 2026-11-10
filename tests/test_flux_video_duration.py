@@ -147,13 +147,13 @@ def test_flux_video_with_no_images_skips_render(monkeypatch):
 
     generator = ExplainerGenerator.__new__(ExplainerGenerator)
 
-    result = generator._create_flux_video(
-        [],
-        "audio.wav",
-        ["first paragraph", "second paragraph", "third paragraph"],
-        "output.mp4",
-        None,
-    )
+    with pytest.raises(ValueError):
+        generator._create_flux_video(
+            [],
+            "audio.wav",
+            ["first paragraph", "second paragraph", "third paragraph"],
+            "output.mp4",
+            None,
+        )
 
-    assert result is None
     assert recorded == []

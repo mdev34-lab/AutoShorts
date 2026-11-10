@@ -370,8 +370,7 @@ class ExplainerGenerator:
         metadata: VideoMetadata | None = None,
     ):
         if not img_paths:
-            log("Cannot compose video: no image paths provided", "ERROR")
-            return
+            raise ValueError("Cannot compose video: no image paths provided")
         log("Composing video with U-curve zoom...")
         audio = AudioFileClip(audio_path)
         num_imgs = len(img_paths)
