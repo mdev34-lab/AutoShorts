@@ -830,10 +830,10 @@ class TestShortSubjectRetryGuards:
         assert calls == [prompt, "Palmeiras Remo Nubank"]
         assert out == []  # the short query still demands "Remo" in the title
 
-    def test_retry_keeps_explicit_pair_opponent(self, monkeypatch):
-        """First-N truncation must not drop the opponent after an explicit
-        'vs': the Vasco photo has the right player and venue but the wrong
-        opponent, so it is not a valid retry candidate."""
+    def test_retry_does_not_retry_ambiguous_celebration_pair(self, monkeypatch):
+        """Conservative policy: 'celebration' is an eligible word, so the
+        left side of 'Flamengo Maracanã celebration vs Grêmio' has more than
+        one eligible subject and the pair is ambiguous; no retry is attempted."""
         prompt = "Flamengo Maracanã celebration vs Grêmio"
         calls, out = self._retry(
             monkeypatch,
@@ -847,10 +847,14 @@ class TestShortSubjectRetryGuards:
                 }
             ],
         )
-        assert calls == [prompt, "Flamengo Maracanã Grêmio"]
+        assert calls == [prompt]
         assert out == []
 
-    def test_retry_accepts_same_explicit_pair(self, monkeypatch):
+    def test_retry_does_not_retry_ambiguous_celebration_pair_same_opponent(
+        self, monkeypatch
+    ):
+        """Conservative policy: 'celebration' makes the left side ambiguous,
+        so even a photo naming the correct opponent does not trigger a retry."""
         prompt = "Flamengo Maracanã celebration vs Grêmio"
         calls, out = self._retry(
             monkeypatch,
@@ -864,9 +868,8 @@ class TestShortSubjectRetryGuards:
                 }
             ],
         )
-        assert calls == [prompt, "Flamengo Maracanã Grêmio"]
-        assert [c.url for c in out] == ["https://ge.globo.com/g.jpg"]
-
+        assert calls == [prompt]
+        assert out == []
 
 @pytest.mark.parametrize(
     "query,title",
@@ -984,10 +987,9 @@ class TestPairSeparatorFailClosed:
 
     def test_exact_x_separator_resolves_pair(self):
         assert (
-            image_sources.retry_subject_query("Flamengo Maracanã celebration x Grêmio")
+            image_sources.retry_subject_query("Flamengo Maracanã x Grêmio")
             == "Flamengo Maracanã Grêmio"
         )
-
     def test_exact_x_separator_recognized_even_venue_prefix(self):
         # venue-only left side cannot resolve a team -> fail closed
         assert image_sources.retry_subject_query("Maracanã x Flamengo") == ""
@@ -1001,24 +1003,35 @@ class TestPairSeparatorFailClosed:
 
     def test_contra_separator_resolves_pair(self):
         assert (
-            image_sources.retry_subject_query("Flamengo Maracanã celebration contra Grêmio")
+            image_sources.retry_subject_query("Flamengo Maracanã contra Grêmio")
             == "Flamengo Maracanã Grêmio"
         )
-
-    def test_contra_lowercase_unresolved_fails_closed(self):
-        assert image_sources.retry_subject_query("flamengo contra grêmio") == ""
+    def test_contra_lowercase_exact_one_pair_resolves(self):
+        assert image_sources.retry_subject_query("flamengo contra grêmio") == "flamengo grêmio"
 
     def test_multiplication_sign_separator_resolves_pair(self):
         assert (
-            image_sources.retry_subject_query("Flamengo Maracanã celebration × Grêmio")
+            image_sources.retry_subject_query("Flamengo Maracanã × Grêmio")
             == "Flamengo Maracanã Grêmio"
         )
-
-    def test_lowercase_unresolved_fails_closed(self):
-        assert image_sources.retry_subject_query("flamengo vs grêmio") == ""
+    def test_lowercase_exact_one_pair_resolves(self):
+        assert image_sources.retry_subject_query("flamengo vs grêmio") == "flamengo grêmio"
+        assert image_sources.explicit_pair_subject("flamengo vs grêmio") == ("flamengo", "grêmio")
 
     def test_multiple_capitalized_ambiguous_fails_closed(self):
         assert image_sources.retry_subject_query("Flamengo Grêmio vs Vasco") == ""
+
+    def test_torcida_lotada_comemora_flamengo_ambiguous_fails_closed(self):
+        assert image_sources.retry_subject_query(
+            "Torcida lotada comemora flamengo x Grêmio"
+        ) == ""
+        assert image_sources.explicit_pair_subject(
+            "Torcida lotada comemora flamengo x Grêmio"
+        ) is None
+
+    def test_neymar_santos_ambiguous_fails_closed(self):
+        assert image_sources.retry_subject_query("Neymar santos x Palmeiras") == ""
+        assert image_sources.explicit_pair_subject("Neymar santos x Palmeiras") is None
 
     def test_no_separator_falls_back_to_short_query(self):
         q = "Flamengo Maracanã celebration Grêmio"
@@ -1070,26 +1083,7 @@ class TestPairRouteActualDdgCandidates:
                 "Flamengo enfrenta Grêmio no Estádio do Maracanã",
                 "Grêmio vence Fluminense no Estádio do Maracanã",
             ),
-            (
-                "Maracanã lotado Flamengo x Grêmio 2026",
-                "Flamengo enfrenta Grêmio no Maracanã",
-                "Grêmio vence Fluminense no Maracanã lotado",
-            ),
-            (
-                "Flamengo x atual campeão Grêmio",
-                "Flamengo enfrenta Grêmio",
-                "Flamengo enfrenta Vasco",
-            ),
-            (
-                "Flamengo Maracanã festa contra Grêmio",
-                "Flamengo enfrenta Grêmio no Maracanã",
-                "Flamengo festeja contra Vasco no Maracanã",
-            ),
-            (
-                "Flamengo Maracanã festa × Grêmio",
-                "Flamengo enfrenta Grêmio no Maracanã",
-                "Flamengo festeja contra Vasco no Maracanã",
-            ),
+
         ],
     )
     def test_ddg_candidates_outputs_only_correct_title(
@@ -1125,4 +1119,100 @@ class TestPairRouteActualDdgCandidates:
         assert "flamengo" in image_sources._normalize(calls[1])
         assert "gremio" in image_sources._normalize(calls[1])
         assert "atual" not in image_sources._normalize(calls[1])
+        spy.assert_not_called()
+
+
+class TestActualRouteTorcidaAndNeymar:
+    """Ambiguous pair prompts fail closed on the actual get_images route."""
+
+    @pytest.mark.parametrize(
+        "query,wrongtitle",
+        [
+            (
+                "Torcida lotada comemora flamengo x Grêmio",
+                "Torcida do Grêmio faz festa",
+            ),
+            (
+                "Neymar santos x Palmeiras",
+                "Neymar e Palmeiras em campo",
+            ),
+        ],
+    )
+    def test_no_retry_runtime_error_without_network(
+        self, monkeypatch, tmp_path, query, wrongtitle
+    ):
+        from autoshorts.modules import image_searcher as mod
+        from autoshorts.modules.image_searcher import ImageSearcher
+
+        monkeypatch.setattr(mod, "ALLOW_UNVERIFIED_IMAGES", True)
+        monkeypatch.setattr(mod, "IMAGE_AI_FALLBACK", False)
+        monkeypatch.setattr(mod, "IMAGE_PROVIDERS", ["ddg"])
+        monkeypatch.setattr(mod, "IMAGE_CACHE_DIR", tmp_path)
+        searcher = ImageSearcher()
+        calls = []
+
+        def fake_search(q):
+            calls.append(q)
+            return [
+                {
+                    "image": "https://example.com/wrong.jpg",
+                    "title": wrongtitle,
+                }
+            ]
+
+        monkeypatch.setattr(searcher, "search_images", fake_search)
+        with (
+            patch.object(
+                mod.requests.Session, "request", side_effect=AssertionError("network")
+            ) as spy,
+            pytest.raises(RuntimeError, match="IMAGE_AI_FALLBACK"),
+        ):
+            searcher.get_images([query])
+
+        assert calls == [query]
+        spy.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "query,wrongtitle",
+        [
+            (
+                "Torcida lotada comemora flamengo x Grêmio",
+                "Torcida do Grêmio faz festa",
+            ),
+            (
+                "Neymar santos x Palmeiras",
+                "Neymar e Palmeiras em campo",
+            ),
+        ],
+    )
+    def test_ddg_candidates_empty_single_full_search_no_http(
+        self, monkeypatch, query, wrongtitle
+    ):
+        from autoshorts.modules import image_searcher as mod
+        from autoshorts.modules.image_searcher import ImageSearcher
+
+        monkeypatch.setattr(mod, "ALLOW_UNVERIFIED_IMAGES", True)
+        searcher = ImageSearcher()
+        calls = []
+
+        def fake_search(q):
+            calls.append(q)
+            return [
+                {
+                    "image": "https://example.com/wrong.jpg",
+                    "title": wrongtitle,
+                }
+            ]
+
+        with (
+            patch("autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["ddg"]),
+            patch.object(searcher, "search_images", side_effect=fake_search),
+            patch.object(
+                mod.requests.Session, "request", side_effect=AssertionError("network")
+            ) as spy,
+        ):
+            out = searcher._ddg_candidates(query)
+
+        assert out == []
+        assert calls == [query]
         spy.assert_not_called()

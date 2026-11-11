@@ -281,13 +281,13 @@ _PAIR_IGNORE_WORDS = {
 _PAIR_SEPARATOR_RE = re.compile(r"[^\W_]+|×", re.UNICODE)
 
 
-def _non_ignored_capitalized_subjects(text: str) -> list[str]:
-    """Capitalized subject tokens on one side of a pair, ignoring venues and
-    other non-team words. Heuristic only: it treats capitalized, non-venue,
-    non-generic tokens as team-like subjects. It is conservative, not universal
-    team recognition - lowercase or unknown subjects are not recovered, and
-    multiple capitalized tokens make the side ambiguous. Used to find the real
-    team and to detect ambiguity."""
+def _eligible_pair_words(text: str) -> list[str]:
+    """Eligible lexical words on one side of a pair, ignoring venues, style,
+    league and other non-subject words. Heuristic only: it counts every
+    eligible lexical word regardless of capitalization (not universal team
+    recognition), so lowercase subjects are recovered and multiple eligible
+    words make the side ambiguous. Used to find the single subject and to
+    detect ambiguity."""
     result: list[str] = []
     seen: set[str] = set()
     for match in _ANY_WORD_RE.finditer(text or ""):
@@ -295,12 +295,12 @@ def _non_ignored_capitalized_subjects(text: str) -> list[str]:
         tok = _normalize(original)
         if (
             len(tok) < 4
+            or not tok.isalpha()
             or tok in _FIT_STOPWORDS
             or tok in _GENERIC_QUERY_WORDS
             or tok in _AESTHETIC_QUERY_WORDS
             or tok in _PAIR_IGNORE_WORDS
             or not original
-            or not original[0].isupper()
         ):
             continue
         if tok in seen:
@@ -311,8 +311,8 @@ def _non_ignored_capitalized_subjects(text: str) -> list[str]:
 
 
 def _pair_side_subject(text: str) -> str | None:
-    """The single team-like subject token on one side of an explicit pair."""
-    subjects = _non_ignored_capitalized_subjects(text)
+    """The single eligible subject word on one side of an explicit pair."""
+    subjects = _eligible_pair_words(text)
     if len(subjects) != 1:
         return None
     return subjects[0]
@@ -327,18 +327,18 @@ def _is_ambiguous_pair(query: str) -> bool:
         return len(seps) > 1
     left_text = (query or "")[: seps[0].start()]
     right_text = (query or "")[seps[0].end() :]
-    left_subjects = _non_ignored_capitalized_subjects(left_text)
-    right_subjects = _non_ignored_capitalized_subjects(right_text)
+    left_subjects = _eligible_pair_words(left_text)
+    right_subjects = _eligible_pair_words(right_text)
     return len(left_subjects) >= 2 or len(right_subjects) >= 2
 
 
 def explicit_pair_subject(query: str) -> tuple[str, str] | None:
     """Team-like subject token on each side of an explicit pair.
 
-    The subject detection is the conservative capitalized-token heuristic in
-    ``_non_ignored_capitalized_subjects`` (not universal team recognition), so
-    lowercase/unknown/short subjects are not recovered. Returns None for prompts
-    without exactly one unambiguous pair."""
+    The subject detection is the conservative eligible-word heuristic in
+    ``_eligible_pair_words`` (not universal team recognition), so unknown/short
+    subjects are not recovered. Returns None for prompts without exactly one
+    unambiguous pair."""
     if _is_ambiguous_pair(query):
         return None
     seps = [
@@ -364,9 +364,9 @@ def retry_subject_query(query: str, max_tokens: int = 3) -> str:
     different opponent). When a pair is present, keep the left entity plus
     the best existing contextual token and the opponent; a pair that cannot fit
     in max_tokens fails closed. Subject detection is the conservative
-    capitalized-token heuristic (not universal team recognition). If an explicit
-    separator is present but the pair cannot be resolved (lowercase/unknown/
-    short/ambiguous subjects), fail closed with an empty retry query rather
+    eligible-word heuristic (not universal team recognition). If an explicit
+    separator is present but the pair cannot be resolved (unknown/short/
+    ambiguous subjects), fail closed with an empty retry query rather
     than falling back to the unpaired short query."""
     short = short_subject_query(query, max_tokens)
     seps = [
