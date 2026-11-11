@@ -641,6 +641,152 @@ class TestShortSubjectRetry:
         assert out[0].fit_evidence == "2026,flamengo,gremio,maracana"
 
 
+class TestShortSubjectRetryGuards:
+    """Issue #37 follow-up: the retry must not admit a photo whose title
+    states a number the FULL prompt does not contain (wrong year, score or
+    edition - the short query itself carries no numbers), the short query is
+    the subject and never the prompt's aesthetic prefix, and a numberless
+    on-subject photo is still accepted."""
+
+    def _retry(self, monkeypatch, prompt, retry_results):
+        from autoshorts.modules import image_searcher as mod
+        from autoshorts.modules.image_searcher import ImageSearcher
+
+        monkeypatch.setattr(mod, "ALLOW_UNVERIFIED_IMAGES", True)
+        searcher = ImageSearcher()
+        calls = []
+
+        def fake_search(query):
+            calls.append(query)
+            return [] if query == prompt else retry_results
+
+        with (
+            patch("autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["ddg"]),
+            patch.object(searcher, "search_images", side_effect=fake_search),
+        ):
+            out = searcher._candidates(prompt)
+        return calls, out
+
+    def test_retry_rejects_wrong_year_in_title(self, monkeypatch):
+        calls, out = self._retry(
+            monkeypatch,
+            LONG_PROMPT,
+            [
+                {
+                    "image": "https://ge.globo.com/old.jpg",
+                    "title": "Flamengo 2x0 Grêmio 2019 no Maracanã",
+                }
+            ],
+        )
+        assert calls == [LONG_PROMPT, SHORT_QUERY]  # judged in the retry path
+        assert out == []  # 2019 (and 2x0) is not in the 2026 prompt
+
+    def test_retry_rejects_wrong_score_in_title(self, monkeypatch):
+        prompt = "Palmeiras 6x1 Remo Nubank Parque 2026 Brasileirão"
+        calls, out = self._retry(
+            monkeypatch,
+            prompt,
+            [
+                {
+                    "image": "https://ge.globo.com/score.jpg",
+                    "title": "Palmeiras 3x0 Remo Nubank Parque",
+                }
+            ],
+        )
+        assert calls == [prompt, "Palmeiras Remo Nubank"]
+        assert out == []  # 3x0 contradicts the prompt's 6x1
+
+    def test_retry_rejects_extra_edition_number_in_title(self, monkeypatch):
+        prompt = "Flamengo Palmeiras Nubank Parque 21 novembro 2026 decisão"
+        calls, out = self._retry(
+            monkeypatch,
+            prompt,
+            [
+                {
+                    "image": "https://ge.globo.com/sub17.jpg",
+                    "title": (
+                        "Flamengo vence Palmeiras em estreia do Nubank Parque "
+                        "pelo Brasileiro Sub-17"
+                    ),
+                }
+            ],
+        )
+        assert calls == [prompt, "Flamengo Palmeiras Nubank"]
+        assert out == []  # 17 is not among the prompt's {21, 2026}
+
+    def test_retry_subject_is_never_the_aesthetic_prefix(self, monkeypatch):
+        calls, out = self._retry(
+            monkeypatch,
+            "wide shot Flamengo celebration Maracanã 2026 Brasileirão final",
+            [
+                {
+                    "image": "https://ge.globo.com/f.jpg",
+                    "title": "Flamengo celebration at Maracanã",
+                }
+            ],
+        )
+        assert calls[1].startswith("Flamengo")  # not "wide shot Flamengo"
+        assert [c.url for c in out] == ["https://ge.globo.com/f.jpg"]
+
+        calls, out = self._retry(
+            monkeypatch,
+            "cinematic dramatic Palmeiras Remo Nubank Parque",
+            [
+                {
+                    "image": "https://ge.globo.com/p.jpg",
+                    "title": "Palmeiras x Remo no Nubank Parque",
+                }
+            ],
+        )
+        assert calls[1].startswith("Palmeiras")  # not "cinematic dramatic..."
+        assert [c.url for c in out] == ["https://ge.globo.com/p.jpg"]
+
+    def test_retry_accepts_numberless_subject_photo(self, monkeypatch):
+        calls, out = self._retry(
+            monkeypatch,
+            LONG_PROMPT,
+            [
+                {
+                    "image": "https://ge.globo.com/f.jpg",
+                    "title": "No Maracanã, Grêmio sofre revés do Flamengo",
+                }
+            ],
+        )
+        assert calls == [LONG_PROMPT, SHORT_QUERY]
+        assert [c.url for c in out] == ["https://ge.globo.com/f.jpg"]
+        assert out[0].fit_evidence.startswith(f"short-query:'{SHORT_QUERY}'")
+
+    def test_retry_accepts_title_number_stated_by_full_prompt(self, monkeypatch):
+        calls, out = self._retry(
+            monkeypatch,
+            LONG_PROMPT,
+            [
+                {
+                    "image": "https://ge.globo.com/f.jpg",
+                    "title": "Flamengo e Grêmio se enfrentam no Maracanã em 2026",
+                }
+            ],
+        )
+        assert calls == [LONG_PROMPT, SHORT_QUERY]
+        # the title's only number, 2026, is stated by the full prompt
+        assert [c.url for c in out] == ["https://ge.globo.com/f.jpg"]
+
+    def test_retry_keeps_short_query_opponent_requirement(self, monkeypatch):
+        prompt = "Palmeiras 6x1 Remo Nubank Parque 2026 Brasileirão"
+        calls, out = self._retry(
+            monkeypatch,
+            prompt,
+            [
+                {
+                    "image": "https://ge.globo.com/p.jpg",
+                    "title": "Palmeiras vence no Nubank Parque",
+                }
+            ],
+        )
+        assert calls == [prompt, "Palmeiras Remo Nubank"]
+        assert out == []  # the short query still demands "Remo" in the title
+
+
 @pytest.mark.parametrize(
     "query,title",
     [

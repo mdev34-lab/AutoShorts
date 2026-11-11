@@ -193,6 +193,26 @@ _GENERIC_QUERY_WORDS = {
 }
 _NUM_RE = re.compile(r"\d+")
 
+# Style/framing words name how a photo looks, not what it shows, so they must
+# never become the retry's subject tokens. Excluded ONLY inside
+# short_subject_query (retry-local); fit_evidence and strict-mode behavior are
+# untouched.
+_AESTHETIC_QUERY_WORDS = {
+    "wide",
+    "shot",
+    "cinematic",
+    "dramatic",
+    "aerial",
+    "view",
+    "ultra",
+    "4k",
+    "photography",
+    "style",
+    "night",
+    "close",
+    "closeup",
+}
+
 
 def _entity_tokens(text: str) -> set[str]:
     """Every content token incl. short words and numbers (42, 2012, car)."""
@@ -215,9 +235,10 @@ def short_subject_query(query: str, max_tokens: int = 3) -> str:
     rodada") is never a real photo's title, so the searcher may re-query DDG
     with just the tokens that identify the subject ("Flamengo Grêmio
     Maracanã"). The same distinctive-token/generic-word rules as fit_evidence
-    decide what is subject-bearing; fit evidence for such a retry is then
-    evaluated against this short query, so relevance is proven against the
-    subject itself - never waived."""
+    decide what is subject-bearing, plus aesthetic style words ("wide shot",
+    "cinematic"), which describe the look, not the subject. Fit evidence for
+    such a retry is then evaluated against this short query, so relevance is
+    proven against the subject itself - never waived."""
     tokens: list[str] = []
     seen: set[str] = set()
     for match in _ANY_WORD_RE.finditer(query or ""):
@@ -227,6 +248,7 @@ def short_subject_query(query: str, max_tokens: int = 3) -> str:
             len(tok) >= 4
             and tok not in _FIT_STOPWORDS
             and tok not in _GENERIC_QUERY_WORDS
+            and tok not in _AESTHETIC_QUERY_WORDS
             and tok not in seen
         ):
             seen.add(tok)
@@ -234,6 +256,21 @@ def short_subject_query(query: str, max_tokens: int = 3) -> str:
             if len(tokens) >= max_tokens:
                 break
     return " ".join(tokens)
+
+
+def has_contradictory_number(full_query: str, title: str) -> bool:
+    """True when the title states a number the full prompt does not contain.
+
+    The same rule shape as fit_evidence's number-contradiction check, but
+    keyed on the FULL original query: the short-subject retry query carries
+    no numbers, so a retried title's wrong year, score or edition would
+    otherwise pass unnoticed. Applied unconditionally (even a numberless
+    prompt pins the scene - any dated title contradicts it); titles with no
+    numbers never contradict, since a generic team/venue illustration is
+    permitted."""
+    query_numbers = set(_NUM_RE.findall(_normalize(full_query)))
+    title_numbers = set(_NUM_RE.findall(_normalize(title)))
+    return bool(title_numbers - query_numbers)
 
 
 def fit_evidence(query: str, title: str, context: str = "") -> str | None:

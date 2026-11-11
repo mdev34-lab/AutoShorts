@@ -490,8 +490,10 @@ class ImageSearcher:
         opt-in only, DDG is re-queried with the prompt's distinctive subject
         tokens and fit evidence is evaluated against that short query: the
         photo must still prove the subject, and the recorded fit evidence
-        names the short query it was actually matched to. Without the opt-in
-        the behavior is unchanged: one query, same wipes, no retry."""
+        names the short query it was actually matched to. A retried title
+        stating a number the FULL prompt does not contain (wrong year, score
+        or edition) is rejected. Without the opt-in the behavior is
+        unchanged: one query, same wipes, no retry."""
         raw = [r for r in self.search_images(query) if not self._is_nsfw(r)]
         matched = image_sources.filter_ddg_results(query, raw)
         if matched or not ALLOW_UNVERIFIED_IMAGES:
@@ -506,11 +508,25 @@ class ImageSearcher:
         )
         raw = [r for r in self.search_images(short) if not self._is_nsfw(r)]
         retried = image_sources.filter_ddg_results(short, raw)
-        for candidate in retried:
+        # The short query carries no numbers, so fit_evidence cannot see a
+        # wrong year, score or edition: reject retried candidates whose
+        # title states a number the FULL prompt does not contain.
+        kept = [
+            c
+            for c in retried
+            if not image_sources.has_contradictory_number(query, c.title)
+        ]
+        if len(kept) < len(retried):
+            log(
+                f"  {len(retried) - len(kept)} retried candidate(s) rejected: "
+                "title states a number the full prompt does not contain",
+                "INFO",
+            )
+        for candidate in kept:
             candidate.fit_evidence = (
                 f"short-query:'{short}' via {candidate.fit_evidence}"
             )
-        return retried
+        return kept
 
     def _commons_candidates(self, query: str) -> list[image_sources.SourceCandidate]:
         return image_sources.search_commons(
