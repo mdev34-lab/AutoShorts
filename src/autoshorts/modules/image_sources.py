@@ -258,26 +258,100 @@ def short_subject_query(query: str, max_tokens: int = 3) -> str:
     return " ".join(tokens)
 
 
-_PAIR_SEPARATORS = {"vs", "versus", "x"}
+_PAIR_SEPARATORS = {"vs", "versus", "x", "contra", "×"}
+_PAIR_IGNORE_WORDS = {
+    "estadio",
+    "maracana",
+    "arena",
+    "parque",
+    "stadium",
+    "nubank",
+    "brasileirao",
+    "campeonato",
+    "copa",
+    "liga",
+    "rodada",
+    "temporada",
+    "final",
+    "decisao",
+    "classificacao",
+    "tabela",
+    "grupo",
+}
+_PAIR_SEPARATOR_RE = re.compile(r"[^\W_]+|×", re.UNICODE)
 
 
-def _first_subject_token(text: str) -> str | None:
-    """First short-query subject token, or None when there is none."""
-    return short_subject_query(text, max_tokens=1) or None
+def _non_ignored_capitalized_subjects(text: str) -> list[str]:
+    """Capitalized subject tokens on one side of a pair, ignoring venues and
+    other non-team words. Heuristic only: it treats capitalized, non-venue,
+    non-generic tokens as team-like subjects. It is conservative, not universal
+    team recognition - lowercase or unknown subjects are not recovered, and
+    multiple capitalized tokens make the side ambiguous. Used to find the real
+    team and to detect ambiguity."""
+    result: list[str] = []
+    seen: set[str] = set()
+    for match in _ANY_WORD_RE.finditer(text or ""):
+        original = match.group(0)
+        tok = _normalize(original)
+        if (
+            len(tok) < 4
+            or tok in _FIT_STOPWORDS
+            or tok in _GENERIC_QUERY_WORDS
+            or tok in _AESTHETIC_QUERY_WORDS
+            or tok in _PAIR_IGNORE_WORDS
+            or not original
+            or not original[0].isupper()
+        ):
+            continue
+        if tok in seen:
+            continue
+        seen.add(tok)
+        result.append(original)
+    return result
+
+
+def _pair_side_subject(text: str) -> str | None:
+    """The single team-like subject token on one side of an explicit pair."""
+    subjects = _non_ignored_capitalized_subjects(text)
+    if len(subjects) != 1:
+        return None
+    return subjects[0]
+
+
+def _is_ambiguous_pair(query: str) -> bool:
+    seps = [
+        m for m in _PAIR_SEPARATOR_RE.finditer(query or "")
+        if _normalize(m.group(0)) in _PAIR_SEPARATORS
+    ]
+    if len(seps) != 1:
+        return len(seps) > 1
+    left_text = (query or "")[: seps[0].start()]
+    right_text = (query or "")[seps[0].end() :]
+    left_subjects = _non_ignored_capitalized_subjects(left_text)
+    right_subjects = _non_ignored_capitalized_subjects(right_text)
+    return len(left_subjects) >= 2 or len(right_subjects) >= 2
 
 
 def explicit_pair_subject(query: str) -> tuple[str, str] | None:
-    """First subject token on each side of an explicit 'vs'/'versus'/'x'
-    pair. None when the prompt has no such pair that the short-subject rules
-    can represent on both sides (so unrelated prompts keep their old retry
-    behavior)."""
-    for match in _ANY_WORD_RE.finditer(query or ""):
-        if _normalize(match.group(0)) not in _PAIR_SEPARATORS:
-            continue
-        left = _first_subject_token((query or "")[: match.start()])
-        right = _first_subject_token((query or "")[match.end() :])
-        if left and right and _normalize(left) != _normalize(right):
-            return left, right
+    """Team-like subject token on each side of an explicit pair.
+
+    The subject detection is the conservative capitalized-token heuristic in
+    ``_non_ignored_capitalized_subjects`` (not universal team recognition), so
+    lowercase/unknown/short subjects are not recovered. Returns None for prompts
+    without exactly one unambiguous pair."""
+    if _is_ambiguous_pair(query):
+        return None
+    seps = [
+        m for m in _PAIR_SEPARATOR_RE.finditer(query or "")
+        if _normalize(m.group(0)) in _PAIR_SEPARATORS
+    ]
+    if len(seps) != 1:
+        return None
+    match = seps[0]
+    left = _pair_side_subject((query or "")[: match.start()])
+    right = _pair_side_subject((query or "")[match.end() :])
+    if left and right and _normalize(left) != _normalize(right):
+        return left, right
     return None
 
 
@@ -288,12 +362,27 @@ def retry_subject_query(query: str, max_tokens: int = 3) -> str:
     not among the earliest tokens ("Flamengo Maracanã celebration vs Grêmio"
     would retry as "Flamengo Maracanã celebration" and admit a photo of a
     different opponent). When a pair is present, keep the left entity plus
-    the best existing contextual token and the opponent; unresolved pairs
-    fall back to short_subject_query unchanged, and a pair that cannot fit
-    in max_tokens fails closed."""
+    the best existing contextual token and the opponent; a pair that cannot fit
+    in max_tokens fails closed. Subject detection is the conservative
+    capitalized-token heuristic (not universal team recognition). If an explicit
+    separator is present but the pair cannot be resolved (lowercase/unknown/
+    short/ambiguous subjects), fail closed with an empty retry query rather
+    than falling back to the unpaired short query."""
     short = short_subject_query(query, max_tokens)
+    seps = [
+        m for m in _PAIR_SEPARATOR_RE.finditer(query or "")
+        if _normalize(m.group(0)) in _PAIR_SEPARATORS
+    ]
+    has_explicit_separator = bool(seps)
+    if _is_ambiguous_pair(query):
+        return ""
     pair = explicit_pair_subject(query)
     if pair is None:
+        # Any explicit separator makes this a (possibly unresolved) pair
+        # prompt: fail closed instead of falling back to the unpaired short
+        # query, which would silently drop the opponent.
+        if has_explicit_separator:
+            return ""
         return short
     left, right = pair
     needed = {_normalize(left), _normalize(right)}
@@ -306,7 +395,10 @@ def retry_subject_query(query: str, max_tokens: int = 3) -> str:
     left_original = next(
         (tok for tok in tokens if _normalize(tok) == _normalize(left)), left
     )
-    context = [tok for tok in tokens if _normalize(tok) not in needed]
+    context = [
+        tok for tok in tokens
+        if _normalize(tok) not in needed and tok and tok[:1].isupper()
+    ]
     result = [left_original, *context[: max_tokens - len(needed)]]
     result.append(right)
     return " ".join(result[:max_tokens])

@@ -966,3 +966,163 @@ def test_commons_title_only_keyword_match_is_not_subject_evidence():
     ]
     with patch.object(image_sources.requests, "get", return_value=_mock_commons(pages)):
         assert image_sources.search_commons("Apple iPhone launch") == []
+
+
+class TestPairSeparatorFailClosed:
+    """Explicit-pair retry must fail closed when the pair cannot be resolved."""
+
+    def test_common_uppercase_flamengo_gremio_maracana_prompt_works(self):
+        assert (
+            image_sources.retry_subject_query(
+                "Flamengo vs Grêmio Maracanã 2026 Brasileirão 34ª rodada"
+            )
+            == "Flamengo Grêmio Maracanã"
+        )
+        assert image_sources.explicit_pair_subject(
+            "Flamengo vs Grêmio Maracanã 2026 Brasileirão 34ª rodada"
+        ) == ("Flamengo", "Grêmio")
+
+    def test_exact_x_separator_resolves_pair(self):
+        assert (
+            image_sources.retry_subject_query("Flamengo Maracanã celebration x Grêmio")
+            == "Flamengo Maracanã Grêmio"
+        )
+
+    def test_exact_x_separator_recognized_even_venue_prefix(self):
+        # venue-only left side cannot resolve a team -> fail closed
+        assert image_sources.retry_subject_query("Maracanã x Flamengo") == ""
+
+    def test_lotado_prefix_x2026_is_not_a_separator(self):
+        q = "Palmeiras x2026 Remo"
+        assert image_sources.retry_subject_query(q) == image_sources.short_subject_query(q)
+
+    def test_right_atual_campeao_ambiguous_fails_closed(self):
+        assert image_sources.retry_subject_query("Flamengo vs Atual Campeão Grêmio") == ""
+
+    def test_contra_separator_resolves_pair(self):
+        assert (
+            image_sources.retry_subject_query("Flamengo Maracanã celebration contra Grêmio")
+            == "Flamengo Maracanã Grêmio"
+        )
+
+    def test_contra_lowercase_unresolved_fails_closed(self):
+        assert image_sources.retry_subject_query("flamengo contra grêmio") == ""
+
+    def test_multiplication_sign_separator_resolves_pair(self):
+        assert (
+            image_sources.retry_subject_query("Flamengo Maracanã celebration × Grêmio")
+            == "Flamengo Maracanã Grêmio"
+        )
+
+    def test_lowercase_unresolved_fails_closed(self):
+        assert image_sources.retry_subject_query("flamengo vs grêmio") == ""
+
+    def test_multiple_capitalized_ambiguous_fails_closed(self):
+        assert image_sources.retry_subject_query("Flamengo Grêmio vs Vasco") == ""
+
+    def test_no_separator_falls_back_to_short_query(self):
+        q = "Flamengo Maracanã celebration Grêmio"
+        assert image_sources.retry_subject_query(q) == image_sources.short_subject_query(q)
+
+
+class TestPairRouteMockedNoNetwork:
+    def test_ddg_candidates_retry_route_mocked_search_no_session_request(
+        self, monkeypatch
+    ):
+        from autoshorts.modules import image_searcher as mod
+        from autoshorts.modules.image_searcher import ImageSearcher
+
+        monkeypatch.setattr(mod, "ALLOW_UNVERIFIED_IMAGES", True)
+        searcher = ImageSearcher()
+        calls = []
+
+        def fake_search(q):
+            calls.append(q)
+            if q == "Flamengo vs Grêmio Maracanã 2026 Brasileirão 34ª rodada":
+                return []
+            return [
+                {
+                    "image": "https://ge.globo.com/f.jpg",
+                    "title": "Flamengo vence o Grêmio no Maracanã",
+                }
+            ]
+
+        with (
+            patch("autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["ddg"]),
+            patch.object(searcher, "search_images", side_effect=fake_search),
+            patch.object(
+                mod.requests.Session, "request", side_effect=RuntimeError("no network")
+            ),
+        ):
+            out = searcher._ddg_candidates(
+                "Flamengo vs Grêmio Maracanã 2026 Brasileirão 34ª rodada"
+            )
+        assert calls[1] == "Flamengo Grêmio Maracanã"
+        assert [c.url for c in out] == ["https://ge.globo.com/f.jpg"]
+
+
+class TestPairRouteActualDdgCandidates:
+    @pytest.mark.parametrize(
+        "query,correcttitle,wrongtitle",
+        [
+            (
+                "Estádio Maracanã Flamengo x Grêmio",
+                "Flamengo enfrenta Grêmio no Estádio do Maracanã",
+                "Grêmio vence Fluminense no Estádio do Maracanã",
+            ),
+            (
+                "Maracanã lotado Flamengo x Grêmio 2026",
+                "Flamengo enfrenta Grêmio no Maracanã",
+                "Grêmio vence Fluminense no Maracanã lotado",
+            ),
+            (
+                "Flamengo x atual campeão Grêmio",
+                "Flamengo enfrenta Grêmio",
+                "Flamengo enfrenta Vasco",
+            ),
+            (
+                "Flamengo Maracanã festa contra Grêmio",
+                "Flamengo enfrenta Grêmio no Maracanã",
+                "Flamengo festeja contra Vasco no Maracanã",
+            ),
+            (
+                "Flamengo Maracanã festa × Grêmio",
+                "Flamengo enfrenta Grêmio no Maracanã",
+                "Flamengo festeja contra Vasco no Maracanã",
+            ),
+        ],
+    )
+    def test_ddg_candidates_outputs_only_correct_title(
+        self, monkeypatch, query, correcttitle, wrongtitle
+    ):
+        from autoshorts.modules import image_searcher as mod
+        from autoshorts.modules.image_searcher import ImageSearcher
+
+        monkeypatch.setattr(mod, "ALLOW_UNVERIFIED_IMAGES", True)
+        searcher = ImageSearcher()
+        calls = []
+
+        def fake_search(q):
+            calls.append(q)
+            if q == query:
+                return []
+            return [
+                {"image": "https://example.com/wrong.jpg", "title": wrongtitle},
+                {"image": "https://example.com/correct.jpg", "title": correcttitle},
+            ]
+
+        with (
+            patch("autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["ddg"]),
+            patch.object(searcher, "search_images", side_effect=fake_search),
+            patch.object(
+                mod.requests.Session, "request", side_effect=AssertionError("network")
+            ) as spy,
+        ):
+            out = searcher._ddg_candidates(query)
+
+        assert [c.title for c in out] == [correcttitle]
+        assert len(calls) == 2
+        assert "flamengo" in image_sources._normalize(calls[1])
+        assert "gremio" in image_sources._normalize(calls[1])
+        assert "atual" not in image_sources._normalize(calls[1])
+        spy.assert_not_called()
