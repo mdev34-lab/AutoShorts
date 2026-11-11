@@ -12,7 +12,9 @@ Providers, in the order configured by IMAGE_PROVIDERS:
   without an allowlisted license are rejected.
 - ``ddg``: DuckDuckGo image search (no license metadata exists there).
   Stock-agency domains (which serve watermarked previews) are blocked, and
-  the result title must prove contextual fit against the query.
+  the result title must prove contextual fit against the query (a
+  short-subject re-query is judged against that short query, see
+  ``short_subject_query``).
 """
 
 from __future__ import annotations
@@ -201,6 +203,37 @@ def _entity_tokens(text: str) -> set[str]:
         and tok not in _GENERIC_QUERY_WORDS
         and (len(tok) >= 3 or tok.isdigit())
     }
+
+
+_ANY_WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
+
+
+def short_subject_query(query: str, max_tokens: int = 3) -> str:
+    """First distinctive subject tokens of a prompt, in prompt order.
+
+    A long scene prompt ("Flamengo vs Grêmio Maracanã 2026 Brasileirão 34ª
+    rodada") is never a real photo's title, so the searcher may re-query DDG
+    with just the tokens that identify the subject ("Flamengo Grêmio
+    Maracanã"). The same distinctive-token/generic-word rules as fit_evidence
+    decide what is subject-bearing; fit evidence for such a retry is then
+    evaluated against this short query, so relevance is proven against the
+    subject itself - never waived."""
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for match in _ANY_WORD_RE.finditer(query or ""):
+        original = match.group(0)
+        tok = _normalize(original)
+        if (
+            len(tok) >= 4
+            and tok not in _FIT_STOPWORDS
+            and tok not in _GENERIC_QUERY_WORDS
+            and tok not in seen
+        ):
+            seen.add(tok)
+            tokens.append(original)
+            if len(tokens) >= max_tokens:
+                break
+    return " ".join(tokens)
 
 
 def fit_evidence(query: str, title: str, context: str = "") -> str | None:
