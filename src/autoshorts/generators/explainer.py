@@ -205,7 +205,9 @@ class ExplainerGenerator:
         total = len(prompts)
 
         for i, prompt in enumerate(prompts):
-            cache_key = hashlib.sha256(f"ai1|{MODEL_IMAGE}|{prompt}".encode()).hexdigest()[:16]
+            cache_key = hashlib.sha256(
+                f"ai1|{MODEL_IMAGE}|{prompt}".encode()
+            ).hexdigest()[:16]
             cached_path = IMAGE_CACHE_DIR / f"{cache_key}.jpg"
             if cached_path.exists():
                 img_paths.append(str(cached_path))
@@ -367,10 +369,16 @@ class ExplainerGenerator:
         output_path: str,
         metadata: VideoMetadata | None = None,
     ):
+        if not img_paths:
+            raise ValueError("Cannot compose video: no image paths provided")
         log("Composing video with U-curve zoom...")
         audio = AudioFileClip(audio_path)
         num_imgs = len(img_paths)
-        dur_per_img = SCENE_DURATION_SECONDS
+        # Redistribute the audio duration across the scenes so the composed
+        # clip (N scenes overlapped by CROSSFADE_TIME each) ends exactly with
+        # the audio; a fixed scene duration always fell short and the branch
+        # below padded the remainder with black frames (issue #31).
+        dur_per_img = (audio.duration - CROSSFADE_TIME) / num_imgs + CROSSFADE_TIME
         total_video_dur = num_imgs * dur_per_img
         log(f"{num_imgs} scenes x {dur_per_img}s = {total_video_dur:.1f}s")
 
