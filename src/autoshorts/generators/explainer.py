@@ -184,6 +184,13 @@ class ExplainerGenerator:
             if isinstance(prompts[0], dict):
                 paired = prompts
             else:
+                if self.image_source == "web":
+                    # Plain strings are already-chosen subject queries: in web
+                    # mode they go through the DDGS searcher with its
+                    # provenance/fit gates (and its IMAGE_AI_FALLBACK=off
+                    # abort), never straight to the metered AI API. The AI
+                    # path stays for an explicitly selected image_source=ai.
+                    return ImageSearcher().get_images(prompts)
                 return self._call_pollinations_api(prompts)
         else:
             paired = self.script_generator.generate_image_prompts_from_script(

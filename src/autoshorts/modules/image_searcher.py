@@ -13,6 +13,7 @@ from .config import (
     ALLOW_UNVERIFIED_IMAGES,
     API_KEY,
     API_TIMEOUT_IMAGE,
+    IMAGE_AI_FALLBACK,
     IMAGE_CACHE_DIR,
     IMAGE_MIN_HEIGHT,
     IMAGE_MIN_WIDTH,
@@ -247,12 +248,21 @@ class ImageSearcher:
     @classmethod
     def _usable_cache(cls, cached_path: Path, prompt: str) -> bool:
         """Reusable only with a valid provenance record that is still allowed
-        (legacy stock, interrupted runs, empty/UNVERIFIED records are refetched)."""
+        (legacy stock, interrupted runs, empty/UNVERIFIED records are
+        refetched; so are AI images while the AI fallback is disabled)."""
         if not cached_path.exists():
             return False
         record = cls._read_sidecar(cached_path)
         if record is None:
             return False
+        if record["kind"] == "ai":
+            # Cached AI bytes are reusable only while the AI fallback that
+            # produced them is allowed: IMAGE_AI_FALLBACK=off fails closed
+            # here instead of serving them through the web route. An
+            # explicitly selected image_source=ai run caches under its own
+            # scheme and never passes through this gate - a chosen source is
+            # not a fallback.
+            return IMAGE_AI_FALLBACK
         if record["kind"] == "web":
             if not ALLOW_UNVERIFIED_IMAGES:
                 # A cache hit must pass the same specificity gate as a fresh
@@ -345,6 +355,17 @@ class ImageSearcher:
                         temp_path.unlink(missing_ok=True)
 
             if not downloaded:
+                if not IMAGE_AI_FALLBACK:
+                    log(
+                        f"  No image for '{prompt[:60]}': every web candidate "
+                        "failed and the AI fallback is disabled "
+                        "(IMAGE_AI_FALLBACK=off); aborting before render",
+                        "ERROR",
+                    )
+                    raise RuntimeError(
+                        f"Prompt '{prompt}' got no image: web candidates were "
+                        "exhausted and IMAGE_AI_FALLBACK is disabled"
+                    )
                 log(
                     "  Web search failed for prompt, generating via AI instead",
                     "WARNING",
@@ -467,9 +488,56 @@ class ImageSearcher:
             if provider == "commons":
                 candidates.extend(self._commons_candidates(query))
             elif provider == "ddg":
-                raw = [r for r in self.search_images(query) if not self._is_nsfw(r)]
-                candidates.extend(image_sources.filter_ddg_results(query, raw))
+                candidates.extend(self._ddg_candidates(query))
         return candidates
+
+    def _ddg_candidates(self, query: str) -> list[image_sources.SourceCandidate]:
+        """DDG candidates, plus an opt-in short-subject re-query (issue #37).
+
+        Real photo titles never repeat a long scene prompt, so the full-query
+        fit filter can reject every result. Under the ALLOW_UNVERIFIED_IMAGES
+        opt-in only, DDG is re-queried with the prompt's distinctive subject
+        tokens and fit evidence is evaluated against that short query: the
+        photo must still prove the subject, and the recorded fit evidence
+        names the short query it was actually matched to. An explicit
+        "vs"/"versus"/"x" pair keeps its opponent even when first-N
+        truncation would otherwise drop it. A retried title stating a number
+        the FULL prompt does not contain (wrong year, score or edition) is
+        rejected. Without the opt-in the behavior is unchanged: one query,
+        same wipes, no retry."""
+        raw = [r for r in self.search_images(query) if not self._is_nsfw(r)]
+        matched = image_sources.filter_ddg_results(query, raw)
+        if matched or not ALLOW_UNVERIFIED_IMAGES:
+            return matched
+        short = image_sources.retry_subject_query(query)
+        if not short or short == query:
+            return []
+        log(
+            "  No DDG result fit the full prompt; retrying with short subject "
+            f"query '{short}' (ALLOW_UNVERIFIED_IMAGES opt-in)",
+            "INFO",
+        )
+        raw = [r for r in self.search_images(short) if not self._is_nsfw(r)]
+        retried = image_sources.filter_ddg_results(short, raw)
+        # The short query carries no numbers, so fit_evidence cannot see a
+        # wrong year, score or edition: reject retried candidates whose
+        # title states a number the FULL prompt does not contain.
+        kept = [
+            c
+            for c in retried
+            if not image_sources.has_contradictory_number(query, c.title)
+        ]
+        if len(kept) < len(retried):
+            log(
+                f"  {len(retried) - len(kept)} retried candidate(s) rejected: "
+                "title states a number the full prompt does not contain",
+                "INFO",
+            )
+        for candidate in kept:
+            candidate.fit_evidence = (
+                f"short-query:'{short}' via {candidate.fit_evidence}"
+            )
+        return kept
 
     def _commons_candidates(self, query: str) -> list[image_sources.SourceCandidate]:
         return image_sources.search_commons(

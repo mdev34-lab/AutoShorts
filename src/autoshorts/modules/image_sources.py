@@ -12,7 +12,9 @@ Providers, in the order configured by IMAGE_PROVIDERS:
   without an allowlisted license are rejected.
 - ``ddg``: DuckDuckGo image search (no license metadata exists there).
   Stock-agency domains (which serve watermarked previews) are blocked, and
-  the result title must prove contextual fit against the query.
+  the result title must prove contextual fit against the query (a
+  short-subject re-query is judged against that short query, see
+  ``short_subject_query``).
 """
 
 from __future__ import annotations
@@ -191,6 +193,26 @@ _GENERIC_QUERY_WORDS = {
 }
 _NUM_RE = re.compile(r"\d+")
 
+# Style/framing words name how a photo looks, not what it shows, so they must
+# never become the retry's subject tokens. Excluded ONLY inside
+# short_subject_query (retry-local); fit_evidence and strict-mode behavior are
+# untouched.
+_AESTHETIC_QUERY_WORDS = {
+    "wide",
+    "shot",
+    "cinematic",
+    "dramatic",
+    "aerial",
+    "view",
+    "ultra",
+    "4k",
+    "photography",
+    "style",
+    "night",
+    "close",
+    "closeup",
+}
+
 
 def _entity_tokens(text: str) -> set[str]:
     """Every content token incl. short words and numbers (42, 2012, car)."""
@@ -201,6 +223,208 @@ def _entity_tokens(text: str) -> set[str]:
         and tok not in _GENERIC_QUERY_WORDS
         and (len(tok) >= 3 or tok.isdigit())
     }
+
+
+_ANY_WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
+
+
+def short_subject_query(query: str, max_tokens: int = 3) -> str:
+    """First distinctive subject tokens of a prompt, in prompt order.
+
+    A long scene prompt ("Flamengo vs Grêmio Maracanã 2026 Brasileirão 34ª
+    rodada") is never a real photo's title, so the searcher may re-query DDG
+    with just the tokens that identify the subject ("Flamengo Grêmio
+    Maracanã"). The same distinctive-token/generic-word rules as fit_evidence
+    decide what is subject-bearing, plus aesthetic style words ("wide shot",
+    "cinematic"), which describe the look, not the subject. Fit evidence for
+    such a retry is then evaluated against this short query, so relevance is
+    proven against the subject itself - never waived."""
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for match in _ANY_WORD_RE.finditer(query or ""):
+        original = match.group(0)
+        tok = _normalize(original)
+        if (
+            len(tok) >= 4
+            and tok not in _FIT_STOPWORDS
+            and tok not in _GENERIC_QUERY_WORDS
+            and tok not in _AESTHETIC_QUERY_WORDS
+            and tok not in seen
+        ):
+            seen.add(tok)
+            tokens.append(original)
+            if len(tokens) >= max_tokens:
+                break
+    return " ".join(tokens)
+
+
+_PAIR_SEPARATORS = {"vs", "versus", "x", "contra", "×"}
+_PAIR_IGNORE_WORDS = {
+    "estadio",
+    "maracana",
+    "arena",
+    "parque",
+    "stadium",
+    "nubank",
+    "brasileirao",
+    "campeonato",
+    "copa",
+    "liga",
+    "rodada",
+    "temporada",
+    "final",
+    "decisao",
+    "classificacao",
+    "tabela",
+    "grupo",
+}
+_PAIR_SEPARATOR_RE = re.compile(r"[^\W_]+|×", re.UNICODE)
+
+
+def _eligible_pair_words(text: str) -> list[str]:
+    """Eligible lexical words on one side of a pair, ignoring venues, style,
+    league and other non-subject words. Heuristic only: it counts every
+    eligible lexical word regardless of capitalization (not universal team
+    recognition), so lowercase subjects are recovered and multiple eligible
+    words make the side ambiguous. Used to find the single subject and to
+    detect ambiguity."""
+    result: list[str] = []
+    seen: set[str] = set()
+    for match in _ANY_WORD_RE.finditer(text or ""):
+        original = match.group(0)
+        tok = _normalize(original)
+        if (
+            len(tok) < 4
+            or not tok.isalpha()
+            or tok in _FIT_STOPWORDS
+            or tok in _GENERIC_QUERY_WORDS
+            or tok in _AESTHETIC_QUERY_WORDS
+            or tok in _PAIR_IGNORE_WORDS
+            or not original
+        ):
+            continue
+        if tok in seen:
+            continue
+        seen.add(tok)
+        result.append(original)
+    return result
+
+
+def _pair_side_subject(text: str) -> str | None:
+    """The single eligible subject word on one side of an explicit pair."""
+    subjects = _eligible_pair_words(text)
+    if len(subjects) != 1:
+        return None
+    return subjects[0]
+
+
+def _is_ambiguous_pair(query: str) -> bool:
+    seps = [
+        m for m in _PAIR_SEPARATOR_RE.finditer(query or "")
+        if _normalize(m.group(0)) in _PAIR_SEPARATORS
+    ]
+    if len(seps) != 1:
+        return len(seps) > 1
+    left_text = (query or "")[: seps[0].start()]
+    right_text = (query or "")[seps[0].end() :]
+    left_subjects = _eligible_pair_words(left_text)
+    right_subjects = _eligible_pair_words(right_text)
+    return len(left_subjects) >= 2 or len(right_subjects) >= 2
+
+
+def explicit_pair_subject(query: str) -> tuple[str, str] | None:
+    """Team-like subject token on each side of an explicit pair.
+
+    The subject detection is the conservative eligible-word heuristic in
+    ``_eligible_pair_words`` (not universal team recognition), so unknown/short
+    subjects are not recovered. Returns None for prompts without exactly one
+    unambiguous pair."""
+    if _is_ambiguous_pair(query):
+        return None
+    seps = [
+        m for m in _PAIR_SEPARATOR_RE.finditer(query or "")
+        if _normalize(m.group(0)) in _PAIR_SEPARATORS
+    ]
+    if len(seps) != 1:
+        return None
+    match = seps[0]
+    left = _pair_side_subject((query or "")[: match.start()])
+    right = _pair_side_subject((query or "")[match.end() :])
+    if left and right and _normalize(left) != _normalize(right):
+        return left, right
+    return None
+
+
+def retry_subject_query(query: str, max_tokens: int = 3) -> str:
+    """Retry query that keeps both sides of an explicit pair.
+
+    First-N truncation otherwise drops the opponent when the separator is
+    not among the earliest tokens ("Flamengo Maracanã celebration vs Grêmio"
+    would retry as "Flamengo Maracanã celebration" and admit a photo of a
+    different opponent). When a pair is present, keep the left entity plus
+    the best existing contextual token and the opponent; a pair that cannot fit
+    in max_tokens fails closed. Subject detection is the conservative
+    eligible-word heuristic (not universal team recognition). If an explicit
+    separator is present but the pair cannot be resolved (unknown/short/
+    ambiguous subjects), fail closed with an empty retry query rather
+    than falling back to the unpaired short query."""
+    short = short_subject_query(query, max_tokens)
+    seps = [
+        m for m in _PAIR_SEPARATOR_RE.finditer(query or "")
+        if _normalize(m.group(0)) in _PAIR_SEPARATORS
+    ]
+    has_explicit_separator = bool(seps)
+    if _is_ambiguous_pair(query):
+        return ""
+    pair = explicit_pair_subject(query)
+    if pair is None:
+        # Any explicit separator makes this a (possibly unresolved) pair
+        # prompt: fail closed instead of falling back to the unpaired short
+        # query, which would silently drop the opponent.
+        if has_explicit_separator:
+            return ""
+        # No-separator (descriptive) prompt: the retry's short query must
+        # still carry every eligible subject word of the full prompt. A
+        # short query that drops an eligible subject (e.g. an opponent) would
+        # admit a photo of the wrong entity, so fail closed instead.
+        eligible = _eligible_pair_words(query)
+        short_tokens = {_normalize(tok) for tok in short.split()}
+        if any(_normalize(word) not in short_tokens for word in eligible):
+            return ""
+        return short
+    left, right = pair
+    needed = {_normalize(left), _normalize(right)}
+    if len(needed) > max_tokens:
+        return ""
+    tokens = short.split()
+    present = {_normalize(tok) for tok in tokens}
+    if needed <= present:
+        return short
+    left_original = next(
+        (tok for tok in tokens if _normalize(tok) == _normalize(left)), left
+    )
+    context = [
+        tok for tok in tokens
+        if _normalize(tok) not in needed and tok and tok[:1].isupper()
+    ]
+    result = [left_original, *context[: max_tokens - len(needed)]]
+    result.append(right)
+    return " ".join(result[:max_tokens])
+
+
+def has_contradictory_number(full_query: str, title: str) -> bool:
+    """True when the title states a number the full prompt does not contain.
+
+    The same rule shape as fit_evidence's number-contradiction check, but
+    keyed on the FULL original query: the short-subject retry query carries
+    no numbers, so a retried title's wrong year, score or edition would
+    otherwise pass unnoticed. Applied unconditionally (even a numberless
+    prompt pins the scene - any dated title contradicts it); titles with no
+    numbers never contradict, since a generic team/venue illustration is
+    permitted."""
+    query_numbers = set(_NUM_RE.findall(_normalize(full_query)))
+    title_numbers = set(_NUM_RE.findall(_normalize(title)))
+    return bool(title_numbers - query_numbers)
 
 
 def fit_evidence(query: str, title: str, context: str = "") -> str | None:

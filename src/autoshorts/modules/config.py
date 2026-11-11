@@ -39,6 +39,7 @@ __all__ = [
     "OUTPUT_DIR",
     "IMAGE_CACHE_DIR",
     "IMAGE_PROVIDERS",
+    "IMAGE_AI_FALLBACK",
     "ALLOW_UNVERIFIED_IMAGES",
     "IMAGE_SEARCH_SAFE",
     "IMAGE_SEARCH_PER_QUERY",
@@ -172,6 +173,10 @@ IMAGE_PROVIDERS = [
 # Images without verified reuse rights (e.g. DDG results) are skipped unless
 # explicitly allowed; credits then mark the video "publication review required".
 ALLOW_UNVERIFIED_IMAGES = _get_env_bool("ALLOW_UNVERIFIED_IMAGES", False)
+# Last-resort AI image fallback (metered Pollinations generation) for prompts
+# where every web candidate failed the gates above. Turning it off fails the
+# image stage closed: the run aborts before render instead of spending credits.
+IMAGE_AI_FALLBACK = _get_env_bool("IMAGE_AI_FALLBACK", True)
 IMAGE_SEARCH_PER_QUERY = _get_env_int("IMAGE_SEARCH_PER_QUERY", 5)
 IMAGE_MIN_WIDTH = _get_env_int("IMAGE_MIN_WIDTH", 720)
 IMAGE_MIN_HEIGHT = _get_env_int("IMAGE_MIN_HEIGHT", 720)

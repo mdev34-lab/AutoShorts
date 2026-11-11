@@ -422,6 +422,62 @@ class TestExplainerGenerator:
                     result = await gen.generate()
                     assert result is True
 
+    @pytest.mark.asyncio
+    @patch("autoshorts.generators.explainer.AudioFileClip")
+    async def test_images_only_render_not_invoked_after_image_stage_runtimeerror(
+        self, mock_audio_clip
+    ):
+        """IMAGE_AI_FALLBACK=off aborts the image stage before render: the
+        string-prompt web route raises RuntimeError from the searcher, the
+        run fails, and no video is composed (script/TTS/network mocked)."""
+        gen = ExplainerGenerator(subject="test", images_only=True, image_source="web")
+        string_prompts = [
+            "PSG vs Inter UCL final 2025",
+            "a bowl of fruit on a table",
+            "Flamengo vs Grêmio Maracanã 2026",
+        ]
+        mock_script = Mock()
+        mock_script.generate_script_with_prompts.return_value = (
+            ["Para 1", "Para 2", "Para 3"],
+            string_prompts,
+        )
+        mock_script.generate_image_prompts_from_script.return_value = string_prompts
+        gen.script_generator = mock_script
+
+        mock_audio = Mock()
+        mock_audio.duration = 10.0
+        mock_audio.close = Mock()
+        mock_audio_clip.return_value = mock_audio
+
+        with (
+            patch.object(
+                gen.tts_system,
+                "generate_audio_only",
+                AsyncMock(return_value="audio.mp3"),
+            ),
+            patch("autoshorts.generators.explainer.ImageSearcher") as mock_searcher,
+            patch.object(gen, "_create_flux_video") as spy_render,
+            patch.object(
+                gen,
+                "_call_pollinations_api",
+                side_effect=AssertionError("direct AI path forbidden in web mode"),
+            ) as spy_ai,
+            patch(
+                "requests.sessions.Session.request",
+                side_effect=AssertionError("network forbidden in test"),
+            ) as spy_network,
+        ):
+            mock_searcher.return_value.get_images.side_effect = RuntimeError(
+                "Prompt 'PSG vs Inter UCL final 2025' got no image: web "
+                "candidates were exhausted and IMAGE_AI_FALLBACK is disabled"
+            )
+            result = await gen.generate()
+        mock_searcher.return_value.get_images.assert_called_once_with(string_prompts)
+        spy_ai.assert_not_called()
+        spy_network.assert_not_called()
+        assert result is False
+        spy_render.assert_not_called()  # generation held, no render attempted
+
 
 class TestEdgeCases:
     """Test edge cases and error handling"""
@@ -818,6 +874,39 @@ class TestImageSearcher:
                 result = gen._generate_ai_images("test", [], 1)
                 mock_ai.assert_called_once_with(["test prompt"])
                 assert result == ["img.jpg"]
+
+    def test_string_prompts_web_mode_use_image_searcher_never_pollinations(self):
+        """Plain-string prompts in image_source=web mode go through the DDGS
+        ImageSearcher route (with its provenance/fit gates and its
+        IMAGE_AI_FALLBACK=off abort) - never straight to Pollinations, even
+        with the fallback knob off."""
+        gen = ExplainerGenerator(subject="test", image_source="web")
+        prompts = ["PSG vs Inter UCL final 2025", "a bowl of fruit on a table"]
+        with (
+            patch.object(gen, "_call_pollinations_api") as spy_ai,
+            patch("autoshorts.generators.explainer.ImageSearcher") as spy_searcher,
+            patch("autoshorts.modules.image_searcher.IMAGE_AI_FALLBACK", False),
+        ):
+            spy_searcher.return_value.get_images.return_value = ["web.jpg"]
+            result = gen._generate_ai_images("test", [], prompts=prompts)
+        spy_searcher.return_value.get_images.assert_called_once_with(prompts)
+        spy_ai.assert_not_called()
+        assert result == ["web.jpg"]
+
+    def test_string_prompts_ai_mode_keep_pollinations(self):
+        """Explicitly selected image_source=ai retains the direct AI path for
+        plain-string prompts (a chosen source, not a fallback)."""
+        gen = ExplainerGenerator(subject="test", image_source="ai")
+        with (
+            patch.object(
+                gen, "_call_pollinations_api", return_value=["ai.jpg"]
+            ) as spy_ai,
+            patch("autoshorts.generators.explainer.ImageSearcher") as spy_searcher,
+        ):
+            result = gen._generate_ai_images("test", [], prompts=["plain prompt"])
+        spy_ai.assert_called_once_with(["plain prompt"])
+        spy_searcher.assert_not_called()
+        assert result == ["ai.jpg"]
 
 
 if __name__ == "__main__":
