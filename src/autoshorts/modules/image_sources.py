@@ -187,6 +187,7 @@ _GENERIC_QUERY_WORDS = {
     "official",
     "best",
     "top",
+    "home",
 }
 _NUM_RE = re.compile(r"\d+")
 
@@ -218,7 +219,7 @@ def fit_evidence(query: str, title: str, context: str = "") -> str | None:
     title_and_context = f"{title} {context}"
     if distinctive_tokens(title_and_context) & _DATA_GRAPHIC_WORDS:
         return None
-    query_tokens = distinctive_tokens(query) - _GENERIC_QUERY_WORDS - {"home"}
+    query_tokens = distinctive_tokens(query) - _GENERIC_QUERY_WORDS
     query_tokens |= {tok for tok in _entity_tokens(query) if tok.isdigit()}
     if not query_tokens:
         return None
