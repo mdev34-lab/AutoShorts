@@ -741,21 +741,18 @@ class TestShortSubjectRetryGuards:
         assert out == []  # 3x0 contradicts the prompt's 6x1
 
     def test_retry_rejects_extra_edition_number_in_title(self, monkeypatch):
-        prompt = "Flamengo Palmeiras Nubank Parque 21 novembro 2026 decisão"
+        prompt = "Flamengo Palmeiras Maracanã 21 2026"
         calls, out = self._retry(
             monkeypatch,
             prompt,
             [
                 {
                     "image": "https://ge.globo.com/sub17.jpg",
-                    "title": (
-                        "Flamengo vence Palmeiras em estreia do Nubank Parque "
-                        "pelo Brasileiro Sub-17"
-                    ),
+                    "title": "Flamengo Palmeiras Maracanã Brasileiro Sub-17",
                 }
             ],
         )
-        assert calls == [prompt, "Flamengo Palmeiras Nubank"]
+        assert calls == [prompt, "Flamengo Palmeiras Maracanã"]
         assert out == []  # 17 is not among the prompt's {21, 2026}
 
     def test_retry_subject_is_never_the_aesthetic_prefix(self, monkeypatch):
@@ -1034,8 +1031,16 @@ class TestPairSeparatorFailClosed:
         assert image_sources.explicit_pair_subject("Neymar santos x Palmeiras") is None
 
     def test_no_separator_falls_back_to_short_query(self):
-        q = "Flamengo Maracanã celebration Grêmio"
+        q = "Flamengo Grêmio Maracanã 2026"
         assert image_sources.retry_subject_query(q) == image_sources.short_subject_query(q)
+
+    def test_no_separator_counterexample_blocks_retry(self):
+        assert (
+            image_sources.retry_subject_query(
+                "Flamengo comemora vitória sobre Grêmio Maracanã"
+            )
+            == ""
+        )
 
 
 class TestPairRouteMockedNoNetwork:
@@ -1214,5 +1219,105 @@ class TestActualRouteTorcidaAndNeymar:
             out = searcher._ddg_candidates(query)
 
         assert out == []
+        assert calls == [query]
+        spy.assert_not_called()
+
+
+class TestNoSeparatorDdgCandidatesRegression:
+    def test_ddg_candidates_no_retry_wrong_vasco_title(self, monkeypatch):
+        from autoshorts.modules import image_searcher as mod
+        from autoshorts.modules.image_searcher import ImageSearcher
+
+        monkeypatch.setattr(mod, "ALLOW_UNVERIFIED_IMAGES", True)
+        searcher = ImageSearcher()
+        calls = []
+        query = "Flamengo comemora vitória sobre Grêmio Maracanã"
+        wrongtitle = "Flamengo comemora vitória sobre Vasco"
+
+        def fake_search(q):
+            calls.append(q)
+            return [{"image": "https://example.com/wrong.jpg", "title": wrongtitle}]
+
+        with (
+            patch("autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["ddg"]),
+            patch.object(searcher, "search_images", side_effect=fake_search),
+            patch.object(
+                mod.requests.Session, "request", side_effect=AssertionError("network")
+            ) as spy,
+        ):
+            out = searcher._ddg_candidates(query)
+
+        assert out == []
+        assert calls == [query]
+        spy.assert_not_called()
+
+    def test_ddg_candidates_preserved_no_separator_positive(self, monkeypatch):
+        from autoshorts.modules import image_searcher as mod
+        from autoshorts.modules.image_searcher import ImageSearcher
+
+        monkeypatch.setattr(mod, "ALLOW_UNVERIFIED_IMAGES", True)
+        searcher = ImageSearcher()
+        calls = []
+        query = "Flamengo Grêmio Maracanã 2026"
+        correcttitle = "Flamengo e Grêmio no Maracanã"
+
+        def fake_search(q):
+            calls.append(q)
+            if q == query:
+                return [
+                    {
+                        "image": "https://example.com/wrong.jpg",
+                        "title": "Flamengo comemora vitória sobre Vasco",
+                    }
+                ]
+            return [
+                {
+                    "image": "https://example.com/correct.jpg",
+                    "title": correcttitle,
+                }
+            ]
+
+        with (
+            patch("autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["ddg"]),
+            patch.object(searcher, "search_images", side_effect=fake_search),
+            patch.object(
+                mod.requests.Session, "request", side_effect=AssertionError("network")
+            ) as spy,
+        ):
+            out = searcher._ddg_candidates(query)
+
+        assert [c.title for c in out] == [correcttitle]
+        assert len(calls) == 2
+        assert calls[1] == "Flamengo Grêmio Maracanã"
+        spy.assert_not_called()
+
+
+class TestNoSeparatorGetImagesKnobOff:
+    def test_get_images_disabled_runtime_error(self, monkeypatch, tmp_path):
+        from autoshorts.modules import image_searcher as mod
+        from autoshorts.modules.image_searcher import ImageSearcher
+
+        monkeypatch.setattr(mod, "ALLOW_UNVERIFIED_IMAGES", True)
+        monkeypatch.setattr(mod, "IMAGE_AI_FALLBACK", False)
+        monkeypatch.setattr(mod, "IMAGE_PROVIDERS", ["ddg"])
+        monkeypatch.setattr(mod, "IMAGE_CACHE_DIR", tmp_path)
+        searcher = ImageSearcher()
+        calls = []
+        query = "Flamengo comemora vitória sobre Grêmio Maracanã"
+        wrongtitle = "Flamengo comemora vitória sobre Vasco"
+
+        def fake_search(q):
+            calls.append(q)
+            return [{"image": "https://example.com/wrong.jpg", "title": wrongtitle}]
+
+        monkeypatch.setattr(searcher, "search_images", fake_search)
+        with (
+            patch.object(
+                mod.requests.Session, "request", side_effect=AssertionError("network")
+            ) as spy,
+            pytest.raises(RuntimeError, match="IMAGE_AI_FALLBACK"),
+        ):
+            searcher.get_images([query])
+
         assert calls == [query]
         spy.assert_not_called()

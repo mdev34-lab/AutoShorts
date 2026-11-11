@@ -383,6 +383,14 @@ def retry_subject_query(query: str, max_tokens: int = 3) -> str:
         # query, which would silently drop the opponent.
         if has_explicit_separator:
             return ""
+        # No-separator (descriptive) prompt: the retry's short query must
+        # still carry every eligible subject word of the full prompt. A
+        # short query that drops an eligible subject (e.g. an opponent) would
+        # admit a photo of the wrong entity, so fail closed instead.
+        eligible = _eligible_pair_words(query)
+        short_tokens = {_normalize(tok) for tok in short.split()}
+        if any(_normalize(word) not in short_tokens for word in eligible):
+            return ""
         return short
     left, right = pair
     needed = {_normalize(left), _normalize(right)}
