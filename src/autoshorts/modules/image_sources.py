@@ -187,6 +187,7 @@ _GENERIC_QUERY_WORDS = {
     "official",
     "best",
     "top",
+    "home",
 }
 _NUM_RE = re.compile(r"\d+")
 
@@ -205,25 +206,30 @@ def _entity_tokens(text: str) -> set[str]:
 def fit_evidence(query: str, title: str, context: str = "") -> str | None:
     """Proof of contextual fit, or None when the candidate is ambiguous.
 
-    The candidate must cover EVERY entity token of the query (short words and
-    numbers included): two shared words never admit a different subject
-    (Jaguar car vs jaguar eel). Any number in the candidate that the query
-    does not contain is a contradictory attribute (season, rank, score) and
-    rejects it. A one-token query needs the token in the TITLE. URL text is
-    never evidence. Text alone cannot prove what the pixels show; the
-    searcher still keeps unverified images behind the rights/verification gate.
+    The candidate must cover EVERY distinctive token of the query (long,
+    content-bearing words) and EVERY query number (short scores included): two
+    shared words never admit a different subject (Jaguar car vs jaguar eel).
+    Generic/filler query words (photo, official, home) are not required. Any
+    number in the candidate that the query does not contain is a contradictory
+    attribute (season, rank, score) and rejects it. A one-token query needs the
+    token in the TITLE. URL text is never evidence. Text alone cannot prove
+    what the pixels show; the searcher still keeps unverified images behind the
+    rights/verification gate.
     """
     title_and_context = f"{title} {context}"
     if distinctive_tokens(title_and_context) & _DATA_GRAPHIC_WORDS:
         return None
-    query_tokens = _entity_tokens(query)
+    query_tokens = distinctive_tokens(query) - _GENERIC_QUERY_WORDS
+    query_tokens |= {tok for tok in _entity_tokens(query) if tok.isdigit()}
     if not query_tokens:
-        return None
-    candidate_tokens = _entity_tokens(title_and_context)
-    if not query_tokens <= candidate_tokens:
         return None
     query_numbers = set(_NUM_RE.findall(_normalize(query)))
     candidate_numbers = set(_NUM_RE.findall(_normalize(title_and_context)))
+    candidate_tokens = _entity_tokens(title_and_context) | candidate_numbers
+    if not query_tokens <= candidate_tokens:
+        return None
+    if not query_numbers <= candidate_numbers:
+        return None
     if query_numbers and candidate_numbers - query_numbers:
         return None
     if len(query_tokens) == 1:
