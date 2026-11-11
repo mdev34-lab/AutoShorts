@@ -304,7 +304,8 @@ class ExplainerGenerator:
             traceback.print_exc()
             return False
 
-    def _ease_in_out_cubic(self, t: float) -> float:
+    @staticmethod
+    def _ease_in_out_cubic(t: float) -> float:
         if t <= 0:
             return 0.0
         if t >= 1:
@@ -313,7 +314,8 @@ class ExplainerGenerator:
             return 4 * t * t * t
         return 1 - pow(-2 * t + 2, 3) / 2
 
-    def _apply_overlay_animation(self, clip, duration: float):
+    @classmethod
+    def _apply_overlay_animation(cls, clip, duration: float):
         def scale_anim(t: float) -> float:
             if duration <= 0:
                 return 1.0
@@ -321,16 +323,16 @@ class ExplainerGenerator:
             fade_in_end = 0.15
             fade_out_start = 0.85
             if progress < fade_in_end:
-                return 1.0 + (MAX_ZOOM_VALUE - 1.0) * self._ease_in_out_cubic(
+                return 1.0 + (MAX_ZOOM_VALUE - 1.0) * cls._ease_in_out_cubic(
                     progress / fade_in_end
                 )
             elif progress < fade_out_start:
                 return MAX_ZOOM_VALUE
             else:
                 out_progress = (progress - fade_out_start) / (1.0 - fade_out_start)
-                return MAX_ZOOM_VALUE - (
-                    MAX_ZOOM_VALUE - 1.0
-                ) * self._ease_in_out_cubic(out_progress)
+                return MAX_ZOOM_VALUE - (MAX_ZOOM_VALUE - 1.0) * cls._ease_in_out_cubic(
+                    out_progress
+                )
 
         def opacity_anim(t: float) -> float:
             if duration <= 0:
@@ -339,12 +341,12 @@ class ExplainerGenerator:
             fade_in_end = 0.15
             fade_out_start = 0.85
             if progress < fade_in_end:
-                return self._ease_in_out_cubic(progress / fade_in_end)
+                return cls._ease_in_out_cubic(progress / fade_in_end)
             elif progress < fade_out_start:
                 return 1.0
             else:
                 out_progress = (progress - fade_out_start) / (1.0 - fade_out_start)
-                return max(1.0 - self._ease_in_out_cubic(out_progress), 0.0)
+                return max(1.0 - cls._ease_in_out_cubic(out_progress), 0.0)
 
         # Fade through an alpha mask, never by multiplying RGB: that yields an
         # opaque near-black frame and the "faded" image covered the previous
@@ -368,6 +370,108 @@ class ExplainerGenerator:
         clip = clip.with_effects([vfx.Resize(scale_anim)])
         return clip.with_position(("center", "center"))
 
+    @classmethod
+    def compose_saved_inputs(
+        cls,
+        image_paths: list[str | Path] | tuple[str | Path, ...],
+        audio_path: str | Path,
+        paragraphs: list[str],
+        output_path: str | Path,
+        metadata: VideoMetadata | None = None,
+    ):
+        """Compose a video from pre-saved and validated local assets.
+
+        Scope and Boundary:
+            Offline video composition only. This classmethod bypasses the
+            generator constructor, LLM script generation, and TTS synthesis.
+            The caller owns the network namespace (e.g. sandbox, network
+            isolation, zero network egress) and durable asset hashing/integrity
+            checks.
+
+        Args:
+            image_paths: Non-empty list or tuple of paths to non-empty,
+                regular local image files.
+            audio_path: Path to a non-empty, regular local audio file.
+            paragraphs: Non-empty list of non-empty string paragraphs.
+            output_path: Path where the final video will be written.
+            metadata: Optional VideoMetadata instance.
+
+        Returns:
+            The return value of cls._compose_flux_body.
+
+        Raises:
+            ValueError: If inputs fail validation (empty sequence, non-regular
+                file, 0-byte file, non-string paragraph, etc.).
+            FileNotFoundError: If an image or audio file does not exist.
+        """
+        if not isinstance(image_paths, (list, tuple)) or len(image_paths) == 0:
+            raise ValueError(
+                "image_paths must be a non-empty list or tuple of file paths"
+            )
+
+        resolved_images: list[str] = []
+        for i, img in enumerate(image_paths):
+            if img is None:
+                raise ValueError(f"Image path at index {i} cannot be None")
+            if isinstance(img, str) and not img.strip():
+                raise ValueError(
+                    f"Image path at index {i} cannot be empty or whitespace"
+                )
+            if not isinstance(img, (str, Path)):
+                raise ValueError(
+                    f"Image path at index {i} must be a str or Path, got {type(img).__name__}"
+                )
+            img_p = Path(img)
+            if not img_p.exists():
+                raise FileNotFoundError(f"Image file does not exist: {img}")
+            if not img_p.is_file():
+                raise ValueError(f"Image path is not a regular file: {img}")
+            if img_p.stat().st_size == 0:
+                raise ValueError(f"Image file is empty (0 bytes): {img}")
+            resolved_images.append(str(img_p))
+
+        if not audio_path:
+            raise ValueError("audio_path must be specified")
+        if not isinstance(audio_path, (str, Path)):
+            raise ValueError(
+                f"audio_path must be a str or Path, got {type(audio_path).__name__}"
+            )
+        if isinstance(audio_path, str) and not audio_path.strip():
+            raise ValueError("audio_path cannot be empty or whitespace")
+        audio_p = Path(audio_path)
+        if not audio_p.exists():
+            raise FileNotFoundError(f"Audio file does not exist: {audio_path}")
+        if not audio_p.is_file():
+            raise ValueError(f"Audio path is not a regular file: {audio_path}")
+        if audio_p.stat().st_size == 0:
+            raise ValueError(f"Audio file is empty (0 bytes): {audio_path}")
+        resolved_audio = str(audio_p)
+
+        if not isinstance(paragraphs, list) or len(paragraphs) == 0:
+            raise ValueError("paragraphs must be a non-empty list of strings")
+        for i, p in enumerate(paragraphs):
+            if not isinstance(p, str) or not p.strip():
+                raise ValueError(f"Paragraph at index {i} must be a non-empty string")
+
+        if not output_path:
+            raise ValueError("output_path must be specified")
+        if not isinstance(output_path, (str, Path)):
+            raise ValueError(
+                f"output_path must be a str or Path, got {type(output_path).__name__}"
+            )
+        if isinstance(output_path, str) and not output_path.strip():
+            raise ValueError("output_path cannot be empty or whitespace")
+        resolved_output = str(Path(output_path))
+
+        return cls._compose_flux_body(
+            resolved_images,
+            resolved_audio,
+            paragraphs,
+            resolved_output,
+            metadata=metadata,
+            overlay_animation=cls._apply_overlay_animation,
+        )
+
     def _create_flux_video(
         self,
         img_paths: list,
@@ -375,6 +479,25 @@ class ExplainerGenerator:
         paragraphs: list,
         output_path: str,
         metadata: VideoMetadata | None = None,
+    ):
+        return self._compose_flux_body(
+            img_paths,
+            audio_path,
+            paragraphs,
+            output_path,
+            metadata=metadata,
+            overlay_animation=self._apply_overlay_animation,
+        )
+
+    @classmethod
+    def _compose_flux_body(
+        cls,
+        img_paths: list,
+        audio_path: str,
+        paragraphs: list,
+        output_path: str,
+        metadata: VideoMetadata | None = None,
+        overlay_animation=None,
     ):
         if not img_paths:
             raise ValueError("Cannot compose video: no image paths provided")
@@ -389,6 +512,12 @@ class ExplainerGenerator:
         total_video_dur = num_imgs * dur_per_img
         log(f"{num_imgs} scenes x {dur_per_img}s = {total_video_dur:.1f}s")
 
+        overlay_fn = (
+            overlay_animation
+            if overlay_animation is not None
+            else cls._apply_overlay_animation
+        )
+
         clips = []
         compositor = VideoCompositor()
         for i, path in enumerate(img_paths):
@@ -402,7 +531,7 @@ class ExplainerGenerator:
                     clip, OPENING_ANIMATION_DURATION
                 )
             else:
-                clip = self._apply_overlay_animation(clip, dur_per_img)
+                clip = overlay_fn(clip, dur_per_img)
             if i > 0:
                 clip = clip.with_effects([vfx.CrossFadeIn(CROSSFADE_TIME)])
             if i == 0:

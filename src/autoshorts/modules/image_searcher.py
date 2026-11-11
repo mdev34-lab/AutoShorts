@@ -1,7 +1,9 @@
 import hashlib
 import json
+import os
 import random
 import re
+import tempfile
 from pathlib import Path
 from urllib.parse import quote
 
@@ -67,6 +69,10 @@ BLOCKED_KEYWORDS: set[str] = {
 ACCEPTANCE_POLICY = "specific-requests-fall-back-v1"
 
 
+class _ProvenancePublishError(RuntimeError):
+    """A web candidate could not be committed with its exact provenance."""
+
+
 class ImageSearcher:
     def __init__(
         self,
@@ -76,14 +82,91 @@ class ImageSearcher:
         min_width: int = IMAGE_MIN_WIDTH,
         min_height: int = IMAGE_MIN_HEIGHT,
         max_per_query: int = IMAGE_SEARCH_PER_QUERY,
+        search=None,
+        download=None,
+        providers=None,
+        ai_fallback=None,
     ):
+        if search is not None and not callable(search):
+            raise TypeError("search must be callable or None")
+        if download is not None and not callable(download):
+            raise TypeError("download must be callable or None")
+        if providers is not None:
+            if isinstance(providers, str) or not isinstance(providers, (tuple, list)):
+                raise TypeError("providers must be a tuple of str")
+            if any(not isinstance(p, str) for p in providers):
+                raise TypeError("providers must contain only str")
+            providers = tuple(providers)
+        if ai_fallback is not None and not isinstance(ai_fallback, bool):
+            raise TypeError("ai_fallback must be bool or None")
+
         self.target_width = target_width
         self.target_height = target_height
         self.safesearch = safesearch
         self.min_width = min_width
         self.min_height = min_height
         self.max_per_query = max_per_query
+        self._search = search
+        self._download = download
+        self._providers = providers
+        self._ai_fallback = ai_fallback
         IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def providers(self) -> tuple[str, ...]:
+        if getattr(self, "_providers", None) is None:
+            return tuple(IMAGE_PROVIDERS)
+        return tuple(self._providers)
+
+    @providers.setter
+    def providers(self, value):
+        self._providers = None if value is None else tuple(value)
+
+    @property
+    def ai_fallback(self) -> bool:
+        if getattr(self, "_ai_fallback", None) is None:
+            return bool(IMAGE_AI_FALLBACK)
+        return bool(self._ai_fallback)
+
+    @ai_fallback.setter
+    def ai_fallback(self, value):
+        self._ai_fallback = value
+
+    @property
+    def _public_only(self) -> bool:
+        """This instance was given injected saved/public search/download callables.
+
+        The saved/public-only wrapper builds a searcher this way. An injected
+        callback says where results come from, not that it is harmless: nothing
+        here inspects or vouches for what an injected callable may do. Since
+        such a run has no provider route of its own to refetch from, a local
+        verification problem is fail-closed instead of a miss.
+        """
+        return (
+            getattr(self, "_search", None) is not None
+            or getattr(self, "_download", None) is not None
+        )
+
+    def _instance_cache_key(self, prompt: str) -> str:
+        if (
+            getattr(self, "_providers", None) is None
+            and getattr(self, "_ai_fallback", None) is None
+            and getattr(self, "_search", None) is None
+            and getattr(self, "_download", None) is None
+        ):
+            return ImageSearcher._cache_key(prompt)
+        policy = "optin" if ALLOW_UNVERIFIED_IMAGES else "strict"
+        scheme = (
+            f"img3|{ACCEPTANCE_POLICY}|{policy}|"
+            f"{','.join(self.providers)}|ai={int(bool(self.ai_fallback))}|{prompt}"
+        )
+        return hashlib.sha256(scheme.encode()).hexdigest()[:16]
+
+    def _instance_usable_cache(self, cached_path: Path, prompt: str) -> bool:
+        record = ImageSearcher._read_sidecar(cached_path)
+        if record is not None and record.get("kind") == "ai":
+            return bool(cached_path.exists() and self.ai_fallback)
+        return ImageSearcher._usable_cache(cached_path, prompt)
 
     @staticmethod
     def _is_nsfw(result: dict) -> bool:
@@ -103,6 +186,9 @@ class ImageSearcher:
         return False
 
     def search_images(self, query: str) -> list[dict]:
+        search = getattr(self, "_search", None)
+        if search is not None:
+            return list(search(query))
         try:
             from ddgs import DDGS
 
@@ -123,6 +209,9 @@ class ImageSearcher:
             return []
 
     def download_image(self, url: str, cache_path: Path) -> bool:
+        download = getattr(self, "_download", None)
+        if download is not None:
+            return bool(download(url, cache_path))
         try:
             resp = requests.get(url, timeout=API_TIMEOUT_IMAGE, stream=True)
             if resp.status_code != 200:
@@ -221,7 +310,16 @@ class ImageSearcher:
         if kind != "web":
             return None
         required = ("title", "source_page", "image_url", "license", "provider")
-        if not all(isinstance(data.get(k), str) and data[k].strip() for k in required):
+        unknown_license = (
+            data.get("license") == ""
+            and data.get("license_verified") is False
+            and data.get("unverified_opt_in") is True
+        )
+        if not all(
+            isinstance(data.get(k), str)
+            and (data[k].strip() or (k == "license" and unknown_license))
+            for k in required
+        ):
             return None
         for key in ("source_page", "image_url"):
             if not data[key].startswith(("http://", "https://")):
@@ -231,19 +329,48 @@ class ImageSearcher:
         return data
 
     @staticmethod
-    def _content_rejection(path: Path, prompt: str) -> str | None:
-        """Pixel gate on the downloaded bytes; fails closed if OCR is missing."""
+    def _pixel_gate(path: Path, prompt: str) -> tuple[str | None, str | None]:
+        """Pixel gate result as ``(rejection, unavailability)``.
+
+        ``rejection`` is the same reason string ``_content_rejection``
+        reports. ``unavailability`` is set only when the OCR gate itself could
+        not run (``image_content.ContentUnavailableError``), which is NOT a
+        verdict about the pixels: callers that cannot reacquire anything must
+        fail closed on it instead of treating the bytes as checked.
+        """
         try:
             reason = image_content.check_image_content(path, prompt)
         except image_content.ContentUnavailableError as exc:
-            return f"pixel content could not be checked ({exc})"
+            return None, f"pixel content could not be checked ({exc})"
         if reason or ALLOW_UNVERIFIED_IMAGES:
-            return reason
+            return reason, None
         try:
             # Broad-class similarity only (see image_subject.VERIFICATION_SCOPE).
-            return image_subject.check_subject(path, prompt)
+            return image_subject.check_subject(path, prompt), None
         except image_subject.SubjectUnavailableError as exc:
-            return f"pictured subject could not be verified ({exc})"
+            return f"pictured subject could not be verified ({exc})", None
+
+    @staticmethod
+    def _content_rejection(path: Path, prompt: str) -> str | None:
+        """Pixel gate on the downloaded bytes; fails closed if OCR is missing."""
+        reason, unavailable = ImageSearcher._pixel_gate(path, prompt)
+        return reason or unavailable
+
+    def _cached_pixel_gate(
+        self, cached_path: Path, prompt: str
+    ) -> tuple[bool, str | None]:
+        """Re-check the pixels of an already-allowed cache hit.
+
+        Returns ``(usable, unavailability)``. A rejected entry is only a cache
+        MISS: its bytes and sidecar are left exactly as they are so the normal
+        candidate flow can republish them, and nothing is deleted here. AI
+        cache entries are not OCR-gated - this gate is about web pixels.
+        """
+        record = ImageSearcher._read_sidecar(cached_path)
+        if record is not None and record.get("kind") == "ai":
+            return True, None
+        reason, unavailable = ImageSearcher._pixel_gate(cached_path, prompt)
+        return reason is None and unavailable is None, unavailable
 
     @classmethod
     def _usable_cache(cls, cached_path: Path, prompt: str) -> bool:
@@ -282,12 +409,31 @@ class ImageSearcher:
         for i, prompt in enumerate(prompts):
             log(f"Searching web image {i + 1}/{total}: '{prompt[:60]}...'", "INFO")
 
-            cache_key = self._cache_key(prompt)
+            cache_key = self._instance_cache_key(prompt)
             cached_path = IMAGE_CACHE_DIR / f"{cache_key}.jpg"
-            if self._usable_cache(cached_path, prompt):
-                img_paths.append(str(cached_path))
-                log(f"  Using cached: {cached_path.name}", "INFO")
-                continue
+            if self._instance_usable_cache(cached_path, prompt):
+                usable, unavailable = self._cached_pixel_gate(cached_path, prompt)
+                if unavailable is not None and self._public_only:
+                    # Nothing can be reacquired here, so an unreadable gate is
+                    # fail-closed - before any refetch/network, and with the
+                    # seeded cache bytes and sidecar left untouched.
+                    raise RuntimeError(
+                        f"Prompt '{prompt}' cached image could not be verified: "
+                        f"{unavailable}"
+                    )
+                if usable:
+                    img_paths.append(str(cached_path))
+                    log(f"  Using cached: {cached_path.name}", "INFO")
+                    continue
+                # A rejected cache entry is a MISS, never a reason to delete
+                # the shared/published file: the candidate flow below
+                # reacquires and republishes it.
+                detail = f" ({unavailable})" if unavailable else ""
+                log(
+                    f"  Cached image failed the pixel content check{detail}; "
+                    "refetching",
+                    "WARNING",
+                )
 
             candidates = self._candidates(prompt)
             if candidates and not ALLOW_UNVERIFIED_IMAGES:
@@ -337,10 +483,53 @@ class ImageSearcher:
                             )
                             temp_path.unlink(missing_ok=True)
                             continue
-                        self.resize_to_fill(temp_path, cached_path)
-                        temp_path.unlink(missing_ok=True)
+                        # Transformation (text removal, framing, resize) can
+                        # change what the pixels say, so the FINAL bytes are
+                        # gated too - before the path is accepted and before
+                        # any provenance sidecar is published. The transform is
+                        # staged in a fresh uniquely-named file of this
+                        # invocation: the shared/published cache entry is
+                        # replaced only after those exact bytes pass, so a
+                        # rejection (or any transform/gate/replace failure)
+                        # leaves seeded bytes and sidecar exactly as they were.
+                        staged_fd, staged_name = tempfile.mkstemp(
+                            dir=IMAGE_CACHE_DIR,
+                            prefix=(
+                                f"dl_{cache_key}_"
+                                f"{hashlib.md5(url.encode()).hexdigest()[:8]}_"
+                            ),
+                            suffix="_final.jpg",
+                        )
+                        os.close(staged_fd)
+                        staged_path = Path(staged_name)
+                        staged_sidecar = ImageSearcher._sidecar_path(staged_path)
+                        try:
+                            self.resize_to_fill(temp_path, staged_path)
+                            temp_path.unlink(missing_ok=True)
+                            final_reason, final_unavailable = self._pixel_gate(
+                                staged_path, prompt
+                            )
+                            problem = final_reason or final_unavailable
+                            if problem is not None:
+                                log(
+                                    "  Final image rejected by pixel content "
+                                    f"check: {problem}",
+                                    "WARNING",
+                                )
+                                continue
+                            self._publish_candidate_pair(
+                                staged_path,
+                                staged_sidecar,
+                                cached_path,
+                                candidate,
+                                prompt,
+                            )
+                        finally:
+                            # The image staging file is ours. The publisher owns
+                            # cleanup of a sidecar it successfully creates, while
+                            # its exclusive create leaves any collision untouched.
+                            staged_path.unlink(missing_ok=True)
                         img_paths.append(str(cached_path))
-                        self._write_provenance_sidecar(cached_path, candidate, prompt)
                         log(
                             f"  Downloaded & processed: {cached_path.name} "
                             f"({candidate.provider}, license: "
@@ -350,12 +539,15 @@ class ImageSearcher:
                         )
                         downloaded = True
                         break
+                    except _ProvenancePublishError:
+                        temp_path.unlink(missing_ok=True)
+                        raise
                     except Exception as e:
                         log(f"  Resize failed: {e}", "WARNING")
                         temp_path.unlink(missing_ok=True)
 
             if not downloaded:
-                if not IMAGE_AI_FALLBACK:
+                if not self.ai_fallback:
                     log(
                         f"  No image for '{prompt[:60]}': every web candidate "
                         "failed and the AI fallback is disabled "
@@ -376,48 +568,256 @@ class ImageSearcher:
         return img_paths
 
     @classmethod
+    def _provenance_record(
+        cls, candidate: "image_sources.SourceCandidate", prompt: str
+    ) -> dict:
+        """Build the exact existing sidecar schema for one source candidate."""
+        extra = candidate.extra or {}
+        is_ai = candidate.provider == "ai"
+        record = {
+            "schema": 1,
+            "kind": "ai" if is_ai else "web",
+            "provider": candidate.provider,
+            "prompt": prompt,
+            "title": candidate.title or ("AI-generated image" if is_ai else ""),
+            "image_url": candidate.url,
+            "source_page": extra.get("source_page") or "",
+            "creator": extra.get("creator") or "",
+            "license": candidate.license or "",
+            "license_url": extra.get("license_url") or "",
+            "license_verified": bool(candidate.license) and not is_ai,
+            "fit": candidate.fit_evidence,
+            # Say exactly what was (not) verified; never "subject verified".
+            "pictured_subject_check": (
+                "not-run"
+                if is_ai
+                else "not-run (ALLOW_UNVERIFIED_IMAGES opt-in)"
+                if ALLOW_UNVERIFIED_IMAGES
+                else image_subject.VERIFICATION_SCOPE
+            ),
+            "unverified_opt_in": bool(ALLOW_UNVERIFIED_IMAGES and not is_ai),
+            "modification": (
+                "Resized and cropped to the video frame; overlay text may "
+                "have been removed and framing adjusted."
+            ),
+        }
+        if not is_ai and not record["source_page"]:
+            # The image URL is the only locator some providers expose.
+            record["source_page"] = candidate.url
+        return record
+
+    @classmethod
     def _write_provenance_sidecar(
         cls, image_path: Path, candidate: "image_sources.SourceCandidate", prompt: str
     ) -> None:
-        """Persist provenance next to the cached image so credits survive cache hits."""
+        """Persist provenance next to the cached image so credits survive cache hits.
+
+        Legacy/AI callers retain best-effort writes. New web publication uses a
+        separate strict staged path and will not accept bytes if it fails.
+        """
         try:
-            extra = candidate.extra or {}
-            is_ai = candidate.provider == "ai"
-            record = {
-                "schema": 1,
-                "kind": "ai" if is_ai else "web",
-                "provider": candidate.provider,
-                "prompt": prompt,
-                "title": candidate.title or ("AI-generated image" if is_ai else ""),
-                "image_url": candidate.url,
-                "source_page": extra.get("source_page") or "",
-                "creator": extra.get("creator") or "",
-                "license": candidate.license or "",
-                "license_url": extra.get("license_url") or "",
-                "license_verified": bool(candidate.license) and not is_ai,
-                "fit": candidate.fit_evidence,
-                # Say exactly what was (not) verified; never "subject verified".
-                "pictured_subject_check": (
-                    "not-run"
-                    if is_ai
-                    else "not-run (ALLOW_UNVERIFIED_IMAGES opt-in)"
-                    if ALLOW_UNVERIFIED_IMAGES
-                    else image_subject.VERIFICATION_SCOPE
-                ),
-                "unverified_opt_in": bool(ALLOW_UNVERIFIED_IMAGES and not is_ai),
-                "modification": (
-                    "Resized and cropped to the video frame; overlay text may "
-                    "have been removed and framing adjusted."
-                ),
-            }
-            if not is_ai and not record["source_page"]:
-                # The image URL is the only locator some providers expose.
-                record["source_page"] = candidate.url
+            record = cls._provenance_record(candidate, prompt)
             cls._sidecar_path(image_path).write_text(
                 json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8"
             )
         except Exception as e:
             log(f"  Could not write provenance sidecar: {e}", "WARNING")
+
+    @classmethod
+    def _stage_provenance_sidecar(
+        cls, staged_image: Path, candidate: "image_sources.SourceCandidate", prompt: str
+    ) -> dict:
+        """Write and validate a private sidecar for a uniquely staged image."""
+        staged_image = Path(staged_image)
+        staged_sidecar = cls._sidecar_path(staged_image)
+        record = cls._provenance_record(candidate, prompt)
+        serialized = json.dumps(record, ensure_ascii=False, indent=2)
+        descriptor = None
+        created = False
+        try:
+            descriptor = os.open(
+                staged_sidecar,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+            )
+            created = True
+            stream = os.fdopen(descriptor, "w", encoding="utf-8")
+            descriptor = None
+            with stream:
+                stream.write(serialized)
+                stream.flush()
+                os.fsync(stream.fileno())
+            if cls._read_sidecar(staged_image) != record:
+                raise OSError(
+                    "staged provenance did not validate against its candidate"
+                )
+            return record
+        except BaseException:
+            if descriptor is not None:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+            if created:
+                try:
+                    staged_sidecar.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            raise
+
+    @staticmethod
+    def _reserve_pair_backup(path: Path) -> Path:
+        # Reserve an unguessable private directory, leaving the backup target
+        # absent. A successful rename can then be distinguished from a failed
+        # one during rollback without mistaking an empty placeholder for data.
+        directory = Path(
+            tempfile.mkdtemp(dir=path.parent, prefix=f".{path.name}.rollback-")
+        )
+        return directory / path.name
+
+    @classmethod
+    def _publish_cache_pair(
+        cls,
+        staged_image: Path,
+        staged_sidecar: Path,
+        cached_path: Path,
+        expected_record: dict,
+    ) -> None:
+        """Commit bytes and their exact sidecar, restoring the old pair on error.
+
+        The old sidecar is moved away before the cached image is replaced, so
+        readers can observe a miss during publication but never new bytes with
+        stale valid provenance.
+        """
+        cached_path = Path(cached_path)
+        sidecar_path = cls._sidecar_path(cached_path)
+        had_image = os.path.lexists(cached_path)
+        had_sidecar = os.path.lexists(sidecar_path)
+        backup_image = backup_sidecar = None
+        moved_image = moved_sidecar = False
+        installed_image = installed_sidecar = False
+        committed = False
+
+        try:
+            if had_sidecar:
+                backup_sidecar = cls._reserve_pair_backup(sidecar_path)
+            if had_image:
+                backup_image = cls._reserve_pair_backup(cached_path)
+
+            if had_sidecar and backup_sidecar is not None:
+                os.replace(sidecar_path, backup_sidecar)
+                moved_sidecar = True
+            if had_image and backup_image is not None:
+                os.replace(cached_path, backup_image)
+                moved_image = True
+
+            os.replace(staged_image, cached_path)
+            installed_image = True
+            os.replace(staged_sidecar, sidecar_path)
+            installed_sidecar = True
+
+            if cls._read_sidecar(cached_path) != expected_record:
+                raise OSError("published provenance does not match the candidate")
+            committed = True
+        except BaseException:
+            # Reconcile flags if an asynchronous exception arrived just after a
+            # successful atomic rename; only restore the old sidecar after the
+            # old image is back, so rollback cannot create a stale pair.
+            if backup_sidecar is not None and not os.path.lexists(sidecar_path):
+                moved_sidecar = moved_sidecar or os.path.lexists(backup_sidecar)
+            if backup_image is not None and not os.path.lexists(cached_path):
+                moved_image = moved_image or os.path.lexists(backup_image)
+            if not os.path.lexists(staged_image) and os.path.lexists(cached_path):
+                installed_image = True
+            if not os.path.lexists(staged_sidecar) and os.path.lexists(sidecar_path):
+                installed_sidecar = True
+
+            sidecar_removed = not installed_sidecar
+            if installed_sidecar:
+                try:
+                    sidecar_path.unlink(missing_ok=True)
+                    sidecar_removed = True
+                except OSError:
+                    log("  Could not remove candidate sidecar during rollback", "ERROR")
+                    sidecar_removed = False
+
+            image_removed = not installed_image
+            if installed_image:
+                try:
+                    cached_path.unlink(missing_ok=True)
+                    image_removed = True
+                except OSError:
+                    log("  Could not remove candidate image during rollback", "ERROR")
+                    image_removed = False
+
+            if not had_image:
+                restored_image = image_removed
+            elif moved_image:
+                restored_image = False
+                if image_removed and sidecar_removed and backup_image is not None:
+                    try:
+                        os.replace(backup_image, cached_path)
+                        moved_image = False
+                        restored_image = True
+                    except OSError:
+                        log("  Could not restore cached image during rollback", "ERROR")
+            else:
+                restored_image = not installed_image and os.path.lexists(cached_path)
+
+            if (
+                moved_sidecar
+                and sidecar_removed
+                and restored_image
+                and backup_sidecar is not None
+            ):
+                try:
+                    os.replace(backup_sidecar, sidecar_path)
+                    moved_sidecar = False
+                except OSError:
+                    log(
+                        "  Could not restore cached provenance during rollback", "ERROR"
+                    )
+            raise
+        finally:
+            for backup, retained in (
+                (backup_image, moved_image),
+                (backup_sidecar, moved_sidecar),
+            ):
+                if backup is not None and (committed or not retained):
+                    try:
+                        backup.unlink(missing_ok=True)
+                        backup.parent.rmdir()
+                    except OSError:
+                        log("  Could not clean a cache publication backup", "WARNING")
+
+    def _publish_candidate_pair(
+        self,
+        staged_image: Path,
+        staged_sidecar: Path,
+        cached_path: Path,
+        candidate: "image_sources.SourceCandidate",
+        prompt: str,
+    ) -> None:
+        """Fail closed unless this candidate's validated sidecar commits with its bytes."""
+        staged_sidecar_created = False
+        try:
+            record = self._stage_provenance_sidecar(staged_image, candidate, prompt)
+            staged_sidecar_created = True
+            self._publish_cache_pair(staged_image, staged_sidecar, cached_path, record)
+        except _ProvenancePublishError:
+            raise
+        except Exception as exc:
+            raise _ProvenancePublishError(
+                "candidate provenance could not be published with the image"
+            ) from exc
+        finally:
+            if staged_sidecar_created:
+                try:
+                    staged_sidecar.unlink(missing_ok=True)
+                except OSError:
+                    log(
+                        "  Could not clean candidate provenance staging file", "WARNING"
+                    )
 
     @classmethod
     def _write_credits_file(cls, img_paths: list[str]) -> None:
@@ -484,7 +884,7 @@ class ImageSearcher:
     def _candidates(self, query: str) -> list[image_sources.SourceCandidate]:
         """Provider-ordered candidates with provenance and fit evidence."""
         candidates: list[image_sources.SourceCandidate] = []
-        for provider in IMAGE_PROVIDERS:
+        for provider in self.providers:
             if provider == "commons":
                 candidates.extend(self._commons_candidates(query))
             elif provider == "ddg":
@@ -557,9 +957,9 @@ class ImageSearcher:
         headers = {"Authorization": f"Bearer {API_KEY}"}
 
         for prompt in remaining_prompts:
-            cache_key = self._cache_key(prompt)
+            cache_key = self._instance_cache_key(prompt)
             cached_path = IMAGE_CACHE_DIR / f"{cache_key}.jpg"
-            if self._usable_cache(cached_path, prompt):
+            if self._instance_usable_cache(cached_path, prompt):
                 collected_paths.append(str(cached_path))
                 continue
 
