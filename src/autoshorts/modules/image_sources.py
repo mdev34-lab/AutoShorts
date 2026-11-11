@@ -258,6 +258,60 @@ def short_subject_query(query: str, max_tokens: int = 3) -> str:
     return " ".join(tokens)
 
 
+_PAIR_SEPARATORS = {"vs", "versus", "x"}
+
+
+def _first_subject_token(text: str) -> str | None:
+    """First short-query subject token, or None when there is none."""
+    return short_subject_query(text, max_tokens=1) or None
+
+
+def explicit_pair_subject(query: str) -> tuple[str, str] | None:
+    """First subject token on each side of an explicit 'vs'/'versus'/'x'
+    pair. None when the prompt has no such pair that the short-subject rules
+    can represent on both sides (so unrelated prompts keep their old retry
+    behavior)."""
+    for match in _ANY_WORD_RE.finditer(query or ""):
+        if _normalize(match.group(0)) not in _PAIR_SEPARATORS:
+            continue
+        left = _first_subject_token((query or "")[: match.start()])
+        right = _first_subject_token((query or "")[match.end() :])
+        if left and right and _normalize(left) != _normalize(right):
+            return left, right
+    return None
+
+
+def retry_subject_query(query: str, max_tokens: int = 3) -> str:
+    """Retry query that keeps both sides of an explicit pair.
+
+    First-N truncation otherwise drops the opponent when the separator is
+    not among the earliest tokens ("Flamengo Maracanã celebration vs Grêmio"
+    would retry as "Flamengo Maracanã celebration" and admit a photo of a
+    different opponent). When a pair is present, keep the left entity plus
+    the best existing contextual token and the opponent; unresolved pairs
+    fall back to short_subject_query unchanged, and a pair that cannot fit
+    in max_tokens fails closed."""
+    short = short_subject_query(query, max_tokens)
+    pair = explicit_pair_subject(query)
+    if pair is None:
+        return short
+    left, right = pair
+    needed = {_normalize(left), _normalize(right)}
+    if len(needed) > max_tokens:
+        return ""
+    tokens = short.split()
+    present = {_normalize(tok) for tok in tokens}
+    if needed <= present:
+        return short
+    left_original = next(
+        (tok for tok in tokens if _normalize(tok) == _normalize(left)), left
+    )
+    context = [tok for tok in tokens if _normalize(tok) not in needed]
+    result = [left_original, *context[: max_tokens - len(needed)]]
+    result.append(right)
+    return " ".join(result[:max_tokens])
+
+
 def has_contradictory_number(full_query: str, title: str) -> bool:
     """True when the title states a number the full prompt does not contain.
 

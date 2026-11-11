@@ -432,6 +432,33 @@ class TestCacheProvenance:
 
         assert k1 != hashlib.sha256(b"prompt x").hexdigest()[:16]
 
+    def test_cached_ai_rejected_while_fallback_off(self, tmp_path, monkeypatch):
+        """A supplied existing kind=ai cache entry is never served through
+        the web route while IMAGE_AI_FALLBACK=off; with the knob on the
+        cached AI image stays reusable (fallback behavior preserved)."""
+        from autoshorts.modules import image_searcher as mod
+        from autoshorts.modules.image_searcher import ImageSearcher
+
+        monkeypatch.setattr(mod, "IMAGE_CACHE_DIR", tmp_path)
+        key = ImageSearcher._cache_key(PROMPT)
+        cached = tmp_path / f"{key}.jpg"
+        cached.write_bytes(b"ai-bytes")
+        ImageSearcher._sidecar_path(cached).write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "kind": "ai",
+                    "provider": "ai",
+                    "license": "AI-generated - no source license",
+                    "title": "AI-generated image",
+                }
+            )
+        )
+        monkeypatch.setattr(mod, "IMAGE_AI_FALLBACK", False)
+        assert ImageSearcher._usable_cache(cached, PROMPT) is False
+        monkeypatch.setattr(mod, "IMAGE_AI_FALLBACK", True)
+        assert ImageSearcher._usable_cache(cached, PROMPT) is True
+
 
 class TestAIFallbackKnob:
     """IMAGE_AI_FALLBACK=off fails the image stage closed instead of spending
@@ -501,6 +528,23 @@ class TestAIFallbackKnob:
             result = searcher.get_images([PROMPT])
         assert result and result[0].endswith(".jpg") and result != ["ai.jpg"]
         searcher._fallback_to_ai.assert_not_called()
+
+    def test_disabled_knob_aborts_without_any_http(self, tmp_path, monkeypatch):
+        """Actual route (no mocked _fallback_to_ai): no candidates and
+        IMAGE_AI_FALLBACK=off abort the image stage before a single real
+        HTTP call - cached AI bytes are rejected too, so nothing is served."""
+        from autoshorts.modules import image_searcher as mod
+        from autoshorts.modules.image_searcher import ImageSearcher
+
+        monkeypatch.setattr(mod, "IMAGE_CACHE_DIR", tmp_path)
+        monkeypatch.setattr(mod, "ALLOW_UNVERIFIED_IMAGES", False)
+        monkeypatch.setattr(mod, "IMAGE_AI_FALLBACK", False)
+        searcher = ImageSearcher.__new__(ImageSearcher)
+        searcher._candidates = lambda q: []
+        with patch.object(mod.requests, "get") as spy_get:
+            with pytest.raises(RuntimeError, match="IMAGE_AI_FALLBACK"):
+                searcher.get_images([PROMPT])
+        spy_get.assert_not_called()
 
 
 LONG_PROMPT = "Flamengo vs Grêmio Maracanã 2026 Brasileirão 34ª rodada"
@@ -785,6 +829,43 @@ class TestShortSubjectRetryGuards:
         )
         assert calls == [prompt, "Palmeiras Remo Nubank"]
         assert out == []  # the short query still demands "Remo" in the title
+
+    def test_retry_keeps_explicit_pair_opponent(self, monkeypatch):
+        """First-N truncation must not drop the opponent after an explicit
+        'vs': the Vasco photo has the right player and venue but the wrong
+        opponent, so it is not a valid retry candidate."""
+        prompt = "Flamengo Maracanã celebration vs Grêmio"
+        calls, out = self._retry(
+            monkeypatch,
+            prompt,
+            [
+                {
+                    "image": "https://ge.globo.com/vasco.jpg",
+                    "title": (
+                        "Flamengo celebration at Maracanã after beating Vasco"
+                    ),
+                }
+            ],
+        )
+        assert calls == [prompt, "Flamengo Maracanã Grêmio"]
+        assert out == []
+
+    def test_retry_accepts_same_explicit_pair(self, monkeypatch):
+        prompt = "Flamengo Maracanã celebration vs Grêmio"
+        calls, out = self._retry(
+            monkeypatch,
+            prompt,
+            [
+                {
+                    "image": "https://ge.globo.com/g.jpg",
+                    "title": (
+                        "Flamengo celebration at Maracanã after beating Grêmio"
+                    ),
+                }
+            ],
+        )
+        assert calls == [prompt, "Flamengo Maracanã Grêmio"]
+        assert [c.url for c in out] == ["https://ge.globo.com/g.jpg"]
 
 
 @pytest.mark.parametrize(

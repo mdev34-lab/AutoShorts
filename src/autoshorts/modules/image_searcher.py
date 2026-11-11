@@ -248,12 +248,21 @@ class ImageSearcher:
     @classmethod
     def _usable_cache(cls, cached_path: Path, prompt: str) -> bool:
         """Reusable only with a valid provenance record that is still allowed
-        (legacy stock, interrupted runs, empty/UNVERIFIED records are refetched)."""
+        (legacy stock, interrupted runs, empty/UNVERIFIED records are
+        refetched; so are AI images while the AI fallback is disabled)."""
         if not cached_path.exists():
             return False
         record = cls._read_sidecar(cached_path)
         if record is None:
             return False
+        if record["kind"] == "ai":
+            # Cached AI bytes are reusable only while the AI fallback that
+            # produced them is allowed: IMAGE_AI_FALLBACK=off fails closed
+            # here instead of serving them through the web route. An
+            # explicitly selected image_source=ai run caches under its own
+            # scheme and never passes through this gate - a chosen source is
+            # not a fallback.
+            return IMAGE_AI_FALLBACK
         if record["kind"] == "web":
             if not ALLOW_UNVERIFIED_IMAGES:
                 # A cache hit must pass the same specificity gate as a fresh
@@ -490,15 +499,17 @@ class ImageSearcher:
         opt-in only, DDG is re-queried with the prompt's distinctive subject
         tokens and fit evidence is evaluated against that short query: the
         photo must still prove the subject, and the recorded fit evidence
-        names the short query it was actually matched to. A retried title
-        stating a number the FULL prompt does not contain (wrong year, score
-        or edition) is rejected. Without the opt-in the behavior is
-        unchanged: one query, same wipes, no retry."""
+        names the short query it was actually matched to. An explicit
+        "vs"/"versus"/"x" pair keeps its opponent even when first-N
+        truncation would otherwise drop it. A retried title stating a number
+        the FULL prompt does not contain (wrong year, score or edition) is
+        rejected. Without the opt-in the behavior is unchanged: one query,
+        same wipes, no retry."""
         raw = [r for r in self.search_images(query) if not self._is_nsfw(r)]
         matched = image_sources.filter_ddg_results(query, raw)
         if matched or not ALLOW_UNVERIFIED_IMAGES:
             return matched
-        short = image_sources.short_subject_query(query)
+        short = image_sources.retry_subject_query(query)
         if not short or short == query:
             return []
         log(
