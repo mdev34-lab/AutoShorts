@@ -458,6 +458,47 @@ def test_full_entity_coverage_still_admits_a_real_match():
     )
 
 
+def test_distinctive_fit_admits_real_photo_with_filler_query_word():
+    # "home" is filler: the title proves the distinctive subject tokens.
+    assert (
+        image_sources.fit_evidence(
+            "Allianz Parque Palmeiras home stadium",
+            "Palmeiras Stadium - Allianz Parque (Sao Paulo)",
+        )
+        is not None
+    )
+
+
+def test_distinctive_fit_still_rejects_a_different_subject():
+    assert (
+        image_sources.fit_evidence(
+            "Allianz Parque Palmeiras home stadium",
+            "Maracana Stadium - Flamengo (Rio de Janeiro)",
+        )
+        is None
+    )
+
+
+def test_distinctive_fit_keeps_number_contradiction_rejection():
+    assert (
+        image_sources.fit_evidence(
+            "Allianz Parque Palmeiras 2014",
+            "Allianz Parque Palmeiras 2016",
+        )
+        is None
+    )
+
+
+def test_distinctive_fit_keeps_data_graphic_rejection():
+    assert (
+        image_sources.fit_evidence(
+            "Allianz Parque Palmeiras standings",
+            "Allianz Parque Palmeiras standings table",
+        )
+        is None
+    )
+
+
 def test_commons_title_only_keyword_match_is_not_subject_evidence():
     """A keyword-stuffed title with an unrelated description/categories is not
     positive subject evidence (title and description must agree)."""

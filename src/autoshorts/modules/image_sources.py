@@ -205,18 +205,19 @@ def _entity_tokens(text: str) -> set[str]:
 def fit_evidence(query: str, title: str, context: str = "") -> str | None:
     """Proof of contextual fit, or None when the candidate is ambiguous.
 
-    The candidate must cover EVERY entity token of the query (short words and
-    numbers included): two shared words never admit a different subject
-    (Jaguar car vs jaguar eel). Any number in the candidate that the query
-    does not contain is a contradictory attribute (season, rank, score) and
-    rejects it. A one-token query needs the token in the TITLE. URL text is
-    never evidence. Text alone cannot prove what the pixels show; the
+    The candidate must cover EVERY distinctive token of the query (long,
+    content-bearing words and numbers): two shared words never admit a
+    different subject (Jaguar car vs jaguar eel). Generic/filler query words
+    (photo, official, home) are not required. Any number in the candidate that
+    the query does not contain is a contradictory attribute (season, rank,
+    score) and rejects it. A one-token query needs the token in the TITLE. URL
+    text is never evidence. Text alone cannot prove what the pixels show; the
     searcher still keeps unverified images behind the rights/verification gate.
     """
     title_and_context = f"{title} {context}"
     if distinctive_tokens(title_and_context) & _DATA_GRAPHIC_WORDS:
         return None
-    query_tokens = _entity_tokens(query)
+    query_tokens = distinctive_tokens(query) - _GENERIC_QUERY_WORDS - {"home"}
     if not query_tokens:
         return None
     candidate_tokens = _entity_tokens(title_and_context)
