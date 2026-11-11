@@ -483,9 +483,29 @@ def test_distinctive_fit_keeps_number_contradiction_rejection():
     assert (
         image_sources.fit_evidence(
             "Allianz Parque Palmeiras 2014",
-            "Allianz Parque Palmeiras 2016",
+            "Allianz Parque Palmeiras 2014 2016",
         )
         is None
+    )
+
+
+def test_distinctive_fit_requires_query_numbers_in_title():
+    assert (
+        image_sources.fit_evidence(
+            "Palmeiras 6x1 Remo 2026",
+            "Palmeiras Remo match at Allianz Parque",
+        )
+        is None
+    )
+
+
+def test_distinctive_fit_accepts_matching_query_numbers():
+    assert (
+        image_sources.fit_evidence(
+            "Palmeiras 6x1 Remo 2026",
+            "Palmeiras 6 x 1 Remo 2026 at Allianz Parque",
+        )
+        is not None
     )
 
 
