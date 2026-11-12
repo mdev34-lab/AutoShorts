@@ -2,6 +2,7 @@
 Test edge cases and error handling for AutoShorts modules
 """
 
+import platform
 import subprocess
 import tempfile
 from pathlib import Path
@@ -10,6 +11,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from autoshorts.modules import (
+    FALLBACK_FONTS,
     ScriptGenerator,
     SubtitleSystem,
     TTSSystem,
@@ -176,9 +178,22 @@ class TestEdgeCasesUtilityFunctions:
     """Test edge cases for utility functions"""
 
     def test_get_system_font_empty_config(self):
+        """A bogus DEFAULT_FONT must not leak into the returned font.
+
+        The contract is "a usable font": the returned path has to exist, or
+        it has to be one of the documented fallbacks.
+        """
         with patch("autoshorts.modules.utils.DEFAULT_FONT", "arial.ttf"):
             font = get_system_font()
+
+        assert isinstance(font, str)
+        assert font
+        if platform.system() == "Windows":
+            # Windows has no fallback list here: DEFAULT_FONT is used as is.
             assert font == "arial.ttf"
+        else:
+            documented_fallbacks = {*FALLBACK_FONTS, "Arial-Bold"}
+            assert Path(font).exists() or font in documented_fallbacks
 
     def test_safe_filename_edge_cases(self):
         assert safe_filename("") == ""

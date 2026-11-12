@@ -55,7 +55,7 @@ from .config import (
 )
 from .metadata import VideoMetadata
 from .subtitle_system import SubtitleSystem
-from .utils import create_temp_dir, get_video_duration, log
+from .utils import create_temp_dir, get_ffmpeg_exe, get_video_duration, log
 
 # Monkey-patch FFMPEG_VideoReader.close() to suppress WinError 6 during GC
 _orig_close = FFMPEG_VideoReader.close
@@ -94,7 +94,7 @@ class VideoCompositor:
     ) -> str:
         """Apply blur using FFmpeg boxblur - much faster than PIL per-frame."""
         cmd = [
-            "ffmpeg",
+            get_ffmpeg_exe(),
             "-y",
             "-i",
             input_path,
@@ -725,7 +725,7 @@ class VideoCompositor:
             import subprocess
 
             cmd = [
-                "ffmpeg",
+                get_ffmpeg_exe(),
                 "-y",
                 "-i",
                 temp_video,
