@@ -320,7 +320,8 @@ def _pair_side_subject(text: str) -> str | None:
 
 def _is_ambiguous_pair(query: str) -> bool:
     seps = [
-        m for m in _PAIR_SEPARATOR_RE.finditer(query or "")
+        m
+        for m in _PAIR_SEPARATOR_RE.finditer(query or "")
         if _normalize(m.group(0)) in _PAIR_SEPARATORS
     ]
     if len(seps) != 1:
@@ -342,7 +343,8 @@ def explicit_pair_subject(query: str) -> tuple[str, str] | None:
     if _is_ambiguous_pair(query):
         return None
     seps = [
-        m for m in _PAIR_SEPARATOR_RE.finditer(query or "")
+        m
+        for m in _PAIR_SEPARATOR_RE.finditer(query or "")
         if _normalize(m.group(0)) in _PAIR_SEPARATORS
     ]
     if len(seps) != 1:
@@ -370,7 +372,8 @@ def retry_subject_query(query: str, max_tokens: int = 3) -> str:
     than falling back to the unpaired short query."""
     short = short_subject_query(query, max_tokens)
     seps = [
-        m for m in _PAIR_SEPARATOR_RE.finditer(query or "")
+        m
+        for m in _PAIR_SEPARATOR_RE.finditer(query or "")
         if _normalize(m.group(0)) in _PAIR_SEPARATORS
     ]
     has_explicit_separator = bool(seps)
@@ -404,7 +407,8 @@ def retry_subject_query(query: str, max_tokens: int = 3) -> str:
         (tok for tok in tokens if _normalize(tok) == _normalize(left)), left
     )
     context = [
-        tok for tok in tokens
+        tok
+        for tok in tokens
         if _normalize(tok) not in needed and tok and tok[:1].isupper()
     ]
     result = [left_original, *context[: max_tokens - len(needed)]]

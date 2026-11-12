@@ -708,11 +708,7 @@ class ScriptGenerator:
         """Strip markdown and warn about style without silently deleting facts."""
         if not paragraphs:
             return []
-        cleaned = [
-            strip_markdown(p)
-            for p in paragraphs
-            if isinstance(p, str)
-        ]
+        cleaned = [strip_markdown(p) for p in paragraphs if isinstance(p, str)]
         legacy_flagged = sum(ScriptGenerator._is_filler(p) for p in cleaned)
         if legacy_flagged:
             log(
