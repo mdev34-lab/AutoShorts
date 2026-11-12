@@ -36,15 +36,15 @@ from autoshorts.modules.config import (
 
 @pytest.fixture
 def config_with_api_key(monkeypatch):
-    """Reload the config module with a dummy Pollinations API key.
+    """Reload the config module with a dummy API key.
 
     The key is read when the module is imported, so the module is reloaded
     with the dummy value in the environment. No request is ever made.
     """
     from autoshorts.modules import config as config_module
 
-    monkeypatch.setenv("POLLINATIONS_API_KEY", "test-pollinations-key")
-    monkeypatch.delenv("API_KEY", raising=False)
+    monkeypatch.setenv("API_KEY", "test-api-key")
+    monkeypatch.delenv("POLLINATIONS_API_KEY", raising=False)
     reloaded = importlib.reload(config_module)
     yield reloaded
     monkeypatch.undo()
@@ -68,7 +68,7 @@ class TestAPIConfiguration:
         """The API key is read from the environment and exposed by the config"""
         assert isinstance(config_with_api_key.API_KEY, str)
         assert len(config_with_api_key.API_KEY) > 0
-        assert config_with_api_key.API_KEY == "test-pollinations-key"
+        assert config_with_api_key.API_KEY == "test-api-key"
 
 
 class TestModelConfiguration:
