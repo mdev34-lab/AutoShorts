@@ -1,6 +1,7 @@
 import json
 import re
 import time
+from typing import Any
 
 import requests  # type: ignore[import-untyped]
 
@@ -554,7 +555,7 @@ class ScriptGenerator:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        payload = {
+        payload: dict[str, Any] = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system_prompt},
@@ -598,7 +599,7 @@ class ScriptGenerator:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        payload = {
+        payload: dict[str, Any] = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system_prompt},
@@ -708,11 +709,7 @@ class ScriptGenerator:
         """Strip markdown and warn about style without silently deleting facts."""
         if not paragraphs:
             return []
-        cleaned = [
-            strip_markdown(p)
-            for p in paragraphs
-            if isinstance(p, str)
-        ]
+        cleaned = [strip_markdown(p) for p in paragraphs if isinstance(p, str)]
         legacy_flagged = sum(ScriptGenerator._is_filler(p) for p in cleaned)
         if legacy_flagged:
             log(

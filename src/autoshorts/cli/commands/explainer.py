@@ -8,10 +8,11 @@ import typer
 
 from ...generators import VIDEO_TYPES
 from ...modules import VideoMetadata, log, shutdown_computer
+from ..console import PlainCommand
 from ..new import new_app
 
 
-@new_app.command(name="explainer")
+@new_app.command(name="explainer", cls=PlainCommand)
 def explainer_command(
     subject: str = typer.Argument(None, help="Video subject"),
     output: str = typer.Option("output", "--output", "-o", help="Output directory"),

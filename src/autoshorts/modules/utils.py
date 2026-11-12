@@ -73,6 +73,22 @@ def get_system_font():
         raise FileNotFoundError("No suitable font found on system")
 
 
+def get_ffmpeg_exe() -> str:
+    """Return the ffmpeg binary used for direct ffmpeg calls.
+
+    MoviePy renders through the ffmpeg build bundled with imageio-ffmpeg, so
+    the raw ffmpeg invocations use that same binary instead of relying on a
+    system-wide install being available on PATH.
+    """
+    try:
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except (ImportError, OSError, RuntimeError):  # pragma: no cover
+        # imageio-ffmpeg ships with moviepy; fall back to a system install.
+        return "ffmpeg"
+
+
 def get_video_duration(video_path: str) -> float:
     """Get video duration using FFprobe."""
     try:

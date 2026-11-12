@@ -6,6 +6,8 @@ Provides unified YouTube video search and download functionality for AutoShorts.
 Handles search query generation, video filtering, and downloading.
 """
 
+from typing import Any
+
 import requests  # type: ignore[import-untyped]
 import yt_dlp
 
@@ -71,7 +73,7 @@ CRITICAL RULES:
             "Content-Type": "application/json",
         }
 
-        payload = {
+        payload: dict[str, Any] = {
             "model": MODEL_TEXT,
             "messages": [
                 {"role": "system", "content": system_prompt},

@@ -35,9 +35,12 @@ def test_legacy_substring_never_drops_a_fact(paragraph):
 
 def test_fact_retention_does_not_depend_on_digits_or_attribution():
     paragraphs = FACT_PARAGRAPHS[7:10]
-    assert ScriptGenerator._ensure_paragraph_count(
-        ScriptGenerator._validate_paragraphs(paragraphs), 5
-    ) == paragraphs
+    assert (
+        ScriptGenerator._ensure_paragraph_count(
+            ScriptGenerator._validate_paragraphs(paragraphs), 5
+        )
+        == paragraphs
+    )
 
 
 def test_validation_still_strips_markdown_and_ignores_non_strings():
