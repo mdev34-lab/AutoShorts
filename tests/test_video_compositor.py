@@ -278,6 +278,9 @@ def _make_two_zone_source(tmp_path):
 
     from PIL import Image
 
+    from autoshorts.modules.utils import get_ffmpeg_exe
+
+    ffmpeg = get_ffmpeg_exe()
     frame = tmp_path / "frame.png"
     img = Image.new("RGB", (640, 338))
     img.paste((255, 0, 0), (0, 0, 640, 169))
@@ -286,7 +289,7 @@ def _make_two_zone_source(tmp_path):
     video = tmp_path / "source.mp4"
     subprocess.run(
         [
-            "ffmpeg",
+            ffmpeg,
             "-y",
             "-loop",
             "1",
@@ -308,7 +311,7 @@ def _make_two_zone_source(tmp_path):
     audio = tmp_path / "audio.wav"
     subprocess.run(
         [
-            "ffmpeg",
+            ffmpeg,
             "-y",
             "-f",
             "lavfi",
@@ -327,9 +330,21 @@ def _frame_pixel(path, x, y, seek="0.5"):
 
     from PIL import Image
 
+    from autoshorts.modules.utils import get_ffmpeg_exe
+
     frame_path = path + f"_{x}_{y}.png"
     subprocess.run(
-        ["ffmpeg", "-y", "-ss", seek, "-i", path, "-frames:v", "1", frame_path],
+        [
+            get_ffmpeg_exe(),
+            "-y",
+            "-ss",
+            seek,
+            "-i",
+            path,
+            "-frames:v",
+            "1",
+            frame_path,
+        ],
         check=True,
         capture_output=True,
     )

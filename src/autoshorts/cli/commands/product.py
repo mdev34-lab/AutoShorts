@@ -8,10 +8,11 @@ import typer
 
 from ...generators.product import ProductGenerator
 from ...modules import VideoMetadata, log
+from ..console import PlainCommand
 from ..new import new_app
 
 
-@new_app.command(name="product")
+@new_app.command(name="product", cls=PlainCommand)
 def product_command(
     link: str = typer.Argument(..., help="Shopee product link (or shp.ee short link)"),
     output: str = typer.Option("output", "--output", "-o", help="Output directory"),

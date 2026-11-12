@@ -493,20 +493,30 @@ class TestEdgeCases:
         if self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
 
+    @patch("autoshorts.modules.script_generator.requests.post")
     @patch("autoshorts.generators.explainer.requests.get")
     @patch("autoshorts.generators.explainer.random.randint")
-    def test_generate_ai_images_empty_prompts(self, mock_randint, mock_get):
+    def test_generate_ai_images_empty_prompts(self, mock_randint, mock_get, mock_post):
         """Test AI image generation with empty prompts"""
         mock_randint.return_value = 12345
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.content = b"fake_image"
         mock_get.return_value = mock_response
+        # Building the image prompts calls the LLM API: mock the HTTP layer
+        # so the test never reaches the network.
+        mock_post_response = Mock()
+        mock_post_response.raise_for_status.return_value = None
+        mock_post_response.json.return_value = {
+            "choices": [{"message": {"content": json.dumps({"images": []})}}]
+        }
+        mock_post.return_value = mock_post_response
 
         asset_manager = AssetManager(self.temp_dir)
         result = asset_manager.generate_ai_images([])
 
         assert result == []
+        mock_get.assert_not_called()
 
     @patch("autoshorts.generators.explainer.requests.get")
     @patch("autoshorts.generators.explainer.random.randint")

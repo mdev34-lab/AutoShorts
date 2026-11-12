@@ -128,7 +128,8 @@ def _get_env_path(key: str, default: str) -> Path:
 # API Configuration
 API_URL = os.getenv("API_URL", "https://gen.pollinations.ai/v1/chat/completions")
 IMG_URL = os.getenv("IMG_URL", "https://gen.pollinations.ai/image/")
-API_KEY = os.getenv("API_KEY", "")
+# The Pollinations key can be provided as API_KEY or POLLINATIONS_API_KEY.
+API_KEY = os.getenv("API_KEY") or os.getenv("POLLINATIONS_API_KEY", "")
 
 # Model Configuration
 MODEL_TEXT = os.getenv("MODEL_TEXT", "nova-micro")

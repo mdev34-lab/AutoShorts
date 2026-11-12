@@ -2,13 +2,13 @@
 Test configuration validation and constants
 """
 
+import importlib
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from autoshorts.modules.config import (
-    API_KEY,
     API_URL,
     AUDIO_CODEC,
     CROSSFADE_TIME,
@@ -34,6 +34,23 @@ from autoshorts.modules.config import (
 )
 
 
+@pytest.fixture
+def config_with_api_key(monkeypatch):
+    """Reload the config module with a dummy Pollinations API key.
+
+    The key is read when the module is imported, so the module is reloaded
+    with the dummy value in the environment. No request is ever made.
+    """
+    from autoshorts.modules import config as config_module
+
+    monkeypatch.setenv("POLLINATIONS_API_KEY", "test-pollinations-key")
+    monkeypatch.delenv("API_KEY", raising=False)
+    reloaded = importlib.reload(config_module)
+    yield reloaded
+    monkeypatch.undo()
+    importlib.reload(config_module)
+
+
 class TestAPIConfiguration:
     """Test cases for API configuration"""
 
@@ -47,10 +64,11 @@ class TestAPIConfiguration:
         assert IMG_URL.startswith("https://")
         assert "pollinations.ai" in IMG_URL
 
-    def test_api_key(self):
-        """Test API key configuration"""
-        assert isinstance(API_KEY, str)
-        assert len(API_KEY) > 0
+    def test_api_key(self, config_with_api_key):
+        """The API key is read from the environment and exposed by the config"""
+        assert isinstance(config_with_api_key.API_KEY, str)
+        assert len(config_with_api_key.API_KEY) > 0
+        assert config_with_api_key.API_KEY == "test-pollinations-key"
 
 
 class TestModelConfiguration:
@@ -204,6 +222,8 @@ class TestConfigurationIntegration:
 
     def test_all_required_constants_exist(self):
         """Test that all required configuration constants exist"""
+        from autoshorts.modules import config
+
         required_constants = [
             "API_URL",
             "IMG_URL",
@@ -231,7 +251,7 @@ class TestConfigurationIntegration:
         ]
 
         for constant in required_constants:
-            assert globals().get(constant) is not None, (
+            assert getattr(config, constant, None) is not None, (
                 f"Missing required constant: {constant}"
             )
 

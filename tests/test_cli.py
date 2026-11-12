@@ -267,7 +267,9 @@ class TestExplainerCommand:
     def test_images_flag_shows_in_help(self):
         result = self.runner.invoke(app, ["new", "explainer", "--help"])
         assert result.exit_code == 0
-        assert "--images" in result.output.replace("\x1b[", "")
+        # Captured output is not a terminal, so the help is plain text.
+        assert "\x1b" not in result.output
+        assert "--images" in result.output
 
     @patch("autoshorts.cli.commands.explainer.VIDEO_TYPES")
     @patch("autoshorts.cli.commands.explainer.asyncio.run")
