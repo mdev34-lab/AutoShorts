@@ -773,6 +773,16 @@ class TestImageSearcher:
             patch.object(self.searcher, "resize_to_fill"),
             # fixture downloads no real file; the pixel gate has its own tests
             patch.object(self.searcher, "_content_rejection", return_value=None),
+            patch.object(ImageSearcher, "_pixel_gate", return_value=(None, None)),
+            patch.object(
+                self.searcher,
+                "_fallback_to_ai",
+                Mock(
+                    side_effect=AssertionError(
+                        "AI fallback forbidden in web-success fixture"
+                    )
+                ),
+            ),
         ):
             mock_open.return_value.__enter__.return_value.size = (800, 600)
             paths = self.searcher.get_images(
@@ -822,6 +832,16 @@ class TestImageSearcher:
             patch.object(self.searcher, "resize_to_fill"),
             # fixture downloads no real file; the pixel gate has its own tests
             patch.object(self.searcher, "_content_rejection", return_value=None),
+            patch.object(ImageSearcher, "_pixel_gate", return_value=(None, None)),
+            patch.object(
+                self.searcher,
+                "_fallback_to_ai",
+                Mock(
+                    side_effect=AssertionError(
+                        "AI fallback forbidden in web-success fixture"
+                    )
+                ),
+            ),
         ):
             mock_open.return_value.__enter__.return_value.size = (800, 600)
             paths = self.searcher.get_images(["uncached A", prompt, "uncached B"])
