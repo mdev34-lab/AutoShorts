@@ -1,3 +1,5 @@
+from typing import cast
+
 import click
 import typer
 from typer.main import get_command
@@ -7,7 +9,8 @@ def make_help_command(app: typer.Typer):
     def help_command(
         args: list[str] = typer.Argument(None, help="Command path to show help for"),
     ):
-        root_cmd = get_command(app)
+        # Typer's command object is consumed here through click's Command/Group API.
+        root_cmd = cast(click.Command, get_command(app))
         target = root_cmd
         info_parts = ["autoshorts"]
 
