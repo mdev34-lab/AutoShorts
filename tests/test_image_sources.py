@@ -474,7 +474,9 @@ class TestAIFallbackKnob:
         monkeypatch.setattr(
             mod.image_content, "check_image_content", lambda path, prompt: None
         )
-        monkeypatch.setattr(mod.image_subject, "check_subject", lambda path, prompt: None)
+        monkeypatch.setattr(
+            mod.image_subject, "check_subject", lambda path, prompt: None
+        )
         licensed = image_sources.SourceCandidate(
             url="https://upload.wikimedia.org/x.jpg",
             provider="commons",
@@ -591,9 +593,7 @@ class TestShortSubjectRetry:
         searcher = ImageSearcher()
         return (
             searcher,
-            patch(
-                "autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["ddg"]
-            ),
+            patch("autoshorts.modules.image_searcher.IMAGE_PROVIDERS", ["ddg"]),
             patch.object(searcher, "search_images", side_effect=fake_search),
         )
 
@@ -604,13 +604,9 @@ class TestShortSubjectRetry:
 
         def fake_search(query):
             calls.append(query)
-            return [
-                {"image": "https://ge.globo.com/f.jpg", "title": REALISTIC_TITLE}
-            ]
+            return [{"image": "https://ge.globo.com/f.jpg", "title": REALISTIC_TITLE}]
 
-        searcher, providers, search = self._ddg_searcher(
-            monkeypatch, True, fake_search
-        )
+        searcher, providers, search = self._ddg_searcher(monkeypatch, True, fake_search)
         with providers, search:
             out = searcher._candidates(LONG_PROMPT)
         assert calls == [LONG_PROMPT, SHORT_QUERY]  # the retry happened
@@ -640,9 +636,7 @@ class TestShortSubjectRetry:
                 },
             ]
 
-        searcher, providers, search = self._ddg_searcher(
-            monkeypatch, True, fake_search
-        )
+        searcher, providers, search = self._ddg_searcher(monkeypatch, True, fake_search)
         with providers, search:
             out = searcher._candidates(LONG_PROMPT)
         assert [c.url for c in out] == ["https://ge.globo.com/g.jpg"]
@@ -652,9 +646,7 @@ class TestShortSubjectRetry:
 
         def fake_search(query):
             calls.append(query)
-            return [
-                {"image": "https://ge.globo.com/f.jpg", "title": REALISTIC_TITLE}
-            ]
+            return [{"image": "https://ge.globo.com/f.jpg", "title": REALISTIC_TITLE}]
 
         searcher, providers, search = self._ddg_searcher(
             monkeypatch, False, fake_search
@@ -676,9 +668,7 @@ class TestShortSubjectRetry:
                 }
             ]
 
-        searcher, providers, search = self._ddg_searcher(
-            monkeypatch, True, fake_search
-        )
+        searcher, providers, search = self._ddg_searcher(monkeypatch, True, fake_search)
         with providers, search:
             out = searcher._candidates(prompt)
         assert calls == [prompt]  # no wasted request
@@ -838,9 +828,7 @@ class TestShortSubjectRetryGuards:
             [
                 {
                     "image": "https://ge.globo.com/vasco.jpg",
-                    "title": (
-                        "Flamengo celebration at Maracanã after beating Vasco"
-                    ),
+                    "title": ("Flamengo celebration at Maracanã after beating Vasco"),
                 }
             ],
         )
@@ -859,14 +847,13 @@ class TestShortSubjectRetryGuards:
             [
                 {
                     "image": "https://ge.globo.com/g.jpg",
-                    "title": (
-                        "Flamengo celebration at Maracanã after beating Grêmio"
-                    ),
+                    "title": ("Flamengo celebration at Maracanã after beating Grêmio"),
                 }
             ],
         )
         assert calls == [prompt]
         assert out == []
+
 
 @pytest.mark.parametrize(
     "query,title",
@@ -987,44 +974,65 @@ class TestPairSeparatorFailClosed:
             image_sources.retry_subject_query("Flamengo Maracanã x Grêmio")
             == "Flamengo Maracanã Grêmio"
         )
+
     def test_exact_x_separator_recognized_even_venue_prefix(self):
         # venue-only left side cannot resolve a team -> fail closed
         assert image_sources.retry_subject_query("Maracanã x Flamengo") == ""
 
     def test_lotado_prefix_x2026_is_not_a_separator(self):
         q = "Palmeiras x2026 Remo"
-        assert image_sources.retry_subject_query(q) == image_sources.short_subject_query(q)
+        assert image_sources.retry_subject_query(
+            q
+        ) == image_sources.short_subject_query(q)
 
     def test_right_atual_campeao_ambiguous_fails_closed(self):
-        assert image_sources.retry_subject_query("Flamengo vs Atual Campeão Grêmio") == ""
+        assert (
+            image_sources.retry_subject_query("Flamengo vs Atual Campeão Grêmio") == ""
+        )
 
     def test_contra_separator_resolves_pair(self):
         assert (
             image_sources.retry_subject_query("Flamengo Maracanã contra Grêmio")
             == "Flamengo Maracanã Grêmio"
         )
+
     def test_contra_lowercase_exact_one_pair_resolves(self):
-        assert image_sources.retry_subject_query("flamengo contra grêmio") == "flamengo grêmio"
+        assert (
+            image_sources.retry_subject_query("flamengo contra grêmio")
+            == "flamengo grêmio"
+        )
 
     def test_multiplication_sign_separator_resolves_pair(self):
         assert (
             image_sources.retry_subject_query("Flamengo Maracanã × Grêmio")
             == "Flamengo Maracanã Grêmio"
         )
+
     def test_lowercase_exact_one_pair_resolves(self):
-        assert image_sources.retry_subject_query("flamengo vs grêmio") == "flamengo grêmio"
-        assert image_sources.explicit_pair_subject("flamengo vs grêmio") == ("flamengo", "grêmio")
+        assert (
+            image_sources.retry_subject_query("flamengo vs grêmio") == "flamengo grêmio"
+        )
+        assert image_sources.explicit_pair_subject("flamengo vs grêmio") == (
+            "flamengo",
+            "grêmio",
+        )
 
     def test_multiple_capitalized_ambiguous_fails_closed(self):
         assert image_sources.retry_subject_query("Flamengo Grêmio vs Vasco") == ""
 
     def test_torcida_lotada_comemora_flamengo_ambiguous_fails_closed(self):
-        assert image_sources.retry_subject_query(
-            "Torcida lotada comemora flamengo x Grêmio"
-        ) == ""
-        assert image_sources.explicit_pair_subject(
-            "Torcida lotada comemora flamengo x Grêmio"
-        ) is None
+        assert (
+            image_sources.retry_subject_query(
+                "Torcida lotada comemora flamengo x Grêmio"
+            )
+            == ""
+        )
+        assert (
+            image_sources.explicit_pair_subject(
+                "Torcida lotada comemora flamengo x Grêmio"
+            )
+            is None
+        )
 
     def test_neymar_santos_ambiguous_fails_closed(self):
         assert image_sources.retry_subject_query("Neymar santos x Palmeiras") == ""
@@ -1032,7 +1040,9 @@ class TestPairSeparatorFailClosed:
 
     def test_no_separator_falls_back_to_short_query(self):
         q = "Flamengo Grêmio Maracanã 2026"
-        assert image_sources.retry_subject_query(q) == image_sources.short_subject_query(q)
+        assert image_sources.retry_subject_query(
+            q
+        ) == image_sources.short_subject_query(q)
 
     def test_no_separator_counterexample_blocks_retry(self):
         assert (
@@ -1088,7 +1098,6 @@ class TestPairRouteActualDdgCandidates:
                 "Flamengo enfrenta Grêmio no Estádio do Maracanã",
                 "Grêmio vence Fluminense no Estádio do Maracanã",
             ),
-
         ],
     )
     def test_ddg_candidates_outputs_only_correct_title(
