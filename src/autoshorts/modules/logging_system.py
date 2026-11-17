@@ -36,4 +36,7 @@ def log(message: str, level: str = "INFO"):
         "ERROR": Colors.FAIL,
     }
     color = level_colors.get(level, Colors.ENDC)
-    print(f"{color}[{timestamp}] [{level}] {message}{Colors.ENDC}")
+    # flush=True is load-bearing: when stdout is redirected to a file, Python
+    # block-buffers prints, and a SIGTERM/crash then loses every buffered line
+    # (observed 2026-11-17: a killed render left a 0-byte log).
+    print(f"{color}[{timestamp}] [{level}] {message}{Colors.ENDC}", flush=True)

@@ -18,6 +18,19 @@ from autoshorts.modules.utils import shutdown_computer
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
+def _api_response_mock():
+    """Mock response whose body stream mirrors .json.return_value (see
+    test_script_generator._api_response_mock)."""
+    import json as _json
+
+    m = Mock(name="api_response")
+    m.raise_for_status.return_value = None
+    m.iter_content = lambda chunk_size=65536: [
+        _json.dumps(m.json.return_value).encode()
+    ]
+    return m
+
+
 # Backward-compatible wrappers for existing test structure
 class ScriptEngine:
     def __init__(self):
@@ -505,7 +518,7 @@ class TestEdgeCases:
         mock_get.return_value = mock_response
         # Building the image prompts calls the LLM API: mock the HTTP layer
         # so the test never reaches the network.
-        mock_post_response = Mock()
+        mock_post_response = _api_response_mock()
         mock_post_response.raise_for_status.return_value = None
         mock_post_response.json.return_value = {
             "choices": [{"message": {"content": json.dumps({"images": []})}}]
