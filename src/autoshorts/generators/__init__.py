@@ -1,17 +1,15 @@
 """Generator registry.
 
 Generator classes are imported lazily so that running one video type never
-imports the modules of another. In particular the explainer CLI path no
-longer loads the Shopee product pipeline (generators/product.py and
-modules/product/*), which is a separate responsibility with its own CLI
-entry point.
+imports the modules of another. The Shopee product pipeline
+(generators/product.py and modules/product/*) was separated back out to its
+own project (shopee-short); AutoShorts is a prompt/URL-in, video-out CLI.
 """
 
 import importlib
 
 _GENERATOR_SPECS = {
     "explainer": ("autoshorts.generators.explainer", "ExplainerGenerator"),
-    "product": ("autoshorts.generators.product", "ProductGenerator"),
 }
 
 

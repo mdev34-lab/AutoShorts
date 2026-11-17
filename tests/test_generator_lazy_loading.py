@@ -1,4 +1,4 @@
-"""Shopee/product pipeline must not load when only the explainer runs."""
+"""The generator registry stays lazy and now exposes only the explainer."""
 
 import os
 import subprocess
@@ -22,32 +22,20 @@ def _run(code: str) -> subprocess.CompletedProcess:
 
 
 class TestLazyGeneratorRegistry:
-    def test_explainer_access_does_not_import_product(self):
+    def test_registry_exposes_only_explainer(self):
         proc = _run(
             """
-            import sys
             from autoshorts.generators import VIDEO_TYPES
-            assert "autoshorts.generators.product" not in sys.modules
-            assert not any(m.startswith("autoshorts.modules.product") for m in sys.modules)
+            assert list(VIDEO_TYPES) == ["explainer"]
+            assert len(VIDEO_TYPES) == 1
             gen = VIDEO_TYPES["explainer"]
             assert gen.__name__ == "ExplainerGenerator"
-            assert "autoshorts.generators.product" not in sys.modules
-            assert not any(m.startswith("autoshorts.modules.product") for m in sys.modules)
-            print("OK")
-            """
-        )
-        assert proc.returncode == 0, proc.stderr
-        assert "OK" in proc.stdout
-
-    def test_product_access_still_works(self):
-        proc = _run(
-            """
-            import sys
-            from autoshorts.generators import VIDEO_TYPES
-            gen = VIDEO_TYPES["product"]
-            assert gen.__name__ == "ProductGenerator"
-            assert "autoshorts.generators.product" in sys.modules
-            assert "product" in VIDEO_TYPES and len(VIDEO_TYPES) == 2
+            try:
+                VIDEO_TYPES["product"]
+            except KeyError:
+                pass
+            else:
+                raise AssertionError("removed product generator must not resolve")
             print("OK")
             """
         )
@@ -57,9 +45,14 @@ class TestLazyGeneratorRegistry:
     def test_backward_compatible_class_import(self):
         proc = _run(
             """
-            from autoshorts.generators import ExplainerGenerator, ProductGenerator
+            from autoshorts.generators import ExplainerGenerator
             assert ExplainerGenerator.__name__ == "ExplainerGenerator"
-            assert ProductGenerator.__name__ == "ProductGenerator"
+            try:
+                from autoshorts.generators import ProductGenerator
+            except (ImportError, AttributeError):
+                pass
+            else:
+                raise AssertionError("removed product generator must not import")
             print("OK")
             """
         )

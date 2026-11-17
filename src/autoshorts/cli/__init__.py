@@ -1,7 +1,6 @@
 import typer
 
 from .commands import explainer as explainer
-from .commands import product as product
 from .commands.help_cmd import make_help_command
 from .console import PlainCommand, PlainGroup
 from .new import new_app

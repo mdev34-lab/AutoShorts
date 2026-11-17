@@ -1,0 +1,4 @@
+#!/bin/bash
+cd ~/autoshorts
+source .venv/bin/activate
+exec autoshorts new explainer "Flamengo dispara rumo ao título do Brasileirão 2026: 87,2% de chances segundo a UFMG após a 34ª rodada, Palmeiras com 12,8%" --images-only --images web -c "Contexto temporal obrigatório: hoje é 17 de novembro de 2026, Brasileirão 2026 após a 34ª rodada. Fatos verificados: Flamengo líder com 76 pontos em 34 jogos, Palmeiras segundo com 73, Cruzeiro terceiro com 60. Os percentuais de título (87,2% Flamengo, 12,8% Palmeiras) são do Departamento de Matemática da UFMG referentes à 34ª rodada — cite modelo e data, não invente percentuais novos. A 35ª rodada começa quarta-feira 18/11 às 20h30: Flamengo recebe o Athletico-PR no Maracanã e o Palmeiras visita o Cruzeiro no Mineirão; o confronto direto Flamengo x Palmeiras é sábado 21/11 e pode decidir o título. Flamengo pode ficar sem De la Cruz, Plata e Valencia por causa da Data Fifa de novembro. Roteiro em português brasileiro."

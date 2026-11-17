@@ -1,0 +1,7 @@
+Bounded render attempt #3 (Flamengo), 2026-11-17 14:03 - 15:02 (-03)
+- Single process pid 4375, launched via setsid, repo at ca6f5c2 (post-PR43).
+- Total CPU consumed: ~91 ticks (~0.9s) over 59 minutes; state S (sleeping) on HTTPS connections for nearly the entire run. Brief activity burst observed ~14:38 (sockets cycling, 9 CPU-s in 30s), then idle again from 14:53 (2 ticks in 15 min).
+- Zero bytes of stdout/stderr in the whole run, including after graceful SIGINT (no traceback flushed).
+- Zero artifacts: no script, no audio, no images, no files created under output/ or elsewhere after 14:00.
+- Interpretation (HYPOTHESES, not established): stuck in or looping over initial LLM script-generation calls; provider-degradation as exclusive cause not proven.
+- Env config used: MODEL_TEXT=community/Saauf/mistral-large-4 (registry: paid_only=false, empty rate vector, health degraded 88%, rpm 10), TTS_ENGINE=piper, IMAGE_PROVIDERS=ddg, ALLOW_UNVERIFIED_IMAGES=1, IMAGE_AI_FALLBACK=off, API_TIMEOUT_TEXT=60. Credentials not included in this handoff.
