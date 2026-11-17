@@ -101,19 +101,26 @@ class ScriptGenerator:
                 log("Script generated with web sources", "SUCCESS")
                 # Step 4: post-generation fact verification
                 script = self._verify_factual_claims(script, subject)
-                self.generated_title = self._generate_title_from_script(script, subject)
-                log("Script verified", "SUCCESS")
-                return script
+                if script:
+                    self.generated_title = self._generate_title_from_script(
+                        script, subject
+                    )
+                    log("Script verified", "SUCCESS")
+                    return script
+                log("Script discarded: fact verification failed closed", "ERROR")
 
             # Try to repair instead of full regeneration
             repair = self._repair_paragraphs(cleaned, subject, 5)
             if repair and len(repair) >= 3:
                 log("Script repaired after validation", "SUCCESS")
-                script = repair
-                script = self._verify_factual_claims(script, subject)
-                self.generated_title = self._generate_title_from_script(script, subject)
-                log("Script verified", "SUCCESS")
-                return script
+                script = self._verify_factual_claims(repair, subject)
+                if script:
+                    self.generated_title = self._generate_title_from_script(
+                        script, subject
+                    )
+                    log("Script verified", "SUCCESS")
+                    return script
+                log("Repair discarded: fact verification failed closed", "ERROR")
 
             log("Script generation with context failed or produced filler", "WARNING")
         else:
@@ -172,21 +179,25 @@ class ScriptGenerator:
                 if paragraphs:
                     log("Script generated with web sources", "SUCCESS")
                     paragraphs = self._verify_factual_claims(paragraphs, subject)
-                    self.generated_title = self._generate_title_from_script(
-                        paragraphs, subject
-                    )
-                    log("Script verified", "SUCCESS")
-                    return paragraphs, []
+                    if paragraphs:
+                        self.generated_title = self._generate_title_from_script(
+                            paragraphs, subject
+                        )
+                        log("Script verified", "SUCCESS")
+                        return paragraphs, []
+                    log("Script discarded: fact verification failed closed", "ERROR")
 
                 # Try to repair instead of full regeneration
                 repair = self._repair_paragraphs(cleaned, subject, 7)
                 if repair and len(repair) >= 3:
                     log("Script repaired after validation", "SUCCESS")
                     paragraphs = self._verify_factual_claims(repair, subject)
-                    self.generated_title = self._generate_title_from_script(
-                        paragraphs, subject
-                    )
-                    return paragraphs, []
+                    if paragraphs:
+                        self.generated_title = self._generate_title_from_script(
+                            paragraphs, subject
+                        )
+                        return paragraphs, []
+                    log("Repair discarded: fact verification failed closed", "ERROR")
 
             log("Script generation with context failed or produced filler", "WARNING")
         else:
@@ -388,24 +399,43 @@ class ScriptGenerator:
         )
         target_count = len(paragraphs)
         prev_count = 0
+        corrections_flagged = False
+        corrected_best: list = []
         for attempt in range(2):
             try:
                 prompt = user_prompt
-                if attempt == 1 and prev_count != target_count:
-                    prompt += (
-                        f"\n\nCORREÇÃO: Na tentativa anterior você retornou "
-                        f"{prev_count} parágrafos, "
-                        f"mas o script original tem {target_count}. "
-                        f"Retorne EXATAMENTE {target_count} parágrafos. "
-                        f"Não mescle, não remova, não junte parágrafos. "
-                        f"Apenas corrija erros factuais mantendo a estrutura original."
-                    )
+                if attempt == 1:
+                    if corrections_flagged and corrected_best:
+                        # Structure repair on the CORRECTED text: rebuild the
+                        # paragraph count from facts the checker already
+                        # accepted, never from the flagged original.
+                        corrected_text = "\n\n".join(corrected_best)
+                        prompt = (
+                            "REESTRUTURAÇÃO: o script abaixo JÁ FOI CORRIGIDO pela "
+                            "checagem de fatos. Reescreva-o em EXATAMENTE "
+                            f"{target_count} parágrafos usando APENAS os fatos "
+                            "presentes nele. Não adicione informação nova, não "
+                            "reverta nenhuma correção factual. Retorne em "
+                            '"paragraphs", com "corrections": [] e '
+                            '"verified": true.\n\nSCRIPT CORRIGIDO:\n'
+                            f"{corrected_text}"
+                        )
+                    elif prev_count != target_count:
+                        prompt += (
+                            f"\n\nCORREÇÃO: Na tentativa anterior você retornou "
+                            f"{prev_count} parágrafos, "
+                            f"mas o script original tem {target_count}. "
+                            f"Retorne EXATAMENTE {target_count} parágrafos. "
+                            f"Não mescle, não remova, não junte parágrafos. "
+                            f"Apenas corrija erros factuais mantendo a estrutura original."
+                        )
                 data = self._make_json_api_call(system_prompt, prompt)
                 corrected = data.get("paragraphs") or []
                 prev_count = len(corrected)
                 corrections = data.get("corrections") or []
                 is_verified = data.get("verified", False)
                 if corrections:
+                    corrections_flagged = True
                     log(
                         f"Fact verification: {len(corrections)} corrections applied",
                         "WARNING",
@@ -416,11 +446,12 @@ class ScriptGenerator:
                             "INFO",
                         )
                     corrected = self._validate_paragraphs(corrected)
-                    corrected = self._ensure_paragraph_count(corrected, target_count)
+                    if corrected:
+                        corrected_best = corrected
                 elif is_verified:
                     log("Fact verification: all claims match sources", "SUCCESS")
                 if corrected and len(corrected) >= 3:
-                    return corrected
+                    return self._ensure_paragraph_count(corrected, target_count)
                 log(
                     f"Verification returned {len(corrected)} paragraphs, need >= 3, retrying...",
                     "WARNING",
@@ -428,8 +459,22 @@ class ScriptGenerator:
             except Exception as e:
                 log(f"Fact verification attempt {attempt + 1} failed: {e}", "WARNING")
                 corrected = []
-        if paragraphs and len(paragraphs) >= 3:
-            return paragraphs
+        if corrections_flagged:
+            # The fact-checker rejected claims in the original script but a
+            # structurally valid corrected script could not be produced.
+            # Paragraph count is structure, not factual acceptance: fail
+            # closed instead of narrating the flagged original.
+            log(
+                "Fact verification flagged corrections but produced no valid "
+                "corrected script; refusing to narrate the flagged original",
+                "ERROR",
+            )
+            return []
+        log(
+            "Fact verification inconclusive (no verdict from checker); keeping "
+            "original paragraphs",
+            "WARNING",
+        )
         return paragraphs
 
     # ── Title generation ─────────────────────────────────────────────────
