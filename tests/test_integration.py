@@ -12,6 +12,19 @@ from autoshorts.generators.explainer import ExplainerGenerator
 from autoshorts.modules import SubtitleSystem
 
 
+def _api_response_mock():
+    """Mock response whose body stream mirrors .json.return_value (see
+    test_script_generator._api_response_mock)."""
+    import json as _json
+
+    m = Mock(name="api_response")
+    m.raise_for_status.return_value = None
+    m.iter_content = lambda chunk_size=65536: [
+        _json.dumps(m.json.return_value).encode()
+    ]
+    return m
+
+
 class ScriptEngine:
     def __init__(self):
         self.gen = ExplainerGenerator(
@@ -64,7 +77,7 @@ class TestScriptEngineIntegration:
     def test_script_generation_workflow(self, mock_post):
         """Test complete script generation workflow"""
         # Mock API response
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [
                 {
@@ -90,7 +103,7 @@ class TestScriptEngineIntegration:
     def test_script_generation_with_prompts_workflow(self, mock_post):
         """Test script generation with image prompts workflow"""
         # Mock API response for prompts
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [
                 {
@@ -150,7 +163,7 @@ class TestAssetManagerIntegration:
         prompts = ["Test prompt 1", "Test prompt 2"]
 
         # Mock image API response
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.status_code = 200
         mock_response.content = b"fake_image_data"
         mock_get.return_value = mock_response
@@ -167,7 +180,7 @@ class TestAssetManagerIntegration:
         prompts = ["Test prompt"]
 
         # Mock API error
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.status_code = 500
         mock_get.return_value = mock_response
 
@@ -260,7 +273,7 @@ class TestCompleteWorkflowIntegration:
     def test_complete_flux_workflow(self, mock_get, mock_communicate, mock_post):
         """Test complete flux image generation workflow"""
         # Mock script generation
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [
                 {
@@ -306,7 +319,7 @@ class TestCompleteWorkflowIntegration:
     def test_script_to_subtitle_workflow(self, mock_post):
         """Test workflow from script generation to subtitle creation"""
         # Mock script generation
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [{"message": {"content": "Para 1\nPara 2\nPara 3"}}]
         }

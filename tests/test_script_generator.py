@@ -10,6 +10,19 @@ import pytest
 from autoshorts.modules.script_generator import ScriptGenerator
 
 
+def _api_response_mock():
+    """Mock response whose body stream mirrors whatever .json.return_value is set to.
+
+    Production code reads bodies via iter_content (wall-clock deadline), so mocks
+    must provide it; wiring it lazily from .json.return_value keeps existing
+    tests unchanged beyond this constructor swap.
+    """
+    m = Mock(name="api_response")
+    m.raise_for_status.return_value = None
+    m.iter_content = lambda chunk_size=65536: [json.dumps(m.json.return_value).encode()]
+    return m
+
+
 class TestScriptGenerator:
     """Test cases for ScriptGenerator class"""
 
@@ -39,7 +52,7 @@ class TestScriptGenerator:
     def test_generate_script_success(self, mock_post):
         """Test successful script generation"""
         # Mock API response
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [
                 {
@@ -68,7 +81,7 @@ class TestScriptGenerator:
         mock_searcher_class.return_value = mock_searcher
 
         # Mock draft API response (Pass 1)
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [
                 {
@@ -124,7 +137,7 @@ class TestScriptGenerator:
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_empty_response_returns_empty(self, mock_post):
         """Test script generation with empty response returns empty list"""
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {"choices": [{"message": {"content": ""}}]}
         mock_response.raise_for_status.return_value = None
         mock_post.return_value = mock_response
@@ -138,7 +151,7 @@ class TestScriptGenerator:
     def test_generate_script_with_prompts_success(self, mock_post):
         """Test successful script generation with image prompts"""
         # Mock API response with JSON structure
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [
                 {
@@ -173,7 +186,7 @@ class TestScriptGenerator:
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_with_prompts_invalid_json(self, mock_post):
         """Test script generation with invalid JSON response"""
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [{"message": {"content": "invalid json content"}}]
         }
@@ -186,7 +199,7 @@ class TestScriptGenerator:
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_from_metadata(self, mock_post):
         """Test script generation from video metadata"""
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [
                 {
@@ -209,7 +222,7 @@ class TestScriptGenerator:
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_from_metadata_with_web_search(self, mock_post):
         """Test script generation from metadata with web search"""
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [
                 {
@@ -246,7 +259,7 @@ class TestScriptGenerator:
     @patch.object(ScriptGenerator, "_generate_title_from_script", return_value=None)
     def test_api_request_headers(self, mock_title, mock_post):
         """Test that API requests include proper headers"""
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [{"message": {"content": "test\npara2\npara3\npara4\npara5"}}]
         }
@@ -269,7 +282,7 @@ class TestScriptGenerator:
     @patch.object(ScriptGenerator, "_generate_title_from_script", return_value=None)
     def test_api_request_payload(self, mock_title, mock_post):
         """Test that API requests include proper payload structure"""
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [{"message": {"content": "test\npara2\npara3\npara4\npara5"}}]
         }
@@ -293,7 +306,7 @@ class TestScriptGenerator:
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_with_special_characters(self, mock_post):
         """Test script generation with special characters"""
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [
                 {
@@ -314,7 +327,7 @@ class TestScriptGenerator:
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_with_markdown_formatting(self, mock_post):
         """Test script generation cleans markdown formatting"""
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [
                 {
@@ -337,7 +350,7 @@ class TestScriptGenerator:
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_single_paragraph_response(self, mock_post):
         """Test script generation with single paragraph splits correctly"""
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [
                 {
@@ -359,7 +372,7 @@ class TestScriptGenerator:
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_with_double_newlines(self, mock_post):
         """Test script generation with double newline separators"""
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [
                 {
@@ -380,7 +393,7 @@ class TestScriptGenerator:
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_insufficient_paragraphs(self, mock_post):
         """Test script generation returns what it gets, no padding"""
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [{"message": {"content": "Only one paragraph."}}]
         }
@@ -401,7 +414,7 @@ class TestScriptGenerator:
             "Daniel Vorcaro foi preso ao tentar deixar o país.",
         ]
         data = {"paragraphs": paragraphs}
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [{"message": {"content": json.dumps(data)}}]
         }
@@ -426,7 +439,7 @@ class TestScriptGenerator:
     def test_generate_script_with_context_empty_response(self, mock_post):
         """Test _generate_script_with_context returns None when no paragraphs key"""
         data = {"other_key": ["value"]}
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [{"message": {"content": json.dumps(data)}}]
         }
@@ -448,7 +461,7 @@ class TestScriptGenerator:
         mock_searcher_class.return_value = mock_searcher
 
         # Mock draft API response (Pass 1)
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [
                 {
@@ -486,7 +499,7 @@ class TestScriptGenerator:
         self, mock_title, mock_post
     ):
         """Test script generation from metadata with very long description"""
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [
                 {
@@ -528,7 +541,7 @@ class TestScriptGenerator:
         mock_searcher.format_context.return_value = "FONTES DA WEB:\n..."
         mock_searcher_class.return_value = mock_searcher
 
-        query_response = Mock()
+        query_response = _api_response_mock()
         query_response.json.return_value = {
             "choices": [
                 {
@@ -542,7 +555,7 @@ class TestScriptGenerator:
         }
         query_response.raise_for_status.return_value = None
 
-        text_response = Mock()
+        text_response = _api_response_mock()
         text_response.json.return_value = {
             "choices": [
                 {
@@ -560,7 +573,7 @@ class TestScriptGenerator:
         }
         text_response.raise_for_status.return_value = None
 
-        verification_response = Mock()
+        verification_response = _api_response_mock()
         verification_response.json.return_value = {
             "choices": [
                 {
@@ -578,7 +591,7 @@ class TestScriptGenerator:
         }
         verification_response.raise_for_status.return_value = None
 
-        title_response = Mock()
+        title_response = _api_response_mock()
         title_response.json.return_value = {
             "choices": [
                 {"message": {"content": json.dumps({"title": "Cl\u00e1ssico"})}}
@@ -640,7 +653,7 @@ class TestScriptGenerator:
         mock_searcher.format_context.return_value = "FONTES DA WEB:\n..."
         mock_searcher_class.return_value = mock_searcher
 
-        query_response = Mock()
+        query_response = _api_response_mock()
         query_response.json.return_value = {
             "choices": [
                 {
@@ -652,7 +665,7 @@ class TestScriptGenerator:
         }
         query_response.raise_for_status.return_value = None
 
-        text_response = Mock()
+        text_response = _api_response_mock()
         text_response.json.return_value = {
             "choices": [
                 {
@@ -670,7 +683,7 @@ class TestScriptGenerator:
         }
         text_response.raise_for_status.return_value = None
 
-        verification_response = Mock()
+        verification_response = _api_response_mock()
         verification_response.json.return_value = {
             "choices": [
                 {
@@ -699,7 +712,7 @@ class TestScriptGenerator:
         }
         verification_response.raise_for_status.return_value = None
 
-        title_response = Mock()
+        title_response = _api_response_mock()
         title_response.json.return_value = {
             "choices": [
                 {
@@ -746,7 +759,7 @@ class TestScriptGenerator:
         mock_searcher.format_context.return_value = "FONTES DA WEB:\n..."
         mock_searcher_class.return_value = mock_searcher
 
-        query_response = Mock()
+        query_response = _api_response_mock()
         query_response.json.return_value = {
             "choices": [
                 {"message": {"content": json.dumps({"queries": ["query1", "query2"]})}}
@@ -755,13 +768,13 @@ class TestScriptGenerator:
         query_response.raise_for_status.return_value = None
 
         final_json = json.dumps({"paragraphs": [f"P{i}" for i in range(1, 8)]})
-        final_response = Mock()
+        final_response = _api_response_mock()
         final_response.json.return_value = {
             "choices": [{"message": {"content": final_json}}]
         }
         final_response.raise_for_status.return_value = None
 
-        verification_response = Mock()
+        verification_response = _api_response_mock()
         verification_response.json.return_value = {
             "choices": [
                 {
@@ -779,7 +792,7 @@ class TestScriptGenerator:
         }
         verification_response.raise_for_status.return_value = None
 
-        title_response = Mock()
+        title_response = _api_response_mock()
         title_response.json.return_value = {
             "choices": [{"message": {"content": json.dumps({"title": "Test Title"})}}]
         }
@@ -811,7 +824,7 @@ class TestScriptGenerator:
         mock_searcher.search.return_value = None
         mock_searcher_class.return_value = mock_searcher
 
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [
                 {
@@ -844,7 +857,7 @@ class TestScriptGenerator:
         mock_searcher.search_with_queries.return_value = None
         mock_searcher_class.return_value = mock_searcher
 
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [
                 {
@@ -881,7 +894,7 @@ class TestScriptGenerator:
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_draft_missing_draft_key(self, mock_post):
         """Test _generate_draft returns fallback when response has no draft key"""
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [
                 {
@@ -907,7 +920,7 @@ class TestScriptGenerator:
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_image_prompts_success(self, mock_post):
         """Test generate_image_prompts_from_script returns paired prompts"""
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [
                 {
@@ -952,7 +965,7 @@ class TestScriptGenerator:
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_image_prompts_missing_key(self, mock_post):
         """Test generate_image_prompts_from_script returns empty list when key missing"""
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [{"message": {"content": json.dumps({"other_key": ["value"]})}}]
         }
@@ -998,7 +1011,7 @@ class TestScriptGeneratorEdgeCases:
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_generate_script_http_error_returns_empty(self, mock_post):
         """Test script generation with HTTP error returns empty list"""
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.raise_for_status.side_effect = Exception("HTTP 500")
         mock_post.return_value = mock_response
 

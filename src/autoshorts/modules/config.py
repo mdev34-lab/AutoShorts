@@ -261,6 +261,10 @@ SUBTITLE_MODE = os.getenv("SUBTITLE_MODE", "simple")
 
 # API Timeouts (seconds)
 API_TIMEOUT_TEXT = _get_env_int("API_TIMEOUT_TEXT", 30)
+# Total wall-clock budget for one text API call. requests' timeout only bounds
+# connect and inter-byte reads, so a response that keeps trickling bytes can
+# run forever without it (observed 2026-11-17: 59-minute silent hang).
+API_TIMEOUT_TEXT_TOTAL = _get_env_int("API_TIMEOUT_TEXT_TOTAL", 120)
 API_TIMEOUT_IMAGE = _get_env_int("API_TIMEOUT_IMAGE", 60)
 API_TIMEOUT_SEARCH = _get_env_int("API_TIMEOUT_SEARCH", 15)
 FFPROBE_TIMEOUT = _get_env_int("FFPROBE_TIMEOUT", 30)

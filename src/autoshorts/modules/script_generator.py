@@ -7,8 +7,8 @@ import requests  # type: ignore[import-untyped]
 
 from .config import (
     API_KEY,
-    API_TIMEOUT_IMAGE,
     API_TIMEOUT_TEXT,
+    API_TIMEOUT_TEXT_TOTAL,
     API_URL,
     MODEL_TEXT,
 )
@@ -17,6 +17,53 @@ from .utils import strip_markdown
 from .web_search import WebSearcher
 
 FALLBACK_PARAGRAPHS: list[str] = []
+
+
+class TotalDeadlineExceeded(requests.RequestException):
+    """Total wall-clock deadline for one API call was exceeded mid-response."""
+
+
+def _post_with_deadline(
+    url: str,
+    *,
+    headers: dict,
+    payload: dict,
+    connect_timeout: float = 10,
+    read_timeout: float,
+    total_deadline: float,
+) -> bytes:
+    """POST and read the full body, aborting once ``total_deadline`` seconds pass.
+
+    requests' ``timeout`` only bounds connecting and the gap *between* bytes,
+    so a response that keeps trickling one byte at a time can run forever
+    without ever timing out (observed 2026-11-17: a render slept 59 minutes on
+    recv and produced zero artifacts). urllib3's ``read(n)`` blocks until n
+    bytes arrive or the stream ends, so the body is consumed one byte at a
+    time and the wall-clock deadline is checked between socket reads; the
+    worst-case overshoot is one ``read_timeout``. (Closing the response from
+    another thread does not reliably interrupt a blocked recv on Linux.)
+    """
+    response = requests.post(
+        url,
+        headers=headers,
+        json=payload,
+        timeout=(connect_timeout, read_timeout),
+        stream=True,
+    )
+    try:
+        response.raise_for_status()
+        deadline = time.monotonic() + total_deadline
+        chunks: list[bytes] = []
+        for chunk in response.iter_content(chunk_size=1):
+            chunks.append(chunk)
+            if time.monotonic() > deadline:
+                raise TotalDeadlineExceeded(
+                    f"total deadline of {total_deadline}s exceeded "
+                    f"(read timeout {read_timeout}s is only inter-byte)"
+                )
+        return b"".join(chunks)
+    finally:
+        response.close()
 
 
 class ScriptGenerator:
@@ -654,14 +701,14 @@ class ScriptGenerator:
         }
         for attempt in range(2):
             try:
-                response = requests.post(
+                body = _post_with_deadline(
                     self.api_url,
                     headers=headers,
-                    json=payload,
-                    timeout=API_TIMEOUT_IMAGE,
+                    payload=payload,
+                    read_timeout=API_TIMEOUT_TEXT,
+                    total_deadline=API_TIMEOUT_TEXT_TOTAL,
                 )
-                response.raise_for_status()
-                content = response.json()["choices"][0]["message"]["content"]
+                content = json.loads(body)["choices"][0]["message"]["content"]
                 if content and content.strip():
                     result = json.loads(content)
                     if not isinstance(result, dict):
@@ -697,11 +744,14 @@ class ScriptGenerator:
         }
 
         try:
-            response = requests.post(
-                self.api_url, headers=headers, json=payload, timeout=API_TIMEOUT_TEXT
+            body = _post_with_deadline(
+                self.api_url,
+                headers=headers,
+                payload=payload,
+                read_timeout=API_TIMEOUT_TEXT,
+                total_deadline=API_TIMEOUT_TEXT_TOTAL,
             )
-            response.raise_for_status()
-            response_data = response.json()
+            response_data = json.loads(body)
 
             if isinstance(response_data, list):
                 log("API returned a list, attempting to extract content...", "WARNING")

@@ -23,6 +23,19 @@ from autoshorts.modules import (
 )
 
 
+def _api_response_mock():
+    """Mock response whose body stream mirrors .json.return_value (see
+    test_script_generator._api_response_mock)."""
+    import json as _json
+
+    m = Mock(name="api_response")
+    m.raise_for_status.return_value = None
+    m.iter_content = lambda chunk_size=65536: [
+        _json.dumps(m.json.return_value).encode()
+    ]
+    return m
+
+
 class TestEdgeCasesScriptGenerator:
     """Test edge cases for ScriptGenerator"""
 
@@ -31,7 +44,7 @@ class TestEdgeCasesScriptGenerator:
 
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_empty_subject(self, mock_post):
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [{"message": {"content": "Empty response"}}]
         }
@@ -44,7 +57,7 @@ class TestEdgeCasesScriptGenerator:
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_very_long_subject(self, mock_post):
         long_subject = "A" * 1000
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {
             "choices": [{"message": {"content": "Long response"}}]
         }
@@ -63,7 +76,7 @@ class TestEdgeCasesScriptGenerator:
 
     @patch("autoshorts.modules.script_generator.requests.post")
     def test_malformed_api_response_returns_empty(self, mock_post):
-        mock_response = Mock()
+        mock_response = _api_response_mock()
         mock_response.json.return_value = {}
         mock_post.return_value = mock_response
 
