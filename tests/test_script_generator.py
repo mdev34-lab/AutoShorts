@@ -1196,3 +1196,26 @@ class TestFactVerificationFailClosed:
         ):
             result = generator._verify_factual_claims(original, "assunto teste")
         assert result == original
+
+    def test_empty_script_and_zero_target_are_safe(self):
+        """Empty input must not reach divmod with n=0 (Kilo WARNING on 1af15f8)."""
+        generator = self._generator_with_searcher()
+        assert generator._verify_factual_claims([], "assunto teste") == []
+        assert ScriptGenerator._split_into_paragraphs(["Um. Dois. Três."], 0) == []
+        assert ScriptGenerator._split_into_paragraphs([], 5) == []
+
+    def test_extended_ptbr_titles_never_split(self):
+        """Titles like Dom., Frei., Eng. and S. (São) are not split points."""
+        split = ScriptGenerator._split_into_paragraphs(
+            [
+                "Dom Pedro assinou o ato. Frei Caneca liderou a revolta. "
+                "O Eng. Souza calculou o xG em 4.78.",
+                "S. Paulo venceu por 2 a 1. Restam 3 rodadas.",
+            ],
+            5,
+        )
+        joined = " ".join(split)
+        assert "Dom Pedro" in joined and "Frei Caneca" in joined
+        assert "Eng. Souza" in joined and "S. Paulo" in joined
+        for paragraph in split:
+            assert not paragraph.rstrip().endswith(("Dom.", "Frei.", "Eng.", "S."))

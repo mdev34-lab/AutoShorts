@@ -311,6 +311,8 @@ class ScriptGenerator:
 
     def _verify_factual_claims(self, paragraphs: list, subject: str) -> list:
         """Cross-check dates, scores, tabus, and numbers in script against web search results."""
+        if not paragraphs:
+            return paragraphs
         script_text = " ".join(paragraphs)
         verification_queries: list[str] = []
 
@@ -474,7 +476,8 @@ class ScriptGenerator:
         return paragraphs
 
     _SENTENCE_SPLIT_ABBREV = re.compile(
-        r"\b(?:dr|dra|sr|sra|srta|prof|profa|pe|etc|obs|vs|pag|tel|av|jr)\.",
+        r"\b(?:dr|dra|sr|sra|srta|prof|profa|pe|etc|obs|vs|pag|tel|av|jr"
+        r"|sao|sant|dom|bis|frei|med|eng|arq|sec|gen|cel|maj|cap|ten|sgt)\.",
         re.IGNORECASE,
     )
     # Initials ("J. Arias"): an uppercase letter that is its own token, so
@@ -505,7 +508,7 @@ class ScriptGenerator:
                 s = s.strip().replace("<DOT>", ".")
                 if s:
                     sentences.append(s)
-        if len(sentences) < 3:
+        if len(sentences) < 3 or target < 1:
             return []
         n = min(target, len(sentences))
         base, extra = divmod(len(sentences), n)
