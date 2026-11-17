@@ -311,6 +311,8 @@ class ScriptGenerator:
 
     def _verify_factual_claims(self, paragraphs: list, subject: str) -> list:
         """Cross-check dates, scores, tabus, and numbers in script against web search results."""
+        if not paragraphs:
+            return paragraphs
         script_text = " ".join(paragraphs)
         verification_queries: list[str] = []
 
@@ -404,26 +406,8 @@ class ScriptGenerator:
         for attempt in range(2):
             try:
                 prompt = user_prompt
-                repair_attempt = bool(
-                    attempt == 1 and corrections_flagged and corrected_best
-                )
                 if attempt == 1:
-                    if corrections_flagged and corrected_best:
-                        # Structure repair on the CORRECTED text: rebuild the
-                        # paragraph count from facts the checker already
-                        # accepted, never from the flagged original.
-                        corrected_text = "\n\n".join(corrected_best)
-                        prompt = (
-                            "REESTRUTURAÇÃO: o script abaixo JÁ FOI CORRIGIDO pela "
-                            "checagem de fatos. Reescreva-o em EXATAMENTE "
-                            f"{target_count} parágrafos usando APENAS os fatos "
-                            "presentes nele. Não adicione informação nova, não "
-                            "reverta nenhuma correção factual. Retorne em "
-                            '"paragraphs", com "corrections": [] e '
-                            '"verified": true.\n\nSCRIPT CORRIGIDO:\n'
-                            f"{corrected_text}"
-                        )
-                    elif prev_count != target_count:
+                    if prev_count != target_count:
                         prompt += (
                             f"\n\nCORREÇÃO: Na tentativa anterior você retornou "
                             f"{prev_count} parágrafos, "
@@ -454,22 +438,7 @@ class ScriptGenerator:
                 elif is_verified:
                     log("Fact verification: all claims match sources", "SUCCESS")
                 if corrected and len(corrected) >= 3:
-                    candidate = self._ensure_paragraph_count(corrected, target_count)
-                    if repair_attempt:
-                        # The restructure pass rewrites text, so it can drift:
-                        # accept only if every number it states already
-                        # appears in the checker-accepted paragraphs.
-                        introduced = self._numbers_not_in(candidate, corrected_best)
-                        if introduced:
-                            log(
-                                "Structure repair introduced numbers absent from "
-                                f"the corrected script: {introduced}; rejecting",
-                                "WARNING",
-                            )
-                        else:
-                            return candidate
-                    else:
-                        return candidate
+                    return self._ensure_paragraph_count(corrected, target_count)
                 log(
                     f"Verification returned {len(corrected)} paragraphs, need >= 3, retrying...",
                     "WARNING",
@@ -478,10 +447,21 @@ class ScriptGenerator:
                 log(f"Fact verification attempt {attempt + 1} failed: {e}", "WARNING")
                 corrected = []
         if corrections_flagged:
-            # The fact-checker rejected claims in the original script but a
-            # structurally valid corrected script could not be produced.
-            # Paragraph count is structure, not factual acceptance: fail
-            # closed instead of narrating the flagged original.
+            # The checker rejected claims in the original script. Paragraph
+            # count is structure, not factual acceptance: rebuild structure
+            # deterministically from the checker-corrected text itself (no
+            # LLM rewrite, so no fact can be added, dropped or rephrased).
+            if corrected_best:
+                split = self._split_into_paragraphs(corrected_best, target_count)
+                if len(split) >= 3:
+                    log(
+                        "Paragraph structure rebuilt deterministically from "
+                        "checker-corrected text",
+                        "INFO",
+                    )
+                    return split
+            # A structurally valid corrected script could not be produced:
+            # fail closed instead of narrating the flagged original.
             log(
                 "Fact verification flagged corrections but produced no valid "
                 "corrected script; refusing to narrate the flagged original",
@@ -495,17 +475,50 @@ class ScriptGenerator:
         )
         return paragraphs
 
-    @staticmethod
-    def _numbers_not_in(candidate_paragraphs: list, source_paragraphs: list) -> list:
-        """Numbers stated in candidate but absent from source (factual drift)."""
+    _SENTENCE_SPLIT_ABBREV = re.compile(
+        r"\b(?:dr|dra|sr|sra|srta|prof|profa|pe|etc|obs|vs|pag|tel|av|jr"
+        r"|sao|sant|dom|bis|frei|med|eng|arq|sec|gen|cel|maj|cap|ten|sgt)\.",
+        re.IGNORECASE,
+    )
+    # Initials ("J. Arias"): an uppercase letter that is its own token, so
+    # all-caps words like "UFMG." do not get masked.
+    _SENTENCE_SPLIT_INITIAL = re.compile(r"(?<![A-Za-zÀ-ú0-9])[A-ZÀ-Ú]\.")
 
-        def nums(paras: list) -> set:
-            found: set = set()
-            for p in paras:
-                found.update(re.findall(r"\d+(?:[.,]\d+)?", p))
-            return found
+    @classmethod
+    def _split_into_paragraphs(cls, paragraphs: list, target: int) -> list:
+        """Rebuild paragraph structure deterministically from corrected text.
 
-        return sorted(nums(candidate_paragraphs) - nums(source_paragraphs))
+        Splits at sentence boundaries only, preserving every sentence
+        verbatim and in order - no content is added, removed, reordered or
+        rephrased, so no fact can drift. Abbreviations ("Dr."), initials
+        ("J. Arias"), decimals ("4.78", "87,2%") and scores ("6x1") are
+        never split points. Returns [] when fewer than 3 sentences exist.
+        """
+        masked: list[str] = []
+        for p in paragraphs:
+            # Two passes: abbreviation matching is case-insensitive, but the
+            # initial guard must stay case-sensitive or every lowercase
+            # sentence-ending letter would be masked.
+            p = cls._SENTENCE_SPLIT_ABBREV.sub(lambda m: m.group(0)[:-1] + "<DOT>", p)
+            p = cls._SENTENCE_SPLIT_INITIAL.sub(lambda m: m.group(0)[:-1] + "<DOT>", p)
+            masked.append(p)
+        sentences: list[str] = []
+        for p in masked:
+            for s in re.split(r"(?<=[.!?…])\s+", p):
+                s = s.strip().replace("<DOT>", ".")
+                if s:
+                    sentences.append(s)
+        if len(sentences) < 3 or target < 1:
+            return []
+        n = min(target, len(sentences))
+        base, extra = divmod(len(sentences), n)
+        result: list[str] = []
+        idx = 0
+        for i in range(n):
+            take = base + (1 if i < extra else 0)
+            result.append(" ".join(sentences[idx : idx + take]))
+            idx += take
+        return result
 
     # ── Title generation ─────────────────────────────────────────────────
 
