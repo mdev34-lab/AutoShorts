@@ -9,7 +9,7 @@ total wall-clock deadline on text API calls and flushed log lines.
 import json
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler
 
 import pytest
 
@@ -52,7 +52,11 @@ class _FastHandler(BaseHTTPRequestHandler):
 
 
 def _serve(handler):
-    srv = HTTPServer(("127.0.0.1", 0), handler)
+    from http.server import ThreadingHTTPServer
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    srv.daemon_threads = True
+    srv.block_on_close = False
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
 
@@ -76,7 +80,7 @@ class TestPostWithDeadline:
             # the trickle would take unbounded
             assert elapsed < 8
         finally:
-            srv.shutdown()
+            srv.server_close()
 
     def test_fast_response_returned_complete(self):
         srv = _serve(_FastHandler)
@@ -91,7 +95,7 @@ class TestPostWithDeadline:
             )
             assert json.loads(body)["choices"][0]["message"]["content"] == "ok"
         finally:
-            srv.shutdown()
+            srv.server_close()
 
 
 class TestLogFlush:
@@ -102,3 +106,82 @@ class TestLogFlush:
         monkeypatch.setattr("builtins.print", lambda *a, **kw: calls.append((a, kw)))
         logging_system.log("hello")
         assert calls and calls[0][1].get("flush") is True
+
+
+class _SilentBodyHandler(BaseHTTPRequestHandler):
+    """Sends headers, then goes completely silent (no bytes ever)."""
+
+    def do_POST(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        time.sleep(10)  # outlives the test timeouts
+
+    def log_message(self, *args):
+        pass
+
+
+class _SlowHeadersHandler(BaseHTTPRequestHandler):
+    """Accepts the connection but sends nothing - not even headers."""
+
+    def do_POST(self):
+        time.sleep(10)
+
+    def log_message(self, *args):
+        pass
+
+
+class TestPostWithDeadlineEdgeCases:
+    def test_silent_body_fails_on_inter_byte_read_timeout(self):
+        """No bytes mid-body: bounded by the inter-byte read timeout.
+
+        With stream=True, requests surfaces a mid-body read timeout as
+        ConnectionError wrapping urllib3's ReadTimeoutError (a ReadTimeout is
+        only raised while waiting for the response headers). Both are
+        RequestException subclasses, so the existing retry/failure paths
+        handle them.
+        """
+        import requests
+
+        srv = _serve(_SilentBodyHandler)
+        try:
+            url = f"http://127.0.0.1:{srv.server_address[1]}/"
+            t0 = time.monotonic()
+            with pytest.raises(requests.exceptions.ConnectionError):
+                _post_with_deadline(
+                    url, headers={}, payload={}, read_timeout=2, total_deadline=30
+                )
+            assert time.monotonic() - t0 < 10
+        finally:
+            srv.server_close()
+
+    def test_slow_headers_fail_on_read_timeout(self):
+        """Headers never arrive: bounded by the read timeout on first byte."""
+        import requests
+
+        srv = _serve(_SlowHeadersHandler)
+        try:
+            url = f"http://127.0.0.1:{srv.server_address[1]}/"
+            t0 = time.monotonic()
+            with pytest.raises(requests.exceptions.ReadTimeout):
+                _post_with_deadline(
+                    url, headers={}, payload={}, read_timeout=2, total_deadline=30
+                )
+            assert time.monotonic() - t0 < 10
+        finally:
+            srv.server_close()
+
+    def test_deadline_overshoot_bounded_by_one_read_timeout(self):
+        """A blocked read started just before the deadline may overshoot by at
+        most one read_timeout - the documented worst case."""
+        srv = _serve(_TrickleHandler)  # one byte every 0.4s
+        try:
+            url = f"http://127.0.0.1:{srv.server_address[1]}/"
+            t0 = time.monotonic()
+            with pytest.raises(TotalDeadlineExceeded):
+                _post_with_deadline(
+                    url, headers={}, payload={}, read_timeout=3, total_deadline=2
+                )
+            assert time.monotonic() - t0 < 2 + 3 + 1  # deadline + read + slack
+        finally:
+            srv.server_close()
