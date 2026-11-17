@@ -1103,37 +1103,84 @@ class TestFactVerificationFailClosed:
             result = generator._verify_factual_claims(original, "assunto teste")
         assert result == []
 
-    def test_structure_repair_uses_corrected_text(self):
-        """Second attempt must rebuild structure FROM the corrected paragraphs,
-        not re-verify the flagged original, and must not revert corrections."""
+    def test_structure_rebuilt_deterministically_from_corrected_text(self):
+        """Short checker-corrected scripts are restructured by verbatim
+        sentence splitting: full text coverage, order and wording preserved,
+        no LLM rewrite in the acceptance path."""
         generator = self._generator_with_searcher()
-        attempt1 = {
+        corrected_paragraphs = [
+            "O Flamengo venceu o Palmeiras por 2 a 1. Foi na 35\u00aa rodada. "
+            "O xG ficou em 4.78 para o l\u00edder.",
+            "J. Arias marcou aos 12 minutos. Restam tr\u00eas rodadas.",
+        ]
+        attempt = {
             "verified": False,
             "corrections": [{"claim": "45 mil", "correction": "46 mil"}],
-            "paragraphs": ["Corrigido A com 46 mil.", "Corrigido B."],
-        }
-        attempt2 = {
-            "verified": True,
-            "corrections": [],
-            "paragraphs": [
-                "Corrigido A com 46 mil, primeira parte.",
-                "Corrigido A com 46 mil, segunda parte.",
-                "Corrigido B, primeira parte.",
-                "Corrigido B, segunda parte.",
-                "Conclusão dos fatos corrigidos.",
-            ],
+            "paragraphs": corrected_paragraphs,
         }
         original = ["P1 errado 45 mil", "P2", "P3", "P4", "P5"]
         with patch.object(
-            ScriptGenerator, "_make_json_api_call", side_effect=[attempt1, attempt2]
+            ScriptGenerator, "_make_json_api_call", side_effect=[attempt, attempt]
         ) as mock_api:
             result = generator._verify_factual_claims(original, "assunto teste")
-        assert len(result) == 5
-        assert any("46 mil" in p for p in result)
-        # the retry prompt must carry the corrected text, not the flagged original
-        retry_prompt = mock_api.call_args_list[1].args[1]
-        assert "Corrigido A com 46 mil." in retry_prompt
-        assert "P1 errado 45 mil" not in retry_prompt
+        assert 3 <= len(result) <= 5
+        # verbatim coverage in order: joining the result reproduces the
+        # corrected text exactly (whitespace-normalized)
+        corrected_text = " ".join(corrected_paragraphs)
+        assert " ".join(result) == corrected_text
+        assert "4.78" in corrected_text and "J. Arias" in " ".join(result)
+        # no semantic drift is possible: every sentence is a verbatim slice
+        for paragraph in result:
+            assert paragraph in corrected_text
+        assert "P1 errado" not in " ".join(result)
+
+    def test_split_never_breaks_abbreviations_decimals_or_initials(self):
+        """Split points are real sentence ends only: 'Dr. Abel', 'J. Arias',
+        '4.78', '87,2%' and '6x1' must survive intact."""
+        split = ScriptGenerator._split_into_paragraphs(
+            [
+                "O Dr. Abel reclamou do lance. J. Arias fez 1 gol e o xG foi 4.78. "
+                "O placar foi 6x1.",
+                "A chance era 87,2% segundo a UFMG. Restam 3 rodadas.",
+            ],
+            5,
+        )
+        assert len(split) == 5
+        joined = " ".join(split)
+        assert "Dr. Abel" in joined
+        assert "J. Arias" in joined
+        assert "4.78" in joined
+        assert "87,2%" in joined
+        assert "6x1" in joined
+        for fragment in ["Dr.", "J."]:
+            # abbreviation/initial never ends a paragraph
+            for paragraph in split:
+                assert not paragraph.rstrip().endswith(fragment)
+
+    def test_semantic_reversal_cannot_be_introduced(self):
+        """Counterexample to numeric-only guards: reversing winner/loser keeps
+        the same numbers, so the restructure must be verbatim by construction.
+        A flipped claim cannot appear because output is slices of the input."""
+        generator = self._generator_with_searcher()
+        attempt = {
+            "verified": False,
+            "corrections": [{"claim": "Palmeiras venceu", "correction": "Flamengo venceu"}],
+            "paragraphs": [
+                "O Flamengo venceu o Palmeiras. Foi 2 a 1 no Nubank Parque. "
+                "A torcida lotou o est\u00e1dio.",
+            ],
+        }
+        original = ["P1", "P2", "P3", "P4", "P5"]
+        with patch.object(
+            ScriptGenerator, "_make_json_api_call", side_effect=[attempt, attempt]
+        ):
+            result = generator._verify_factual_claims(original, "assunto teste")
+        # 3 sentences -> 3 paragraphs, verbatim
+        assert result == [
+            "O Flamengo venceu o Palmeiras.",
+            "Foi 2 a 1 no Nubank Parque.",
+            "A torcida lotou o est\u00e1dio.",
+        ]
 
     def test_inconclusive_verification_keeps_originals(self):
         """API failure with no factual verdict is not a rejection: keep the
@@ -1148,29 +1195,3 @@ class TestFactVerificationFailClosed:
             result = generator._verify_factual_claims(original, "assunto teste")
         assert result == original
 
-    def test_structure_repair_rejects_introduced_numbers(self):
-        """A restructure pass that states numbers absent from the
-        checker-accepted text has drifted factually: reject and fail closed."""
-        generator = self._generator_with_searcher()
-        attempt1 = {
-            "verified": False,
-            "corrections": [{"claim": "45 mil", "correction": "46 mil"}],
-            "paragraphs": ["Corrigido A com 46 mil.", "Corrigido B."],
-        }
-        drifted = {
-            "verified": True,
-            "corrections": [],
-            "paragraphs": [
-                "Corrigido A com 46 mil, parte 1.",
-                "Corrigido A com 46 mil, parte 2.",
-                "Corrigido B, parte 1.",
-                "Foram 12 jogos invictos.",
-                "Conclusão dos fatos corrigidos.",
-            ],
-        }
-        original = ["P1 errado 45 mil", "P2", "P3", "P4", "P5"]
-        with patch.object(
-            ScriptGenerator, "_make_json_api_call", side_effect=[attempt1, drifted]
-        ):
-            result = generator._verify_factual_claims(original, "assunto teste")
-        assert result == []
