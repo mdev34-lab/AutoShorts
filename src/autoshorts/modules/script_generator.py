@@ -404,6 +404,9 @@ class ScriptGenerator:
         for attempt in range(2):
             try:
                 prompt = user_prompt
+                repair_attempt = bool(
+                    attempt == 1 and corrections_flagged and corrected_best
+                )
                 if attempt == 1:
                     if corrections_flagged and corrected_best:
                         # Structure repair on the CORRECTED text: rebuild the
@@ -451,7 +454,22 @@ class ScriptGenerator:
                 elif is_verified:
                     log("Fact verification: all claims match sources", "SUCCESS")
                 if corrected and len(corrected) >= 3:
-                    return self._ensure_paragraph_count(corrected, target_count)
+                    candidate = self._ensure_paragraph_count(corrected, target_count)
+                    if repair_attempt:
+                        # The restructure pass rewrites text, so it can drift:
+                        # accept only if every number it states already
+                        # appears in the checker-accepted paragraphs.
+                        introduced = self._numbers_not_in(candidate, corrected_best)
+                        if introduced:
+                            log(
+                                "Structure repair introduced numbers absent from "
+                                f"the corrected script: {introduced}; rejecting",
+                                "WARNING",
+                            )
+                        else:
+                            return candidate
+                    else:
+                        return candidate
                 log(
                     f"Verification returned {len(corrected)} paragraphs, need >= 3, retrying...",
                     "WARNING",
@@ -476,6 +494,18 @@ class ScriptGenerator:
             "WARNING",
         )
         return paragraphs
+
+    @staticmethod
+    def _numbers_not_in(candidate_paragraphs: list, source_paragraphs: list) -> list:
+        """Numbers stated in candidate but absent from source (factual drift)."""
+
+        def nums(paras: list) -> set:
+            found: set = set()
+            for p in paras:
+                found.update(re.findall(r"\d+(?:[.,]\d+)?", p))
+            return found
+
+        return sorted(nums(candidate_paragraphs) - nums(source_paragraphs))
 
     # ── Title generation ─────────────────────────────────────────────────
 

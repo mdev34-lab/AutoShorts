@@ -1116,10 +1116,10 @@ class TestFactVerificationFailClosed:
             "verified": True,
             "corrections": [],
             "paragraphs": [
-                "Corrigido A com 46 mil, parte 1.",
-                "Corrigido A com 46 mil, parte 2.",
-                "Corrigido B, parte 1.",
-                "Corrigido B, parte 2.",
+                "Corrigido A com 46 mil, primeira parte.",
+                "Corrigido A com 46 mil, segunda parte.",
+                "Corrigido B, primeira parte.",
+                "Corrigido B, segunda parte.",
                 "Conclusão dos fatos corrigidos.",
             ],
         }
@@ -1147,3 +1147,30 @@ class TestFactVerificationFailClosed:
         ):
             result = generator._verify_factual_claims(original, "assunto teste")
         assert result == original
+
+    def test_structure_repair_rejects_introduced_numbers(self):
+        """A restructure pass that states numbers absent from the
+        checker-accepted text has drifted factually: reject and fail closed."""
+        generator = self._generator_with_searcher()
+        attempt1 = {
+            "verified": False,
+            "corrections": [{"claim": "45 mil", "correction": "46 mil"}],
+            "paragraphs": ["Corrigido A com 46 mil.", "Corrigido B."],
+        }
+        drifted = {
+            "verified": True,
+            "corrections": [],
+            "paragraphs": [
+                "Corrigido A com 46 mil, parte 1.",
+                "Corrigido A com 46 mil, parte 2.",
+                "Corrigido B, parte 1.",
+                "Foram 12 jogos invictos.",
+                "Conclusão dos fatos corrigidos.",
+            ],
+        }
+        original = ["P1 errado 45 mil", "P2", "P3", "P4", "P5"]
+        with patch.object(
+            ScriptGenerator, "_make_json_api_call", side_effect=[attempt1, drifted]
+        ):
+            result = generator._verify_factual_claims(original, "assunto teste")
+        assert result == []
