@@ -1121,7 +1121,7 @@ class TestFactVerificationFailClosed:
         original = ["P1 errado 45 mil", "P2", "P3", "P4", "P5"]
         with patch.object(
             ScriptGenerator, "_make_json_api_call", side_effect=[attempt, attempt]
-        ) as mock_api:
+        ):
             result = generator._verify_factual_claims(original, "assunto teste")
         assert 3 <= len(result) <= 5
         # verbatim coverage in order: joining the result reproduces the
@@ -1164,7 +1164,9 @@ class TestFactVerificationFailClosed:
         generator = self._generator_with_searcher()
         attempt = {
             "verified": False,
-            "corrections": [{"claim": "Palmeiras venceu", "correction": "Flamengo venceu"}],
+            "corrections": [
+                {"claim": "Palmeiras venceu", "correction": "Flamengo venceu"}
+            ],
             "paragraphs": [
                 "O Flamengo venceu o Palmeiras. Foi 2 a 1 no Nubank Parque. "
                 "A torcida lotou o est\u00e1dio.",
@@ -1194,4 +1196,3 @@ class TestFactVerificationFailClosed:
         ):
             result = generator._verify_factual_claims(original, "assunto teste")
         assert result == original
-
