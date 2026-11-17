@@ -43,14 +43,15 @@ def _post_with_deadline(
     worst-case overshoot is one ``read_timeout``. (Closing the response from
     another thread does not reliably interrupt a blocked recv on Linux.)
     """
-    response = requests.post(
-        url,
-        headers=headers,
-        json=payload,
-        timeout=(connect_timeout, read_timeout),
-        stream=True,
-    )
+    response: requests.Response | None = None
     try:
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=(connect_timeout, read_timeout),
+            stream=True,
+        )
         response.raise_for_status()
         deadline = time.monotonic() + total_deadline
         chunks: list[bytes] = []
@@ -63,7 +64,8 @@ def _post_with_deadline(
                 )
         return b"".join(chunks)
     finally:
-        response.close()
+        if response is not None:
+            response.close()
 
 
 class ScriptGenerator:

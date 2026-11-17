@@ -185,3 +185,25 @@ class TestPostWithDeadlineEdgeCases:
             assert time.monotonic() - t0 < 2 + 3 + 1  # deadline + read + slack
         finally:
             srv.server_close()
+
+
+class TestPostFailurePropagation:
+    def test_connect_failure_propagates_unmasked(self, monkeypatch):
+        """A requests.post failure must surface as itself, not a NameError
+        from a finally-block close() on an unassigned response."""
+        import requests as req
+
+        from autoshorts.modules import script_generator
+
+        def boom(*args, **kwargs):
+            raise req.exceptions.ConnectTimeout("refused")
+
+        monkeypatch.setattr(script_generator.requests, "post", boom)
+        with pytest.raises(req.exceptions.ConnectTimeout):
+            _post_with_deadline(
+                "http://127.0.0.1:1/",
+                headers={},
+                payload={},
+                read_timeout=2,
+                total_deadline=5,
+            )
